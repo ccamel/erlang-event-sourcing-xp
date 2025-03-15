@@ -1,6 +1,6 @@
--sname erlang_event_sourcing_xp
+-sname event_sourcing_xp
 
--setcookie erlang_event_sourcing_xp_cookie
+-setcookie event_sourcing_xp_cookie
 
 +K true
 +A30
