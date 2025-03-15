@@ -101,3 +101,20 @@ jobs:
       - name: Lint Erlang code (elvis)
         run: |
           rebar3 lint
+          rebar3 format
+
+      - name: Verify if files changed
+        uses: zyactions/verify-changed-files@v2
+        id: verify-changes
+
+      - name: Run step only when files change.
+        if: steps.verify-changes.outputs.changed-files != ''
+        run: |
+          echo "❌ Some files are not formatted."
+          echo "  Files : ${{ steps.verify-changes.outputs.changed-files }}"
+          git diff --name-only | grep 'docs/' | while read file; do
+            echo "‣ Changes in $file:"
+            git diff HEAD $file
+          done
+          echo "Please format the files using 'rebar3 format' and commit the changes."
+          exit 1
