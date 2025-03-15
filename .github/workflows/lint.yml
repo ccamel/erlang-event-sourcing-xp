@@ -68,6 +68,7 @@ jobs:
   lint-erlang:
     runs-on: ubuntu-22.04
     env:
+      ERL_FLAGS: "-enable-feature all"
       OTP_VERSION: "27"
       REBAR3_VERSION: "3.24.0"
     steps:
