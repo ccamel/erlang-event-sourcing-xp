@@ -102,6 +102,13 @@ jobs:
       - name: Lint Erlang code (elvis)
         run: |
           rebar3 lint
+
+      - name: Run dialyzer
+        run: |
+          rebar3 dialyzer
+
+      - name: Format code
+        run: |
           rebar3 format
 
       - name: Verify if files changed
