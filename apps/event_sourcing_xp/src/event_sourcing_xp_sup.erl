@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
-%% @doc erlang_event_sourcing_xp top level supervisor.
+%% @doc event_sourcing_xp top level supervisor.
 %% @end
 %%%-------------------------------------------------------------------
 
--module(erlang_event_sourcing_xp_sup).
+-module(event_sourcing_xp_sup).
 
 -behaviour(supervisor).
 
