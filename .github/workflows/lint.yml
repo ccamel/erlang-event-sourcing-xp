@@ -13,6 +13,10 @@ concurrency:
   group: lint-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  pull-requests: read
+  contents: read
+
 jobs:
   lint-commits:
     runs-on: ubuntu-22.04
@@ -60,3 +64,40 @@ jobs:
         run: |
           codespell --config .codespellrc
           exit $?
+
+  lint-erlang:
+    runs-on: ubuntu-22.04
+    env:
+      OTP_VERSION: "27"
+      REBAR3_VERSION: "3.24.0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Setup Erlang/OTP and rebar3
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          rebar3-version: ${{ env.REBAR3_VERSION }}
+
+      - name: Restore _build folder
+        uses: actions/cache@v3
+        with:
+          path: _build
+          key: "_build-cache-for\
+            -otp-${{ env.OTP_VERSION }}\
+            -rebar3-${{ env.REBAR3_VERSION }}\
+            -hash-${{ hashFiles('rebar.lock') }}"
+
+      - name: Restore rebar3's cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/rebar3
+          key: "rebar3-cache-for\
+            -otp-${{ env.OTP_VERSION }}\
+            -rebar3-${{ env.REBAR3_VERSION }}\
+            -hash-${{ hashFiles('rebar.lock') }}"
+
+      - name: Lint Erlang code (elvis)
+        run: |
+          rebar3 lint
