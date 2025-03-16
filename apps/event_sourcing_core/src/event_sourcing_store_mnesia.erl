@@ -1,34 +1,13 @@
--module(event_sourcing_core_persistence).
+-module(event_sourcing_store_mnesia).
+
+-behaviour(event_sourcing_store).
 
 -include_lib("stdlib/include/qlc.hrl").
 
--export_type([event_record/0, id/0, type/0, stream_id/0, version/0, tags/0, timestamp/0,
-              metadata/0, payload/0]).
-
--export([table_name/1, create_events_table/0, retrieve_and_fold_events/4,
-         persist_event/3]).
+-export([table_name/1, start/0, stop/0, retrieve_and_fold_events/4, persist_event/3]).
 
 -record(event_record,
         {id, type, stream_id, version, tags = [], timestamp, metadata = #{}, payload}).
-
--opaque event_record() ::
-    #event_record{id :: id(),
-                  type :: type(),
-                  stream_id :: stream_id(),
-                  version :: version(),
-                  tags :: tags(),
-                  timestamp :: timestamp(),
-                  metadata :: metadata(),
-                  payload :: payload()}.
-
--type id() :: string().
--type type() :: string().
--type stream_id() :: string().
--type version() :: non_neg_integer().
--type tags() :: [string()].
--type timestamp() :: calendar:datetime().
--type metadata() :: #{string() => string()}.
--type payload() :: tuple().
 
 %% @doc The name of the table that will store events.
 -define(EVENT_TABLE_NAME, events).
@@ -38,12 +17,11 @@
 table_name(events) ->
     ?EVENT_TABLE_NAME.
 
-%% @doc Create the events table if it doesn't exist.
--spec create_events_table() -> ok | {error, term()}.
-create_events_table() ->
+-spec start() -> {ok, initialized | already_initialized} | {error, term()}.
+start() ->
     try mnesia:table_info(?EVENT_TABLE_NAME, all) of
         _ ->
-            ok
+            {ok, already_initialized}
     catch
         exit:{aborted, {no_exists, ?EVENT_TABLE_NAME, all}} ->
             case mnesia:create_table(?EVENT_TABLE_NAME,
@@ -53,22 +31,20 @@ create_events_table() ->
                                       {index, [type, stream_id, version]}])
             of
                 {atomic, ok} ->
-                    ok;
+                    {ok, initialized};
                 {aborted, Reason} ->
                     {error, Reason}
             end
     end.
 
--spec persist_event(stream_id(), version(), payload()) -> {ok, id()} | {error, term()}.
-%% @doc
-%% Persists an event to the event store.
-%%
-%% @param StreamId The identifier of the event stream.
-%% @param Version The version number of the event.
-%% @param Payload The event data to be persisted.
-%% @return Returns 'ok' if the event is successfully persisted, or an error tuple if
-%% the operation fails.
-%%
+-spec stop() -> {ok}.
+stop() ->
+    {ok}.
+
+-spec persist_event(event_sourcing_store:stream_id(),
+                    event_sourcing_store:version(),
+                    event_sourcing_store:payload()) ->
+                       {ok, event_sourcing_store:id()} | {error, term()}.
 persist_event(StreamId, Version, Payload) ->
     UUID = uuid:get_v4(),
     Id = uuid:uuid_to_string(UUID),
@@ -90,24 +66,9 @@ persist_event(StreamId, Version, Payload) ->
             {error, Reason}
     end.
 
-%%
-%% @doc
-%% Retrieves and folds events for a given stream ID.
-%%
-%% @param StreamId The ID of the event stream to retrieve events from.
-%% @param Options A list of options to filter the events. The options are:
-%%   - {from, non_neg_integer()} The version number to start retrieving events from.
-%%     Defaults to 0.
-%%   - {to, non_neg_integer()} The version number to stop retrieving events at.
-%%     Defaults to infinity.
-%% @param FoldFun A function to fold each event record into the accumulator.
-%% @param InitialAcc The initial value of the accumulator.
-%%
-%% @return Result The result of folding the events sorted by version number.
-%%
--spec retrieve_and_fold_events(stream_id(),
+-spec retrieve_and_fold_events(event_sourcing_store:stream_id(),
                                [{from, non_neg_integer()} | {to, non_neg_integer()}],
-                               fun((event_record(), Acc) -> Acc),
+                               fun((event_sourcing_store:event_record(), Acc) -> Acc),
                                Acc) ->
                                   {ok, Acc} | {error, term()}.
 retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
