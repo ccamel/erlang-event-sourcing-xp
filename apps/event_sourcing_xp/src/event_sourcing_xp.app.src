@@ -7,5 +7,5 @@
   {applications, [kernel, stdlib]},
   {env, []},
   {modules, []},
-  {licenses, ["Apache-2.0"]},
+  {licenses, ["BSD 3-Clause"]},
   {links, []}]}.

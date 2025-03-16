@@ -102,6 +102,17 @@ jobs:
       - name: Lint Erlang code (elvis)
         run: |
           rebar3 lint
+
+      - name: Update dialyzer PLT
+        run: |
+          rebar3 dialyzer --update-plt || true
+
+      - name: Run dialyzer
+        run: |
+          rebar3 dialyzer
+
+      - name: Format code
+        run: |
           rebar3 format
 
       - name: Verify if files changed

@@ -1,10 +1,10 @@
 {application,
  event_sourcing_core,
- [{description, "An OTP library"},
+ [{description, "Core library for event sourcing implementation in Erlang"},
   {vsn, "0.1.0"},
   {registered, []},
   {applications, [kernel, stdlib]},
   {env, []},
-  {modules, []},
-  {licenses, ["Apache-2.0"]},
+  {modules, [event_sourcing_core_persistence]},
+  {licenses, ["BSD 3-Clause"]},
   {links, []}]}.

@@ -16,3 +16,9 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 ```sh
 rebar3 compile
 ```
+
+## Test
+
+```sh
+rebar3 eunit
+```
