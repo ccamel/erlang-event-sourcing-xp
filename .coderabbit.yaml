@@ -1,0 +1,49 @@
+language: "en"
+early_access: true
+tone_instructions: |
+  Be casual, friendly, and egoless, using approachable, clear, and conversational language that feels warm and engaging.
+  Keep the writing light, concise, and positive, as if speaking to a peer.
+
+reviews:
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  sequence_diagrams: true
+  path_instructions:
+    - path: "**/*.erl"
+      instructions: |
+        Review the Erlang source files with a focus on the project's architecture and best practices:
+        - **Actor Model & Concurrency**: Ensure that OTP behaviors (e.g., `gen_server`, `gen_statem`, `gen_event`) are correctly implemented and used effectively.
+        - **Event Sourcing**: Validate that event persistence and retrieval via **Mnesia** follow best practices, ensuring proper data consistency and versioning.
+        - **Domain-Driven Design (DDD)**: Check if the event-driven architecture properly separates **commands, events, and state transitions**.
+        - **Code Quality and Maintainability**: Ensure idiomatic Erlang code, proper **pattern matching**, effective use of **records and maps**, and clean module organization.
+        - **Performance & Scalability**: Identify bottlenecks related to **message passing, ETS/Mnesia transactions, and process spawning**. Suggest optimizations where applicable.
+    - path: "**/*.hrl"
+      instructions: |
+        Review Erlang header files for:
+        - **Type & Record Definitions**: Ensure types are well-defined and align with the domain model.
+        - **Macro Usage**: Validate the necessity of macros (`-define(...)`), ensuring they are not overused where functions or constants could suffice.
+        - **Cross-Module Consistency**: Check that header files are used appropriately across modules and don't introduce unnecessary dependencies.
+    - path: "**/*.md"
+      instructions: |
+        Review markdown documentation with these guidelines:
+        - **Structure**: Ensure logical organization and consistency in headings.
+        - **Technical Accuracy**: Verify correctness in Erlang/Mnesia-related concepts and example code.
+        - **Clarity**: Ensure content is concise, with minimal jargon, making it accessible to developers.
+        - **Completeness**: Check if all key functionalities are covered and properly documented.
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+
+chat:
+  auto_reply: true
+  auto_reply_messages:
+    greeting: "👋 Thanks for the mention! 😊 I'm here to assist with your Erlang code review."
+    help_request: "🫡 Got it! What specific aspect would you like me to focus on?"
+  triggers:
+    - keywords: ["help", "review", "check"]
+      response: "👌 On it! I'll review that for you right away."
