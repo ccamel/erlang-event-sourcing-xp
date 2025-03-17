@@ -123,8 +123,8 @@ retrieve_events(StoreModule, StreamId, Options) ->
 -type metadata() :: #{string() => string()}.
 -type payload() :: tuple().
 -type options() ::
-    [{version_start, non_neg_integer()} |
-     {version_end, non_neg_integer() | infinity} |
+    [{from, non_neg_integer()} |
+     {to, non_neg_integer() | infinity} |
      {limit, pos_integer() | infinity}].
 -type fold_fun() :: fun((event_record(), acc()) -> acc()).
 -type acc() :: any().
