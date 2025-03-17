@@ -67,32 +67,46 @@ persist_event(StreamId, Version, Payload) ->
     end.
 
 -spec retrieve_and_fold_events(event_sourcing_store:stream_id(),
-                               [{from, non_neg_integer()} | {to, non_neg_integer()}],
-                               fun((event_sourcing_store:event_record(), Acc) -> Acc),
-                               Acc) ->
-                                  {ok, Acc} | {error, term()}.
+                               event_sourcing_store:options(),
+                               event_sourcing_store:fold_fun(),
+                               event_sourcing_store:acc()) ->
+                                  {ok, event_sourcing_store:acc()} | {error, term()}.
 retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
     when is_list(Options), is_function(FoldFun, 2) ->
     From = proplists:get_value(from, Options, 0),
     To = proplists:get_value(to, Options, infinity),
+    Limit = proplists:get_value(limit, Options, infinity),
 
     FunQuery =
         fun() ->
-           qlc:e(
+           BaseQ =
                qlc:q([E
                       || E <- mnesia:table(?EVENT_TABLE_NAME),
                          E#event_record.stream_id =:= StreamId,
-                         E#event_record.version >= From,
-                         To =:= infinity orelse E#event_record.version < To]))
+                         E#event_record.version >= From],
+                     []),
+           Q = case To of
+                   infinity ->
+                       BaseQ;
+                   _ ->
+                       qlc:q([E || E <- BaseQ, E#event_record.version < To])
+               end,
+           AllEvents = qlc:e(Q),
+           SortedEvents =
+               lists:sort(fun(E1, E2) -> E1#event_record.version =< E2#event_record.version end,
+                          AllEvents),
+           LimitedEvents =
+               case Limit of
+                   infinity ->
+                       SortedEvents;
+                   _ when is_integer(Limit) ->
+                       lists:sublist(SortedEvents, Limit)
+               end,
+           LimitedEvents
         end,
-
     case mnesia:transaction(FunQuery) of
         {atomic, Events} ->
-            SortedEvents =
-                lists:sort(fun(E1, E2) -> E1#event_record.version =< E2#event_record.version end,
-                           Events),
-            Data = lists:foldl(fun(E, Acc) -> FoldFun(E, Acc) end, InitialAcc, SortedEvents),
-            {ok, Data};
+            {ok, lists:foldl(FoldFun, InitialAcc, Events)};
         {aborted, Reason} ->
             {error, Reason}
     end.

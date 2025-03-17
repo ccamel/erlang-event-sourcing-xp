@@ -67,6 +67,7 @@
 %% @param Options A list of filters:
 %%   - `{from, Version}`: Start at this version (default: 0).
 %%   - `{to, Version | infinity}`: End at this version (default: infinity).
+%%   - `{limit, Limit}`: Maximum number of events to retrieve (default: infinity).
 %% @param FoldFun A function `fun((EventRecord, Acc) -> NewAcc)` to process each event.
 %% @param InitialAcc The initial accumulator value (e.g., an empty state).
 %%
@@ -122,7 +123,9 @@ retrieve_events(StoreModule, StreamId, Options) ->
 -type metadata() :: #{string() => string()}.
 -type payload() :: tuple().
 -type options() ::
-    [{version_start, non_neg_integer()} | {version_end, non_neg_integer() | infinity}].
+    [{version_start, non_neg_integer()} |
+     {version_end, non_neg_integer() | infinity} |
+     {limit, pos_integer() | infinity}].
 -type fold_fun() :: fun((event_record(), acc()) -> acc()).
 -type acc() :: any().
 -type store() :: module().
