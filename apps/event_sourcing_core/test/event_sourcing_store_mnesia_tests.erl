@@ -152,3 +152,42 @@ wrong_stream_id_test() ->
 
     teardown().
 
+duplicate_event_test() ->
+    setup(),
+    ?assertMatch({ok, _}, ?STORE:start()),
+    Timestamp = calendar:universal_time(),
+    Event =
+        event_sourcing_store:new_event(stream_A,
+                                       user,
+                                       user_registered,
+                                       1,
+                                       Timestamp,
+                                       {"John Doe"}),
+
+    ?assertEqual(0, table_count(?STORE:table_name(events))),
+    ?assertMatch(ok, event_sourcing_store:persist_events(?STORE, stream_A, [Event])),
+    ?assertEqual(1, table_count(?STORE:table_name(events))),
+    ?assertMatch({error, {duplicate_event, {event_id, {user, stream_A, 1}}}},
+                 event_sourcing_store:persist_events(?STORE, stream_A, [Event])),
+    ?assertEqual(1, table_count(?STORE:table_name(events))),
+
+    Events =
+        [event_sourcing_store:new_event(stream_B,
+                                        user,
+                                        user_registered,
+                                        1,
+                                        Timestamp,
+                                        {"Jon Doe"}),
+         event_sourcing_store:new_event(stream_B, user, user_updated, 2, Timestamp, {"John Doe"}),
+         event_sourcing_store:new_event(stream_B,
+                                        user,
+                                        user_registered,
+                                        1,
+                                        Timestamp,
+                                        {"Jon Doe"})],
+
+    ?assertMatch({error, {duplicate_event, {event_id, {user, stream_B, 1}}}},
+                 event_sourcing_store:persist_events(?STORE, stream_B, Events)),
+    ?assertEqual(1, table_count(?STORE:table_name(events))),
+
+    teardown().
