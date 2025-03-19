@@ -4,10 +4,13 @@
 
 -include_lib("stdlib/include/qlc.hrl").
 
--export([table_name/1, start/0, stop/0, retrieve_and_fold_events/4, persist_event/3]).
+-export([table_name/1, start/0, stop/0, retrieve_and_fold_events/4, persist_event/1]).
 
 -record(event_record,
-        {id, type, stream_id, version, tags = [], timestamp, metadata = #{}, payload}).
+        {key :: event_sourcing_store:id(),
+         stream_id :: event_sourcing_store:stream_id(),
+         sequence :: event_sourcing_store:sequence(),
+         event :: event_sourcing_store:event()}).
 
 %% @doc The name of the table that will store events.
 -define(EVENT_TABLE_NAME, events).
@@ -27,8 +30,8 @@ start() ->
             case mnesia:create_table(?EVENT_TABLE_NAME,
                                      [{attributes, record_info(fields, event_record)},
                                       {record_name, event_record},
-                                      {type, set},
-                                      {index, [type, stream_id, version]}])
+                                      {type, ordered_set},
+                                      {index, [stream_id, sequence]}])
             of
                 {atomic, ok} ->
                     {ok, initialized};
@@ -41,34 +44,23 @@ start() ->
 stop() ->
     {ok}.
 
--spec persist_event(event_sourcing_store:stream_id(),
-                    event_sourcing_store:version(),
-                    event_sourcing_store:payload()) ->
-                       {ok, event_sourcing_store:id()} | {error, term()}.
-persist_event(StreamId, Version, Payload) ->
-    UUID = uuid:get_v4(),
-    Id = uuid:uuid_to_string(UUID),
-    Timestamp = calendar:universal_time(),
+-spec persist_event(Event :: event_sourcing_store:event()) -> ok | {error, term()}.
+persist_event(Event) ->
     Record =
-        #event_record{id = Id,
-                      % by convention
-                      type = atom_to_list(element(1, Payload)),
-                      stream_id = StreamId,
-                      version = Version,
-                      tags = [],
-                      timestamp = Timestamp,
-                      metadata = #{},
-                      payload = Payload},
+        #event_record{key = event_sourcing_store:id(Event),
+                      stream_id = event_sourcing_store:stream_id(Event),
+                      sequence = event_sourcing_store:sequence(Event),
+                      event = Event},
     case mnesia:transaction(fun() -> mnesia:write(?EVENT_TABLE_NAME, Record, write) end) of
         {atomic, ok} ->
-            {ok, Id};
+            ok;
         {aborted, Reason} ->
             {error, Reason}
     end.
 
 -spec retrieve_and_fold_events(event_sourcing_store:stream_id(),
-                               event_sourcing_store:options(),
-                               event_sourcing_store:fold_fun(),
+                               event_sourcing_store:fold_events_opts(),
+                               event_sourcing_store:fold_events_fun(),
                                event_sourcing_store:acc()) ->
                                   {ok, event_sourcing_store:acc()} | {error, term()}.
 retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
@@ -76,33 +68,25 @@ retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
     From = proplists:get_value(from, Options, 0),
     To = proplists:get_value(to, Options, infinity),
     Limit = proplists:get_value(limit, Options, infinity),
-
     FunQuery =
         fun() ->
-           BaseQ =
-               qlc:q([E
+           Q = qlc:q([E#event_record.event
                       || E <- mnesia:table(?EVENT_TABLE_NAME),
                          E#event_record.stream_id =:= StreamId,
-                         E#event_record.version >= From],
+                         E#event_record.sequence >= From,
+                         E#event_record.sequence < To],
                      []),
-           Q = case To of
-                   infinity ->
-                       BaseQ;
-                   _ ->
-                       qlc:q([E || E <- BaseQ, E#event_record.version < To])
-               end,
-           AllEvents = qlc:e(Q),
-           SortedEvents =
-               lists:sort(fun(E1, E2) -> E1#event_record.version =< E2#event_record.version end,
-                          AllEvents),
-           LimitedEvents =
-               case Limit of
-                   infinity ->
-                       SortedEvents;
-                   _ when is_integer(Limit) ->
-                       lists:sublist(SortedEvents, Limit)
-               end,
-           LimitedEvents
+           case Limit of
+               infinity ->
+                   qlc:e(Q);
+               N when is_integer(N), N > 0 ->
+                   Cursor = qlc:cursor(Q),
+                   Events = qlc:next_answers(Cursor, N),
+                   qlc:delete_cursor(Cursor),
+                   Events;
+               _ ->
+                   qlc:e(Q)
+           end
         end,
     case mnesia:transaction(FunQuery) of
         {atomic, Events} ->
