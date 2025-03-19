@@ -13,7 +13,7 @@
          id/1, domain/1, type/1, stream_id/1, sequence/1, timestamp/1, tags/1, metadata/1,
          payload/1, new_event/8, new_event/6]).
 
--export_type([id/0,event/0, stream_id/0, payload/0, sequence/0, fold_events_opts/0,
+-export_type([id/0, event/0, stream_id/0, payload/0, sequence/0, fold_events_opts/0,
               fold_events_fun/0, acc/0, domain/0, type/0, tags/0, metadata/0, timestamp/0,
               store/0]).
 
@@ -161,13 +161,13 @@ retrieve_events(StoreModule, StreamId, Options) ->
 %% - `payload`: Domain-specific data as a tuple (e.g., `{user_registered, <<"john doe">>}`).
 -opaque event() ::
     #event{stream_id :: stream_id(),
-                  domain :: domain(),
-                  type :: type(),
-                  sequence :: sequence(),
-                  tags :: tags(),
-                  timestamp :: timestamp(),
-                  metadata :: metadata(),
-                  payload :: payload()}.
+           domain :: domain(),
+           type :: type(),
+           sequence :: sequence(),
+           tags :: tags(),
+           timestamp :: timestamp(),
+           metadata :: metadata(),
+           payload :: payload()}.
 
 %% @doc
 %% Creates a new event.
@@ -193,13 +193,13 @@ retrieve_events(StoreModule, StreamId, Options) ->
                    event().
 new_event(StreamId, Domain, Type, Sequence, Tags, Timestamp, Metadata, Payload) ->
     #event{stream_id = StreamId,
-                  domain = Domain,
-                  type = Type,
-                  sequence = Sequence,
-                  tags = Tags,
-                  timestamp = Timestamp,
-                  metadata = Metadata,
-                  payload = Payload}.
+           domain = Domain,
+           type = Type,
+           sequence = Sequence,
+           tags = Tags,
+           timestamp = Timestamp,
+           metadata = Metadata,
+           payload = Payload}.
 
 %% @doc
 %% Creates a new event.
@@ -227,8 +227,8 @@ new_event(StreamId, Domain, Type, Sequence, Timestamp, Payload) ->
 %% The identifier is a string composed of the domain, the stream id and sequence number.
 -spec id(Event :: event()) -> id().
 id(#event{domain = Domain,
-                 stream_id = StreamId,
-                 sequence = Sequence}) ->
+          stream_id = StreamId,
+          sequence = Sequence}) ->
     {Domain, StreamId, Sequence}.
 
 %% @doc
