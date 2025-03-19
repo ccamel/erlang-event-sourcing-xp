@@ -9,7 +9,7 @@
 %% to interact with the store and access event record fields.
 -module(event_sourcing_store).
 
--export([start/1, stop/1, persist_event/2, retrieve_and_fold_events/5, retrieve_events/3,
+-export([start/1, stop/1, persist_events/3, retrieve_and_fold_events/5, retrieve_events/3,
          id/1, domain/1, type/1, stream_id/1, sequence/1, timestamp/1, tags/1, metadata/1,
          payload/1, new_event/8, new_event/6]).
 
@@ -40,19 +40,20 @@
 %% describing the error.
 -callback stop() -> {ok} | {error, term()}.
 %% @doc
-%% Persists a single event to the specified event stream.
+%% Append events to an event stream.
 %%
-%% This callback appends an event to the stream identified by `StreamId`. The `Sequence`
-%% must be the next expected sequence in the stream to ensure event ordering and
-%% prevent conflicts. The `Payload` contains domain-specific event data.
+%% This callback appends events to the specified streams.
 %%
-%% @param Event The event to persist.
+%% @param StreamId An atom identifying the event stream (e.g., order-123).
+%% @param Events The list of events to append to the stream.
 %%
 %% @returns
 %% - `ok` if the event was persisted.
-%% - `{error, Reason}` if persistence failed (e.g., `sequence_conflict` if the sequence
-%%   does not match the expected next sequence).
--callback persist_event(Event) -> ok | {error, term()} when Event :: event().
+%% - `{error, Reason}` if persistence failed (e.g., `wrong_stream_id` if an event’s stream id
+%% does not match the given StreamId).
+-callback persist_events(StreamId, Events) -> ok | {error, term()}
+    when StreamId :: stream_id(),
+         Events :: [event()].
 %% @doc
 %% Retrieves events from a stream and folds them into an accumulator.
 %%
@@ -60,7 +61,7 @@
 %% event in sequence order, and returns the final accumulator. It’s typically used to
 %% rebuild application state by replaying events.
 %%
-%% @param StreamId A string identifying the event stream (e.g., "order-123").
+%% @param StreamId An atom identifying the event stream (e.g., order-123).
 %% @param Options A list of filters:
 %%   - `{from, Sequence}`: Start at this sequence (default: 0).
 %%   - `{to, Sequence | infinity}`: End at this sequence (default: infinity).
@@ -88,9 +89,12 @@ stop(Module) ->
 
 %% @doc
 %% Persists a event in the event store using the specified persistence module.
--spec persist_event(StoreModule :: store(), Event :: event()) -> ok | {error, term()}.
-persist_event(StoreModule, Event) ->
-    StoreModule:persist_event(Event).
+-spec persist_events(StoreModule :: store(),
+                     StreamId :: stream_id(),
+                     Events :: [event()]) ->
+                        ok | {error, term()}.
+persist_events(StoreModule, StreamId, Events) when is_list(Events) ->
+    StoreModule:persist_events(StreamId, Events).
 
 %% @doc
 %% Retrieves and folds events from the event store using the specified persistence module.
