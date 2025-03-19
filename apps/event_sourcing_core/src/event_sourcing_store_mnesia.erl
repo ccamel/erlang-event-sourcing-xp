@@ -76,14 +76,16 @@ retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
                          E#event_record.sequence >= From,
                          E#event_record.sequence < To],
                      []),
-           AllEvents = qlc:e(Q),
            case Limit of
                infinity ->
-                   AllEvents;
+                   qlc:e(Q);
                N when is_integer(N), N > 0 ->
-                   lists:sublist(AllEvents, 1, N);
+                   Cursor = qlc:cursor(Q),
+                   Events = qlc:next_answers(Cursor, N),
+                   qlc:delete_cursor(Cursor),
+                   Events;
                _ ->
-                   AllEvents  % Ignore invalid limits
+                   qlc:e(Q)
            end
         end,
     case mnesia:transaction(FunQuery) of
