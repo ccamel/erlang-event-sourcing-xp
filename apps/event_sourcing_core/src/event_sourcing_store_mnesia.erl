@@ -4,7 +4,7 @@
 
 -include_lib("stdlib/include/qlc.hrl").
 
--export([table_name/1, start/0, stop/0, retrieve_and_fold_events/4, persist_event/1]).
+-export([table_name/1, start/0, stop/0, retrieve_and_fold_events/4, persist_events/2]).
 
 -record(event_record,
         {key :: event_sourcing_store:id(),
@@ -44,18 +44,38 @@ start() ->
 stop() ->
     {ok}.
 
--spec persist_event(Event :: event_sourcing_store:event()) -> ok | {error, term()}.
-persist_event(Event) ->
-    Record =
-        #event_record{key = event_sourcing_store:id(Event),
-                      stream_id = event_sourcing_store:stream_id(Event),
-                      sequence = event_sourcing_store:sequence(Event),
-                      event = Event},
-    case mnesia:transaction(fun() -> mnesia:write(?EVENT_TABLE_NAME, Record, write) end) of
-        {atomic, ok} ->
+-spec persist_events(StreamId :: event_sourcing_store:stream_id(),
+                     Events :: [event_sourcing_store:event()]) ->
+                        ok | {error, term()}.
+persist_events(StreamId, Events) ->
+    case mnesia:transaction(fun() -> persist_events_in_tx(StreamId, Events) end) of
+        {atomic, _Result} ->
             ok;
         {aborted, Reason} ->
             {error, Reason}
+    end.
+
+persist_events_in_tx(_, []) ->
+    ok;
+persist_events_in_tx(StreamId, [Event | Rest]) ->
+    EventStreamId = event_sourcing_store:stream_id(Event),
+    case EventStreamId of
+        StreamId ->
+            Id = event_sourcing_store:id(Event),
+            Record =
+                #event_record{key = Id,
+                              stream_id = event_sourcing_store:stream_id(Event),
+                              sequence = event_sourcing_store:sequence(Event),
+                              event = Event},
+            case mnesia:read(?EVENT_TABLE_NAME, Id, read) of
+                [_] ->
+                    mnesia:abort({duplicate_event, {event_id, Id}});
+                _ ->
+                    ok = mnesia:write(?EVENT_TABLE_NAME, Record, write),
+                    persist_events_in_tx(StreamId, Rest)
+            end;
+        _ ->
+            mnesia:abort({wrong_stream_id, {expected, StreamId, got, EventStreamId}})
     end.
 
 -spec retrieve_and_fold_events(event_sourcing_store:stream_id(),
