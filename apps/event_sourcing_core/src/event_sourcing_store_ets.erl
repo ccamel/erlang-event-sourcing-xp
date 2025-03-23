@@ -15,72 +15,71 @@
 %% @doc The name of the ETS table that will store events.
 -define(EVENT_TABLE_NAME, events).
 
--spec start() -> {ok, initialized | already_initialized}.
+-spec start() -> ok.
 start() ->
     case ets:info(?EVENT_TABLE_NAME) of
         undefined ->
             _ = ets:new(?EVENT_TABLE_NAME,
                         [ordered_set, named_table, public, {keypos, #event_record.key}]),
-            {ok, initialized};
+            ok;
         _ ->
-            {ok, already_initialized}
+            ok
     end.
 
--spec stop() -> {ok}.
+-spec stop() -> ok.
 stop() ->
     ets:delete(?EVENT_TABLE_NAME),
-    {ok}.
+    ok.
 
--spec persist_events(StreamId :: event_sourcing_store:stream_id(),
-                     Events :: [event_sourcing_store:event()]) ->
-                        ok | {error, term()}.
+-spec persist_events(StreamId, Events) -> ok
+    when StreamId :: event_sourcing_store:stream_id(),
+         Events :: [event_sourcing_store:event()].
 persist_events(StreamId, Events) ->
-    case check_events(StreamId, Events, []) of
-        ok ->
-            InsertFun =
-                fun(Event) ->
-                   Id = event_sourcing_store:id(Event),
-                   Record =
-                       #event_record{key = Id,
-                                     stream_id = event_sourcing_store:stream_id(Event),
-                                     sequence = event_sourcing_store:sequence(Event),
-                                     event = Event},
-                   ets:insert(?EVENT_TABLE_NAME, Record)
-                end,
-            lists:foreach(InsertFun, Events),
-            ok;
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    true = check_events(StreamId, Events, []),
+    InsertFun =
+        fun(Event) ->
+           Id = event_sourcing_store:id(Event),
+           Record =
+               #event_record{key = Id,
+                             stream_id = event_sourcing_store:stream_id(Event),
+                             sequence = event_sourcing_store:sequence(Event),
+                             event = Event},
+           ets:insert(?EVENT_TABLE_NAME, Record)
+        end,
+    lists:foreach(InsertFun, Events),
+    ok.
 
 %% Helper to check that all events belong to the provided StreamId and that none
 %% have already been persisted.
 check_events(_StreamId, [], _Seen) ->
-    ok;
+    true;
 check_events(StreamId, [Event | Rest], Seen) ->
     case event_sourcing_store:stream_id(Event) of
         StreamId ->
             Id = event_sourcing_store:id(Event),
             case lists:member(Id, Seen) of
                 true ->
-                    {error, {duplicate_event, {event_id, Id}}};
+                    erlang:error(duplicate_event);
                 false ->
                     case ets:lookup(?EVENT_TABLE_NAME, Id) of
                         [] ->
                             check_events(StreamId, Rest, [Id | Seen]);
                         [_Existing] ->
-                            {error, {duplicate_event, {event_id, Id}}}
+                            erlang:error(duplicate_event)
                     end
             end;
-        WrongStream ->
-            {error, {wrong_stream_id, {expected, StreamId, got, WrongStream}}}
+        WrongStreamID ->
+            erlang:error({badarg, WrongStreamID})
     end.
 
--spec retrieve_and_fold_events(event_sourcing_store:stream_id(),
-                               event_sourcing_store:fold_events_opts(),
-                               event_sourcing_store:fold_events_fun(),
-                               event_sourcing_store:acc()) ->
-                                  {ok, event_sourcing_store:acc()}.
+-spec retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1
+    when StreamId :: event_sourcing_store:stream_id(),
+         Options :: event_sourcing_store:fold_events_opts(),
+         Fun :: fun((Event :: event_sourcing_store:event(), AccIn) -> AccOut),
+         Acc0 :: term(),
+         Acc1 :: term(),
+         AccIn :: term(),
+         AccOut :: term().
 retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
     when is_list(Options), is_function(FoldFun, 2) ->
     From = proplists:get_value(from, Options, 0),
@@ -103,4 +102,4 @@ retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
                         []
                 end
         end,
-    {ok, lists:foldl(FoldFun, InitialAcc, ResultEvents)}.
+    lists:foldl(FoldFun, InitialAcc, ResultEvents).

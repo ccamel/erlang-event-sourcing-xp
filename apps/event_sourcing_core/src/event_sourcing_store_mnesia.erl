@@ -15,11 +15,11 @@
 %% @doc The name of the table that will store events.
 -define(EVENT_TABLE_NAME, events).
 
--spec start() -> {ok, initialized | already_initialized} | {error, term()}.
+-spec start() -> ok.
 start() ->
     try mnesia:table_info(?EVENT_TABLE_NAME, all) of
         _ ->
-            {ok, already_initialized}
+            ok
     catch
         exit:{aborted, {no_exists, ?EVENT_TABLE_NAME, all}} ->
             case mnesia:create_table(?EVENT_TABLE_NAME,
@@ -29,25 +29,25 @@ start() ->
                                       {index, [stream_id, sequence]}])
             of
                 {atomic, ok} ->
-                    {ok, initialized};
+                    ok;
                 {aborted, Reason} ->
-                    {error, Reason}
+                    erlang:error(Reason)
             end
     end.
 
--spec stop() -> {ok}.
+-spec stop() -> ok.
 stop() ->
-    {ok}.
+    ok.
 
--spec persist_events(StreamId :: event_sourcing_store:stream_id(),
-                     Events :: [event_sourcing_store:event()]) ->
-                        ok | {error, term()}.
+-spec persist_events(StreamId, Events) -> ok
+    when StreamId :: event_sourcing_store:stream_id(),
+         Events :: [event_sourcing_store:event()].
 persist_events(StreamId, Events) ->
     case mnesia:transaction(fun() -> persist_events_in_tx(StreamId, Events) end) of
         {atomic, _Result} ->
             ok;
         {aborted, Reason} ->
-            {error, Reason}
+            erlang:error(Reason)
     end.
 
 persist_events_in_tx(_, []) ->
@@ -64,20 +64,23 @@ persist_events_in_tx(StreamId, [Event | Rest]) ->
                               event = Event},
             case mnesia:read(?EVENT_TABLE_NAME, Id, read) of
                 [_] ->
-                    mnesia:abort({duplicate_event, {event_id, Id}});
+                    mnesia:abort(duplicate_event);
                 _ ->
                     ok = mnesia:write(?EVENT_TABLE_NAME, Record, write),
                     persist_events_in_tx(StreamId, Rest)
             end;
         _ ->
-            mnesia:abort({wrong_stream_id, {expected, StreamId, got, EventStreamId}})
+            mnesia:abort({badarg, EventStreamId})
     end.
 
--spec retrieve_and_fold_events(event_sourcing_store:stream_id(),
-                               event_sourcing_store:fold_events_opts(),
-                               event_sourcing_store:fold_events_fun(),
-                               event_sourcing_store:acc()) ->
-                                  {ok, event_sourcing_store:acc()} | {error, term()}.
+-spec retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1
+    when StreamId :: event_sourcing_store:stream_id(),
+         Options :: event_sourcing_store:fold_events_opts(),
+         Fun :: fun((Event :: event_sourcing_store:event(), AccIn) -> AccOut),
+         Acc0 :: term(),
+         Acc1 :: term(),
+         AccIn :: term(),
+         AccOut :: term().
 retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
     when is_list(Options), is_function(FoldFun, 2) ->
     From = proplists:get_value(from, Options, 0),
@@ -105,7 +108,7 @@ retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
         end,
     case mnesia:transaction(FunQuery) of
         {atomic, Events} ->
-            {ok, lists:foldl(FoldFun, InitialAcc, Events)};
+            lists:foldl(FoldFun, InitialAcc, Events);
         {aborted, Reason} ->
-            {error, Reason}
+            erlang:error(Reason)
     end.
