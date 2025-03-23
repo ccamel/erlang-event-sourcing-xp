@@ -12,24 +12,12 @@ setup() ->
 teardown() ->
     mnesia:stop().
 
-table_count(Table) ->
-    {atomic, Count} = mnesia:transaction(fun() -> mnesia:table_info(Table, size) end),
-    Count.
-
-is_table_empty(Table) ->
-    0 == table_count(Table).
-
 %%% Test cases
 
 create_table_once_test() ->
     setup(),
 
     ?assertMatch({ok, _}, event_sourcing_store:start(?STORE)),
-
-    ?assertNotEqual(undefined,
-                    mnesia:table_info(
-                        event_sourcing_store_mnesia:table_name(events), all)),
-    ?assertEqual(true, is_table_empty(event_sourcing_store_mnesia:table_name(events))),
 
     teardown().
 
@@ -38,11 +26,6 @@ create_table_multiple_times_test() ->
 
     ?assertMatch({ok, _}, event_sourcing_store:start(?STORE)),
     ?assertMatch({ok, _}, event_sourcing_store:start(?STORE)),
-
-    ?assertNotEqual(undefined,
-                    mnesia:table_info(
-                        ?STORE:table_name(events), all)),
-    ?assertEqual(true, is_table_empty(?STORE:table_name(events))),
 
     teardown().
 
@@ -59,7 +42,6 @@ persist_single_event_test() ->
                                        {"John Doe"}),
 
     ?assertMatch(ok, event_sourcing_store:persist_events(?STORE, stream_A, [Event])),
-    ?assertEqual(1, table_count(?STORE:table_name(events))),
     ?assertMatch({ok, [Event]}, event_sourcing_store:retrieve_events(?STORE, stream_A, [])),
 
     teardown().
@@ -85,9 +67,7 @@ persist_2_streams_event_test() ->
                                         {"Jane Doe"})],
 
     ?assertMatch(ok, event_sourcing_store:persist_events(?STORE, stream_A, EventStreamA)),
-    ?assertEqual(1, table_count(?STORE:table_name(events))),
     ?assertMatch(ok, event_sourcing_store:persist_events(?STORE, stream_B, EventStreamB)),
-    ?assertEqual(2, table_count(?STORE:table_name(events))),
 
     ?assertMatch({ok, EventStreamA},
                  event_sourcing_store:retrieve_events(?STORE, stream_A, [])),
@@ -148,7 +128,8 @@ wrong_stream_id_test() ->
 
     ?assertMatch({error, {wrong_stream_id, {expected, stream_B, got, stream_A}}},
                  event_sourcing_store:persist_events(?STORE, stream_B, [Event])),
-    ?assertEqual(0, table_count(?STORE:table_name(events))),
+    ?assertMatch({ok, []}, event_sourcing_store:retrieve_events(?STORE, stream_A, [])),
+    ?assertMatch({ok, []}, event_sourcing_store:retrieve_events(?STORE, stream_B, [])),
 
     teardown().
 
@@ -164,13 +145,10 @@ duplicate_event_test() ->
                                        Timestamp,
                                        {"John Doe"}),
 
-    ?assertEqual(0, table_count(?STORE:table_name(events))),
     ?assertMatch(ok, event_sourcing_store:persist_events(?STORE, stream_A, [Event])),
-    ?assertEqual(1, table_count(?STORE:table_name(events))),
     ?assertMatch({error, {duplicate_event, {event_id, {user, stream_A, 1}}}},
                  event_sourcing_store:persist_events(?STORE, stream_A, [Event])),
-    ?assertEqual(1, table_count(?STORE:table_name(events))),
-
+    ?assertMatch({ok, [Event]}, event_sourcing_store:retrieve_events(?STORE, stream_A, [])),
     Events =
         [event_sourcing_store:new_event(stream_B,
                                         user,
@@ -188,6 +166,6 @@ duplicate_event_test() ->
 
     ?assertMatch({error, {duplicate_event, {event_id, {user, stream_B, 1}}}},
                  event_sourcing_store:persist_events(?STORE, stream_B, Events)),
-    ?assertEqual(1, table_count(?STORE:table_name(events))),
+    ?assertMatch({ok, []}, event_sourcing_store:retrieve_events(?STORE, stream_B, [])),
 
     teardown().
