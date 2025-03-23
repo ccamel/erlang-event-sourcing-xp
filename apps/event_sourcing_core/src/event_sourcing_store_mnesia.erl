@@ -4,7 +4,7 @@
 
 -include_lib("stdlib/include/qlc.hrl").
 
--export([table_name/1, start/0, stop/0, retrieve_and_fold_events/4, persist_events/2]).
+-export([start/0, stop/0, retrieve_and_fold_events/4, persist_events/2]).
 
 -record(event_record,
         {key :: event_sourcing_store:id(),
@@ -14,11 +14,6 @@
 
 %% @doc The name of the table that will store events.
 -define(EVENT_TABLE_NAME, events).
-
-%% @doc The name of the tables used for persistence.
--spec table_name(events) -> events.
-table_name(events) ->
-    ?EVENT_TABLE_NAME.
 
 -spec start() -> {ok, initialized | already_initialized} | {error, term()}.
 start() ->
