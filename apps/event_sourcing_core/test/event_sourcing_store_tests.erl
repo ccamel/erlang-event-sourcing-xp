@@ -1,9 +1,9 @@
--module(event_sourcing_store_mnesia_tests).
+-module(event_sourcing_store_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
 suite_test_() ->
-    Stores = [event_sourcing_store_mnesia],
+    Stores = [event_sourcing_store_mnesia, event_sourcing_store_ets],
     BaseTests =
         [{"create_table_once", fun create_table_once/1},
          {"create_table_multiple_times", fun create_table_multiple_times/1},
