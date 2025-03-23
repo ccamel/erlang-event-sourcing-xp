@@ -46,16 +46,8 @@ While not yet implemented, the event store could be extended to:
 
 #### Current Implementation
 
-##### Mnesia Event Store
-
-The Mnesia event store uses [Mnesia](https://www.erlang.org/doc/apps/mnesia/mnesia.html) as its underlying storage mechanism. Events are stored as records with the following structure:
-
-```erlang
-{ key :: id(),
-  stream_id :: stream_id(),
-  sequence :: sequence(),
-  event :: event()}.
-```
+- [Mnesia](https://www.erlang.org/doc/apps/mnesia/mnesia.html)
+- [ETS](https://www.erlang.org/doc/apps/stdlib/ets.html)
 
 ## Build
 
