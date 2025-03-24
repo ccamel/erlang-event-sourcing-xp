@@ -14,8 +14,7 @@
          payload/1, new_event/8, new_event/6]).
 
 -export_type([id/0, event/0, stream_id/0, payload/0, sequence/0, fold_events_opts/0,
-              fold_events_fun/0, acc/0, domain/0, type/0, tags/0, metadata/0, timestamp/0,
-              store/0]).
+              domain/0, type/0, tags/0, metadata/0, timestamp/0, store/0]).
 
 %% @doc
 %% Starts the event store, performing any necessary initialization.
@@ -24,34 +23,30 @@
 %% database connections, initializing in-memory structures). Implementations
 %% should be idempotent, allowing repeated calls without side effects.
 %%
-%% @returns
-%% - `{ok, initialized}` if the store was successfully initialized for the first time.
-%% - `{ok, already_initialized}` if the store was already running.
-%% - `{error, Reason}` if initialization failed, where `Reason` describes the failure
-%%   (e.g., `db_connection_failed`).
--callback start() -> {ok, initialized | already_initialized} | {error, term()}.
+%% Returns `ok` on success. May throw an exception if initialization fails
+%% (e.g., resource unavailable).
+-callback start() -> ok.
 %% @doc
 %% This callback function is used to stop the event store.
 %%
 %% The callback should perform any necessary cleanup of the event store.
+%% The function should be idempotent, allowing repeated calls without side effects.
 %%
-%% It should return either {ok} if the stop operation was successful,
-%% or {error, Reason} if there was an error, where `Reason` is a term
-%% describing the error.
--callback stop() -> {ok} | {error, term()}.
+%% Returns `ok` on success. May throw an exception if cleanup fails
+%% (e.g., resource not found).
+-callback stop() -> ok.
 %% @doc
 %% Append events to an event stream.
 %%
 %% This callback appends events to the specified streams.
 %%
 %% @param StreamId An atom identifying the event stream (e.g., order-123).
-%% @param Events The list of events to append to the stream.
+%% @param Events The list of events to append to the stream. The events provided are unique and all
+%% belong to the same stream.
 %%
-%% @returns
-%% - `ok` if the event was persisted.
-%% - `{error, Reason}` if persistence failed (e.g., `wrong_stream_id` if an event’s stream id
-%% does not match the given StreamId).
--callback persist_events(StreamId, Events) -> ok | {error, term()}
+%% Returns `ok` on success. May throw an exception if persistence fails (e.g., badarg if the
+%% stream ID is incorrect, duplicate events if the sequence number is not unique).
+-callback persist_events(StreamId, Events) -> ok
     when StreamId :: stream_id(),
          Events :: [event()].
 %% @doc
@@ -66,51 +61,74 @@
 %%   - `{from, Sequence}`: Start at this sequence (default: 0).
 %%   - `{to, Sequence | infinity}`: End at this sequence (default: infinity).
 %%   - `{limit, Limit}`: Maximum number of events to retrieve (default: infinity).
-%% @param FoldFun A function `fun((EventRecord, Acc) -> NewAcc)` to process each event.
+%% @param FoldFun A function `fun((Event, AccIn) -> AccOut)` to process each event.
 %% @param InitialAcc The initial accumulator value (e.g., an empty state).
 %%
 %% @returns
 %% - `{ok, Acc}` where `Acc` is the result of folding all events.
-%% - `{error, Reason}` if retrieval fails (e.g., `stream_not_found`).
--callback retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc) ->
-                                      {ok, Acc} | {error, term()}
+-callback retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1
     when StreamId :: stream_id(),
          Options :: fold_events_opts(),
-         FoldFun :: fold_events_fun(),
-         InitialAcc :: Acc.
+         Fun :: fun((Event :: event(), AccIn) -> AccOut),
+         Acc0 :: term(),
+         Acc1 :: term(),
+         AccIn :: term(),
+         AccOut :: term().
 
--spec start(store()) -> {ok, initialized | already_initialized} | {error, term()}.
+-spec start(store()) -> ok.
 start(Module) ->
     Module:start().
 
--spec stop(store()) -> {ok} | {error, term()}.
+-spec stop(store()) -> ok.
 stop(Module) ->
     Module:stop().
 
 %% @doc
 %% Persists a event in the event store using the specified persistence module.
--spec persist_events(StoreModule :: store(),
-                     StreamId :: stream_id(),
-                     Events :: [event()]) ->
-                        ok | {error, term()}.
+-spec persist_events(StoreModule, StreamId, Events) -> ok
+    when StoreModule :: store(),
+         StreamId :: stream_id(),
+         Events :: [event()].
 persist_events(StoreModule, StreamId, Events) when is_list(Events) ->
+    _ = lists:foldl(fun(Event, Seen) ->
+                       case stream_id(Event) of
+                           StreamId ->
+                               Id = id(Event),
+                               case lists:member(Id, Seen) of
+                                   true ->
+                                       erlang:error(duplicate_event);
+                                   false ->
+                                       [Id | Seen]
+                               end;
+                           WrongStreamId ->
+                               erlang:error({badarg, WrongStreamId})
+                       end
+                    end,
+                    [],
+                    Events),
     StoreModule:persist_events(StreamId, Events).
 
 %% @doc
 %% Retrieves and folds events from the event store using the specified persistence module.
--spec retrieve_and_fold_events(store(),
-                               stream_id(),
-                               fold_events_opts(),
-                               fold_events_fun(),
-                               acc()) ->
-                                  {ok, acc()} | {error, term()}.
-retrieve_and_fold_events(StoreModule, StreamId, Options, Fun, InitialAcc) ->
-    StoreModule:retrieve_and_fold_events(StreamId, Options, Fun, InitialAcc).
+-spec retrieve_and_fold_events(StoreModule, StreamId, Options, Fun, Acc0) -> Acc1
+    when StoreModule :: store(),
+         StreamId :: stream_id(),
+         Options :: fold_events_opts(),
+         Fun :: fun((Event :: event(), AccIn) -> AccOut),
+         Acc0 :: term(),
+         Acc1 :: term(),
+         AccIn :: term(),
+         AccOut :: term().
+retrieve_and_fold_events(StoreModule, StreamId, Options, Fun, InitialResult) ->
+    StoreModule:retrieve_and_fold_events(StreamId, Options, Fun, InitialResult).
 
 %% @doc
 %% Retrieves events for a given stream using the specified store module and options.
--spec retrieve_events(store(), stream_id(), fold_events_opts()) ->
-                         {ok, [event()]} | {error, term()}.
+-spec retrieve_events(StoreModule, StreamId, Options) -> Result
+    when StoreModule :: store(),
+         StreamId :: stream_id(),
+         Options :: fold_events_opts(),
+         Result :: [event()].
 retrieve_events(StoreModule, StreamId, Options) ->
     retrieve_and_fold_events(StoreModule,
                              StreamId,
@@ -131,8 +149,6 @@ retrieve_events(StoreModule, StreamId, Options) ->
     [{from, non_neg_integer()} |
      {to, non_neg_integer() | infinity} |
      {limit, pos_integer() | infinity}].
--type fold_events_fun() :: fun((event(), acc()) -> acc()).
--type acc() :: any().
 -type store() :: module().
 
 %% @doc
