@@ -35,18 +35,13 @@ stop() ->
     when StreamId :: event_sourcing_store:stream_id(),
          Events :: [event_sourcing_store:event()].
 persist_events(_, Events) ->
-    InsertFun =
-        fun(Event) ->
-           Id = event_sourcing_store:id(Event),
-           Record =
-               #event_record{key = Id,
-                             stream_id = event_sourcing_store:stream_id(Event),
-                             sequence = event_sourcing_store:sequence(Event),
-                             event = Event},
-           ets:insert(?EVENT_TABLE_NAME, Record)
-        end,
-    lists:foreach(InsertFun, Events),
-    ok.
+    Records = lists:map(fun event_to_record/1, Events),
+    case ets:insert_new(?EVENT_TABLE_NAME, Records) of
+        true ->
+            ok;
+        false ->
+            erlang:error(duplicate_event)
+    end.
 
 -spec retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1
     when StreamId :: event_sourcing_store:stream_id(),
@@ -79,3 +74,9 @@ retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
                 end
         end,
     lists:foldl(FoldFun, InitialAcc, ResultEvents).
+
+event_to_record(Event) ->
+    #event_record{key = event_sourcing_store:id(Event),
+                  stream_id = event_sourcing_store:stream_id(Event),
+                  sequence = event_sourcing_store:sequence(Event),
+                  event = Event}.

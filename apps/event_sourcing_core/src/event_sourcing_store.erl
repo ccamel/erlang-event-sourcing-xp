@@ -91,21 +91,21 @@ stop(Module) ->
          Events :: [event()].
 persist_events(StoreModule, StreamId, Events) when is_list(Events) ->
     _ = lists:foldl(fun(Event, Seen) ->
-                   case stream_id(Event) of
-                       StreamId ->
-                           Id = id(Event),
-                           case lists:member(Id, Seen) of
-                               true ->
-                                   erlang:error(duplicate_event);
-                               false ->
-                                   [Id | Seen]
-                           end;
-                       WrongStreamId ->
-                           erlang:error({badarg, WrongStreamId})
-                   end
-                end,
-                [],
-                Events),
+                       case stream_id(Event) of
+                           StreamId ->
+                               Id = id(Event),
+                               case lists:member(Id, Seen) of
+                                   true ->
+                                       erlang:error(duplicate_event);
+                                   false ->
+                                       [Id | Seen]
+                               end;
+                           WrongStreamId ->
+                               erlang:error({badarg, WrongStreamId})
+                       end
+                    end,
+                    [],
+                    Events),
     StoreModule:persist_events(StreamId, Events).
 
 %% @doc
