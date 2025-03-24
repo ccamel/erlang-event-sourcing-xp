@@ -34,8 +34,7 @@ stop() ->
 -spec persist_events(StreamId, Events) -> ok
     when StreamId :: event_sourcing_store:stream_id(),
          Events :: [event_sourcing_store:event()].
-persist_events(StreamId, Events) ->
-    true = check_events(StreamId, Events, []),
+persist_events(_, Events) ->
     InsertFun =
         fun(Event) ->
            Id = event_sourcing_store:id(Event),
@@ -48,29 +47,6 @@ persist_events(StreamId, Events) ->
         end,
     lists:foreach(InsertFun, Events),
     ok.
-
-%% Helper to check that all events belong to the provided StreamId and that none
-%% have already been persisted.
-check_events(_StreamId, [], _Seen) ->
-    true;
-check_events(StreamId, [Event | Rest], Seen) ->
-    case event_sourcing_store:stream_id(Event) of
-        StreamId ->
-            Id = event_sourcing_store:id(Event),
-            case lists:member(Id, Seen) of
-                true ->
-                    erlang:error(duplicate_event);
-                false ->
-                    case ets:lookup(?EVENT_TABLE_NAME, Id) of
-                        [] ->
-                            check_events(StreamId, Rest, [Id | Seen]);
-                        [_Existing] ->
-                            erlang:error(duplicate_event)
-                    end
-            end;
-        WrongStreamID ->
-            erlang:error({badarg, WrongStreamID})
-    end.
 
 -spec retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1
     when StreamId :: event_sourcing_store:stream_id(),

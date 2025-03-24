@@ -41,7 +41,8 @@
 %% This callback appends events to the specified streams.
 %%
 %% @param StreamId An atom identifying the event stream (e.g., order-123).
-%% @param Events The list of events to append to the stream.
+%% @param Events The list of events to append to the stream. The events provided are unique and all
+%% belong to the same stream.
 %%
 %% Returns `ok` on success. May throw an exception if persistence fails (e.g., badarg if the
 %% stream ID is incorrect, duplicate events if the sequence number is not unique).
@@ -89,6 +90,22 @@ stop(Module) ->
          StreamId :: stream_id(),
          Events :: [event()].
 persist_events(StoreModule, StreamId, Events) when is_list(Events) ->
+    _ = lists:foldl(fun(Event, Seen) ->
+                   case stream_id(Event) of
+                       StreamId ->
+                           Id = id(Event),
+                           case lists:member(Id, Seen) of
+                               true ->
+                                   erlang:error(duplicate_event);
+                               false ->
+                                   [Id | Seen]
+                           end;
+                       WrongStreamId ->
+                           erlang:error({badarg, WrongStreamId})
+                   end
+                end,
+                [],
+                Events),
     StoreModule:persist_events(StreamId, Events).
 
 %% @doc

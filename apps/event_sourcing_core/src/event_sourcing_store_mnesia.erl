@@ -53,24 +53,18 @@ persist_events(StreamId, Events) ->
 persist_events_in_tx(_, []) ->
     ok;
 persist_events_in_tx(StreamId, [Event | Rest]) ->
-    EventStreamId = event_sourcing_store:stream_id(Event),
-    case EventStreamId of
-        StreamId ->
-            Id = event_sourcing_store:id(Event),
-            Record =
-                #event_record{key = Id,
-                              stream_id = event_sourcing_store:stream_id(Event),
-                              sequence = event_sourcing_store:sequence(Event),
-                              event = Event},
-            case mnesia:read(?EVENT_TABLE_NAME, Id, read) of
-                [_] ->
-                    mnesia:abort(duplicate_event);
-                _ ->
-                    ok = mnesia:write(?EVENT_TABLE_NAME, Record, write),
-                    persist_events_in_tx(StreamId, Rest)
-            end;
+    Id = event_sourcing_store:id(Event),
+    Record =
+        #event_record{key = Id,
+                      stream_id = event_sourcing_store:stream_id(Event),
+                      sequence = event_sourcing_store:sequence(Event),
+                      event = Event},
+    case mnesia:read(?EVENT_TABLE_NAME, Id, read) of
+        [_] ->
+            mnesia:abort(duplicate_event);
         _ ->
-            mnesia:abort({badarg, EventStreamId})
+            ok = mnesia:write(?EVENT_TABLE_NAME, Record, write),
+            persist_events_in_tx(StreamId, Rest)
     end.
 
 -spec retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1
