@@ -5,9 +5,9 @@
 -export([start_link/3, start_link/4, handle_info/2, init/1, handle_call/3, handle_cast/2,
          code_change/3, terminate/2]).
 
--export_type([command/0, aggregate_state/0, stream_id/0, state/0, sequence/0]).
+-export_type([command/0, aggregate_state/0, stream_id/0, state/0, sequence/0, timestamp/0]).
 
--define(SEQUENCE_START, 0).
+-define(SEQUENCE_ZERO, 0).
 -define(INACTIVITY_TIMEOUT, 5000).
 
 -type command() :: term().
@@ -15,6 +15,7 @@
 -type aggregate_state() :: term().
 -type stream_id() :: event_sourcing_store:stream_id().
 -type sequence() :: event_sourcing_store:sequence().
+-type timestamp() :: event_sourcing_store:timestamp().
 
 %% @doc
 %% This callback function is used to initialize the state of the aggregate.
@@ -46,13 +47,19 @@
 %% @param Id The unique identifier for the aggregate instance.
 %% @param Timeout The inactivity timeout in milliseconds before passivation.
 %% @return `{ok, Pid}` if successful, `{error, Reason}` otherwise.
--spec start_link(Aggregate :: module(),
-                 Store :: module(),
-                 Id :: stream_id(),
-                 Timeout :: timeout()) ->
-                    {ok, pid()} | {error, term()}.
-start_link(Aggregate, Store, Id, Timeout) ->
-    gen_server:start_link(?MODULE, {Aggregate, Store, Id, Timeout}, []).
+-spec start_link(Aggregate, Store, Id, Opts) -> {ok, Result} | {error, Reason}
+    when Aggregate :: module(),
+         Store :: module(),
+         Id :: stream_id(),
+         Opts ::
+             #{timeout => timeout(),
+               sequence_zero => fun(() -> sequence()),
+               sequence_next => fun((sequence()) -> sequence()),
+               now_fun => fun(() -> timestamp())},
+         Result :: pid(),
+         Reason :: term().
+start_link(Aggregate, Store, Id, Opts) ->
+    gen_server:start_link(?MODULE, {Aggregate, Store, Id, Opts}, []).
 
 %% @doc
 %% Starts a new aggregate process.
@@ -63,15 +70,18 @@ start_link(Aggregate, Store, Id, Timeout) ->
 -spec start_link(Aggregate :: module(), Store :: module(), Id :: stream_id()) ->
                     {ok, pid()} | {error, term()}.
 start_link(Aggregate, Store, Id) ->
-    start_link(Aggregate, Store, Id, ?INACTIVITY_TIMEOUT).
+    start_link(Aggregate, Store, Id, #{}).
 
 -record(state,
         {aggregate :: module(),
          store :: module(),
          id :: stream_id(),
          state :: aggregate_state(),
-         sequence = ?SEQUENCE_START :: non_neg_integer(),
+         sequence = ?SEQUENCE_ZERO :: non_neg_integer(),
          timeout = ?INACTIVITY_TIMEOUT :: timeout(),
+         sequence_zero :: fun(() -> sequence()),
+         sequence_next :: fun((sequence()) -> sequence()),
+         now_fun :: fun(() -> timestamp()),
          timer_ref = undefined :: reference()}).
 
 -opaque state() :: #state{}.
@@ -90,9 +100,18 @@ start_link(Aggregate, Store, Id) ->
 %% @return {ok, state()} on success,
 %%         Returns {stop, Reason} on failure.
 
--spec init({module(), module(), stream_id(), timeout()}) -> {ok, state()}.
-init({Aggregate, Store, Id, Timeout}) ->
+-spec init({module(),
+            module(),
+            stream_id(),
+            #{timeout => timeout(),
+              sequence_zero => fun(() -> sequence()),
+              sequence_next => fun((sequence()) -> sequence()),
+              now_fun => fun(() -> timestamp())}}) ->
+              {ok, state()}.
+init({Aggregate, Store, Id, Opts}) ->
     State0 = Aggregate:init(),
+    SequenceZero = maps:get(sequence_zero, Opts, fun() -> ?SEQUENCE_ZERO end),
+    SequenceNext = maps:get(sequence_next, Opts, fun(Sequence) -> Sequence + 1 end),
     {State1, Sequence1} =
         event_sourcing_store:retrieve_and_fold_events(Store,
                                                       Id,
@@ -103,7 +122,8 @@ init({Aggregate, Store, Id, Timeout}) ->
                                                               StateAcc),
                                                           event_sourcing_store:sequence(Event)}
                                                       end,
-                                                      {State0, ?SEQUENCE_START}),
+                                                      {State0, SequenceZero()}),
+    Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
     TimerRef = install_passivation(Timeout, undefined),
     {ok,
      #state{aggregate = Aggregate,
@@ -112,6 +132,9 @@ init({Aggregate, Store, Id, Timeout}) ->
             state = State1,
             sequence = Sequence1,
             timeout = Timeout,
+            sequence_zero = SequenceZero,
+            sequence_next = SequenceNext,
+            now_fun = maps:get(now_fun, Opts, fun() -> erlang:system_time() end),
             timer_ref = TimerRef}}.
 
 %% @doc
@@ -203,7 +226,8 @@ process_command(#state{aggregate = Aggregate,
                        store = Store,
                        id = Id,
                        state = State0,
-                       sequence = Sequence0},
+                       sequence = Sequence0,
+                       sequence_next = SequenceNext},
                 Command) ->
     CmdResult = Aggregate:handle_command(Command, State0),
     case CmdResult of
@@ -213,7 +237,7 @@ process_command(#state{aggregate = Aggregate,
             {Events, _} =
                 lists:foldl(fun(PayloadEvent, {Events, SequenceN}) ->
                                Now = erlang:system_time(millisecond),
-                               SequenceN1 = SequenceN + 1,
+                               SequenceN1 = SequenceNext(SequenceN),
                                EventType = Aggregate:event_type(PayloadEvent),
                                Event =
                                    event_sourcing_store:new_event(Id,
@@ -227,19 +251,23 @@ process_command(#state{aggregate = Aggregate,
                             {[], Sequence0},
                             PayloadEvents),
             ok = event_sourcing_store:persist_events(Store, Id, Events),
-            {State1, Sequence1} = apply_events(PayloadEvents, {Aggregate, State0, Sequence0}),
+            {State1, Sequence1} =
+                apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}),
             {ok, {State1, Sequence1}};
         {error, Reason} ->
             {error, Reason}
     end.
 
 -spec apply_events(Event :: [event_payload()],
-                   {Aggregate :: module(), State :: aggregate_state(), Sequence :: sequence()}) ->
+                   {Aggregate :: module(),
+                    State :: aggregate_state(),
+                    Sequence :: sequence(),
+                    SequenceNext :: fun((sequence()) -> sequence())}) ->
                       {State :: aggregate_state(), Sequence :: sequence()}.
-apply_events(Events, {Aggregate, State0, Sequence0}) ->
+apply_events(Events, {Aggregate, State0, Sequence0, SequenceNext}) ->
     lists:foldl(fun(Event, {StateN, SequenceN}) ->
                    StateN1 = Aggregate:apply_event(Event, StateN),
-                   SequenceN1 = SequenceN + 1,
+                   SequenceN1 = SequenceNext(SequenceN),
                    {StateN1, SequenceN1}
                 end,
                 {State0, Sequence0},
