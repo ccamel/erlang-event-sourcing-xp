@@ -9,12 +9,14 @@
 %% to interact with the store and access event record fields.
 -module(event_sourcing_store).
 
+-include_lib("event_sourcing_core.hrl").
+
 -export([start/1, stop/1, persist_events/3, retrieve_and_fold_events/5, retrieve_events/3,
          id/1, domain/1, type/1, stream_id/1, sequence/1, timestamp/1, tags/1, metadata/1,
          payload/1, new_event/8, new_event/6]).
 
--export_type([id/0, event/0, stream_id/0, payload/0, sequence/0, fold_events_opts/0,
-              domain/0, type/0, tags/0, metadata/0, timestamp/0, store/0]).
+-export_type([fold_events_opts/0, domain/0, event/0, event_id/0, event_payload/0,
+              event_type/0, metadata/0, sequence/0, stream_id/0, tags/0, timestamp/0]).
 
 %% @doc
 %% Starts the event store, performing any necessary initialization.
@@ -75,18 +77,18 @@
          AccIn :: term(),
          AccOut :: term().
 
--spec start(store()) -> ok.
+-spec start(module()) -> ok.
 start(Module) ->
     Module:start().
 
--spec stop(store()) -> ok.
+-spec stop(module()) -> ok.
 stop(Module) ->
     Module:stop().
 
 %% @doc
 %% Persists a event in the event store using the specified persistence module.
 -spec persist_events(StoreModule, StreamId, Events) -> ok
-    when StoreModule :: store(),
+    when StoreModule :: module(),
          StreamId :: stream_id(),
          Events :: [event()].
 persist_events(StoreModule, StreamId, Events) when is_list(Events) ->
@@ -111,7 +113,7 @@ persist_events(StoreModule, StreamId, Events) when is_list(Events) ->
 %% @doc
 %% Retrieves and folds events from the event store using the specified persistence module.
 -spec retrieve_and_fold_events(StoreModule, StreamId, Options, Fun, Acc0) -> Acc1
-    when StoreModule :: store(),
+    when StoreModule :: module(),
          StreamId :: stream_id(),
          Options :: fold_events_opts(),
          Fun :: fun((Event :: event(), AccIn) -> AccOut),
@@ -125,7 +127,7 @@ retrieve_and_fold_events(StoreModule, StreamId, Options, Fun, InitialResult) ->
 %% @doc
 %% Retrieves events for a given stream using the specified store module and options.
 -spec retrieve_events(StoreModule, StreamId, Options) -> Result
-    when StoreModule :: store(),
+    when StoreModule :: module(),
          StreamId :: stream_id(),
          Options :: fold_events_opts(),
          Result :: [event()].
@@ -136,50 +138,10 @@ retrieve_events(StoreModule, StreamId, Options) ->
                              fun(Event, Acc) -> Acc ++ [Event] end,
                              []).
 
--type id() :: {domain(), stream_id(), sequence()}.
--type stream_id() :: string().
--type domain() :: atom().
--type type() :: atom().
--type sequence() :: non_neg_integer().
--type tags() :: [string()].
--type timestamp() :: non_neg_integer().
--type metadata() :: #{string() => string()}.
--type payload() :: tuple().
 -type fold_events_opts() ::
     #{from => non_neg_integer(),
       to => non_neg_integer() | infinity,
       limit => pos_integer() | infinity}.
--type store() :: module().
-
-%% @doc
-%% Internal structure for events
--record(event,
-        {stream_id :: stream_id(),
-         domain :: domain(),
-         type :: type(),
-         sequence :: sequence(),
-         tags = [] :: tags(),
-         timestamp :: timestamp(),
-         metadata = #{} :: metadata(),
-         payload :: payload()}).
-
-%% @doc
-%% Represents a single persisted event in the event sourcing system.
-%%
-%% An event is an immutable record of a domain change, belonging to a specific stream.
-%% It includes metadata, a timestamp, and a payload with domain-specific data. This
-%% opaque type is used internally by the store and returned by `retrieve_and_fold_events/4`.
-%%
-%% Fields:
-%% - `stream_id`: Stream identifier (e.g., "user-001").
-%% - `domain` : Domain name (e.g., "user").
-%% - `type`: Event type (e.g., "user_registered").
-%% - `sequence`: Event sequence within the stream (e.g., 1).
-%% - `tags`: List of strings for categorization (e.g., ["auth", "signup"]).
-%% - `timestamp`: UTC datetime of occurrence (e.g., {{2025, 3, 16}, {12, 0, 0}}).
-%% - `metadata`: Key-value map of additional info (e.g., #{"user_agent" => "firefox"}).
-%% - `payload`: Domain-specific data as a tuple (e.g., `{user_registered, <<"john doe">>}`).
--opaque event() :: #event{}.
 
 %% @doc
 %% Creates a new event.
@@ -196,12 +158,12 @@ retrieve_events(StoreModule, StreamId, Options) ->
 %% @return The created event.
 -spec new_event(StreamId :: stream_id(),
                 Domain :: domain(),
-                Type :: type(),
-                Sequence :: sequence(),
+                Type :: event_type(),
+                Seq :: sequence(),
                 Tags :: tags(),
                 Timestamp :: timestamp(),
                 Metadata :: metadata(),
-                Payload :: payload()) ->
+                Payload :: event_payload()) ->
                    event().
 new_event(StreamId, Domain, Type, Sequence, Tags, Timestamp, Metadata, Payload) ->
     #event{stream_id = StreamId,
@@ -226,10 +188,10 @@ new_event(StreamId, Domain, Type, Sequence, Tags, Timestamp, Metadata, Payload) 
 %% @return The created event.
 -spec new_event(StreamId :: stream_id(),
                 Domain :: domain(),
-                Type :: type(),
+                Type :: event_type(),
                 Sequence :: sequence(),
                 Timestamp :: timestamp(),
-                Payload :: payload()) ->
+                Payload :: event_payload()) ->
                    event().
 new_event(StreamId, Domain, Type, Sequence, Timestamp, Payload) ->
     new_event(StreamId, Domain, Type, Sequence, [], Timestamp, #{}, Payload).
@@ -237,7 +199,7 @@ new_event(StreamId, Domain, Type, Sequence, Timestamp, Payload) ->
 %% @doc
 %% Returns the unique identifier of the event.
 %% The identifier is a string composed of the domain, the stream id and sequence number.
--spec id(Event :: event()) -> id().
+-spec id(Event :: event()) -> event_id().
 id(#event{domain = Domain,
           stream_id = StreamId,
           sequence = Sequence}) ->
@@ -251,7 +213,7 @@ domain(#event{domain = Domain}) ->
 
 %% @doc
 %% Returns the event type, representing the specific event that occurred.
--spec type(event()) -> type().
+-spec type(event()) -> event_type().
 type(#event{type = Type}) ->
     Type.
 
@@ -289,6 +251,6 @@ metadata(#event{metadata = Metadata}) ->
 
 %% @doc
 %% Retrieves the payload containing the domain-specific data of this event.
--spec payload(event()) -> payload().
+-spec payload(event()) -> event_payload().
 payload(#event{payload = Payload}) ->
     Payload.

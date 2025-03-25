@@ -1,5 +1,7 @@
 -module(event_sourcing_core_gen_aggregate).
 
+-include_lib("event_sourcing_core.hrl").
+
 -behaviour(gen_server).
 
 -export([start_link/3, start_link/4, handle_info/2, init/1, handle_call/3, handle_cast/2,
@@ -11,12 +13,7 @@
 -define(SEQUENCE_ZERO, 0).
 -define(INACTIVITY_TIMEOUT, 5000).
 
--type command() :: term().
--type event_payload() :: term().
 -type aggregate_state() :: term().
--type stream_id() :: event_sourcing_store:stream_id().
--type sequence() :: event_sourcing_store:sequence().
--type timestamp() :: event_sourcing_store:timestamp().
 
 %% @doc
 %% This callback function is used to initialize the state of the aggregate.
