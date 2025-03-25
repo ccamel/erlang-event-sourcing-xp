@@ -1,6 +1,6 @@
 # erlang-event-sourcing-xp
 
-> 🧪 Experimenting with Event Sourcing in Erlang
+> 🧪 Experimenting with Event Sourcing in Erlang using _pure functional_ principles, [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html)-based aggregates, and _pluggable_ Event Store backends.
 
 ## About
 
@@ -12,6 +12,14 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 [Event Sourcing]: https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing
 
 ## Architecture
+
+### Overview
+
+This project is structured around the core principles of Event Sourcing:
+
+- All changes are represented as immutable events.
+- Aggregates handle commands and apply events to evolve their state.
+- State is rehydrated by replaying historical events. Possible optimizations include snapshots and caching.
 
 ### Event store
 
@@ -48,6 +56,53 @@ While not yet implemented, the event store could be extended to:
 
 - [Mnesia](https://www.erlang.org/doc/apps/mnesia/mnesia.html)
 - [ETS](https://www.erlang.org/doc/apps/stdlib/ets.html)
+
+### Aggregate
+
+The _aggregate_ is implemented as a [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) that encapsulates _domain logic_ and delegates event persistence to a pluggable Event Store (e.g. [ETS](https://www.erlang.org/doc/apps/stdlib/ets.html) or [Mnesia](https://www.erlang.org/doc/apps/mnesia/mnesia.html)).
+
+The core idea is to separate concerns between domain behavior and infrastructure. To achieve this, the system is structured into three main components:
+• 🧩 **Domain Module** — a pure module that implements domain-specific logic via behaviour callbacks.
+• ⚙️ **`gen_aggregate`** — the glue that bridges domain logic and infrastructure (event sourcing logic, event persistence, etc.).
+• 🚦 [`gen_server`](https://www.erlang.org/doc/apps/stdlib/gen_server.html) — the OTP mechanism that provides lifecycle management and message orchestration.
+
+The `gen_aggregate` provides:
+
+- A [behaviour](https://www.erlang.org/doc/system/design_principles.html#behaviours) for domain-specific modules to implement.
+- A generic [OTP](https://www.erlang.org/doc/system/design_principles.html) [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) that:
+  - Rehydrates state from events on startup.
+  - Processes commands to produce events.
+  - Applies events to evolve internal state.
+  - Automatically passivates (shuts down) after inactivity.
+
+The following diagram shows how the system processes a command using the event-sourced aggregate infrastructure.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant GenAggregate as gen_aggregate
+    participant GenServer as gen_server
+    participant DomainModule as AggregateModule (callback)
+
+    User ->> GenAggregate: gen_aggregate:start_link(...)
+    activate GenAggregate
+    GenAggregate ->>+ GenServer: gen_server:start_link(Module, State)
+    GenServer ->> GenAggregate: gen_aggregate:init/1
+    deactivate GenAggregate
+
+    User ->> GenAggregate: gen_aggregate:dispatch(Pid, Command)
+    activate GenAggregate
+    GenAggregate ->> GenServer: gen_server:call(Pid, Command)
+    GenServer ->> GenAggregate: gen_aggregate:handle_call/3
+
+    GenAggregate ->> DomainModule: handle_command(Command, State)
+    GenAggregate ->> GenAggregate: persist_events(Store, Events)
+
+    loop For each Event
+        GenAggregate ->> DomainModule: apply_event(Event, State)
+    end
+    deactivate GenAggregate
+```
 
 ## Build
 

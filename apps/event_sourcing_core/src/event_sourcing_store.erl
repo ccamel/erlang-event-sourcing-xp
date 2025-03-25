@@ -142,13 +142,13 @@ retrieve_events(StoreModule, StreamId, Options) ->
 -type type() :: atom().
 -type sequence() :: non_neg_integer().
 -type tags() :: [string()].
--type timestamp() :: calendar:datetime().
+-type timestamp() :: non_neg_integer().
 -type metadata() :: #{string() => string()}.
 -type payload() :: tuple().
 -type fold_events_opts() ::
-    [{from, non_neg_integer()} |
-     {to, non_neg_integer() | infinity} |
-     {limit, pos_integer() | infinity}].
+    #{from => non_neg_integer(),
+      to => non_neg_integer() | infinity,
+      limit => pos_integer() | infinity}.
 -type store() :: module().
 
 %% @doc
@@ -179,15 +179,7 @@ retrieve_events(StoreModule, StreamId, Options) ->
 %% - `timestamp`: UTC datetime of occurrence (e.g., {{2025, 3, 16}, {12, 0, 0}}).
 %% - `metadata`: Key-value map of additional info (e.g., #{"user_agent" => "firefox"}).
 %% - `payload`: Domain-specific data as a tuple (e.g., `{user_registered, <<"john doe">>}`).
--opaque event() ::
-    #event{stream_id :: stream_id(),
-           domain :: domain(),
-           type :: type(),
-           sequence :: sequence(),
-           tags :: tags(),
-           timestamp :: timestamp(),
-           metadata :: metadata(),
-           payload :: payload()}.
+-opaque event() :: #event{}.
 
 %% @doc
 %% Creates a new event.
