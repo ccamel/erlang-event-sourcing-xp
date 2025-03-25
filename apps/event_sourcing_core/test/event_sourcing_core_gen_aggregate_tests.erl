@@ -19,51 +19,33 @@ teardown(_) ->
 
 %%%  Test cases
 
+-define(assertState(Pid, Id, ExpectedState, ExpectedSeq),
+        ?assertMatch({state,
+                      bank_account_aggregate,
+                      event_sourcing_store_ets,
+                      Id,
+                      ExpectedState,
+                      ExpectedSeq,
+                      _,
+                      _,
+                      _,
+                      _,
+                      _},
+                     sys:get_state(Pid))).
+
 aggregate_behaviour() ->
     {Id, Pid} = start_test_account(5000),
 
-    ?assertMatch({state,
-                  bank_account_aggregate,
-                  event_sourcing_store_ets,
-                  Id,
-                  #{balance := 0},
-                  0,
-                  _,
-                  _},
-                 sys:get_state(Pid)),
+    ?assertState(Pid, Id, #{balance := 0}, 0),
 
     ?assertEqual(ok, gen_server:call(Pid, {deposit, 100})),
-    ?assertMatch({state,
-                  bank_account_aggregate,
-                  event_sourcing_store_ets,
-                  Id,
-                  #{balance := 100},
-                  1,
-                  _,
-                  _},
-                 sys:get_state(Pid)),
+    ?assertState(Pid, Id, #{balance := 100}, 1),
 
     ?assertEqual(ok, gen_server:call(Pid, {deposit, 100})),
-    ?assertMatch({state,
-                  bank_account_aggregate,
-                  event_sourcing_store_ets,
-                  Id,
-                  #{balance := 200},
-                  2,
-                  _,
-                  _},
-                 sys:get_state(Pid)),
+    ?assertState(Pid, Id, #{balance := 200}, 2),
 
     ?assertEqual(ok, gen_server:call(Pid, {withdraw, 50})),
-    ?assertMatch({state,
-                  bank_account_aggregate,
-                  event_sourcing_store_ets,
-                  Id,
-                  #{balance := 150},
-                  3,
-                  _,
-                  _},
-                 sys:get_state(Pid)).
+    ?assertState(Pid, Id, #{balance := 150}, 3).
 
 aggregate_passivation() ->
     {Id, Pid} = start_test_account(1000),
@@ -71,15 +53,7 @@ aggregate_passivation() ->
     ?assertEqual(ok, gen_server:call(Pid, {deposit, 100})),
     ?assertEqual(ok, gen_server:call(Pid, {withdraw, 25})),
 
-    ?assertMatch({state,
-                  bank_account_aggregate,
-                  event_sourcing_store_ets,
-                  Id,
-                  #{balance := 75},
-                  2,
-                  _,
-                  _},
-                 sys:get_state(Pid)),
+    ?assertState(Pid, Id, #{balance := 75}, 2),
 
     % wait for the aggregate to be passivated
     timer:sleep(2000),
@@ -89,16 +63,7 @@ aggregate_passivation() ->
 
     % start a new aggregate with the same id and check hydration
     {_, Pid2} = start_test_account(5000),
-
-    ?assertMatch({state,
-                  bank_account_aggregate,
-                  event_sourcing_store_ets,
-                  Id,
-                  #{balance := 75},
-                  2,
-                  _,
-                  _},
-                 sys:get_state(Pid2)).
+    ?assertState(Pid2, Id, #{balance := 75}, 2).
 
 aggregate_invalid_command() ->
     {_, Pid} = start_test_account(5000),
@@ -112,5 +77,5 @@ start_test_account(Timeout) ->
         event_sourcing_core_gen_aggregate:start_link(bank_account_aggregate,
                                                      event_sourcing_store_ets,
                                                      Id,
-                                                     Timeout),
+                                                     #{timeout => Timeout}),
     {Id, Pid}.
