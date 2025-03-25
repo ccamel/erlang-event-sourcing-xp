@@ -76,10 +76,10 @@ persist_events_in_tx(StreamId, [Event | Rest]) ->
          AccIn :: term(),
          AccOut :: term().
 retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
-    when is_list(Options), is_function(FoldFun, 2) ->
-    From = proplists:get_value(from, Options, 0),
-    To = proplists:get_value(to, Options, infinity),
-    Limit = proplists:get_value(limit, Options, infinity),
+    when is_map(Options), is_function(FoldFun, 2) ->
+    From = maps:get(from, Options, 0),
+    To = maps:get(to, Options, infinity),
+    Limit = maps:get(limit, Options, infinity),
     FunQuery =
         fun() ->
            Q = qlc:q([E#event_record.event

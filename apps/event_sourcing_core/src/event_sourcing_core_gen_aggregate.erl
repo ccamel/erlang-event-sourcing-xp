@@ -5,7 +5,7 @@
 -export([start_link/3, start_link/4, handle_info/2, init/1, handle_call/3, handle_cast/2,
          code_change/3, terminate/2]).
 
--export_type([command/0, aggregate_state/0, stream_id/0, state/0]).
+-export_type([command/0, aggregate_state/0, stream_id/0, state/0, sequence/0]).
 
 -define(SEQUENCE_START, 0).
 -define(INACTIVITY_TIMEOUT, 5000).
@@ -96,7 +96,7 @@ init({Aggregate, Store, Id, Timeout}) ->
     {State1, Sequence1} =
         event_sourcing_store:retrieve_and_fold_events(Store,
                                                       Id,
-                                                      [],
+                                                      #{},
                                                       fun(Event, {StateAcc, _SeqAcc}) ->
                                                          {Aggregate:apply_event(
                                                               event_sourcing_store:payload(Event),

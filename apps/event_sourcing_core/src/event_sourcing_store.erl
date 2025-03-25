@@ -146,9 +146,9 @@ retrieve_events(StoreModule, StreamId, Options) ->
 -type metadata() :: #{string() => string()}.
 -type payload() :: tuple().
 -type fold_events_opts() ::
-    [{from, non_neg_integer()} |
-     {to, non_neg_integer() | infinity} |
-     {limit, pos_integer() | infinity}].
+    #{from => non_neg_integer(),
+      to => non_neg_integer() | infinity,
+      limit => pos_integer() | infinity}.
 -type store() :: module().
 
 %% @doc

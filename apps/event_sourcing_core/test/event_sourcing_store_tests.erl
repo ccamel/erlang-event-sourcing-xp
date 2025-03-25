@@ -46,7 +46,7 @@ persist_single_event(Store) ->
                                        {"John Doe"}),
 
     ?assertMatch(ok, event_sourcing_store:persist_events(Store, stream_A, [Event])),
-    ?assertMatch([Event], event_sourcing_store:retrieve_events(Store, stream_A, [])),
+    ?assertMatch([Event], event_sourcing_store:retrieve_events(Store, stream_A, #{})),
     ?assertEqual(ok, event_sourcing_store:stop(Store)).
 
 persist_2_streams_event(Store) ->
@@ -71,8 +71,8 @@ persist_2_streams_event(Store) ->
     ?assertMatch(ok, event_sourcing_store:persist_events(Store, stream_A, EventStreamA)),
     ?assertMatch(ok, event_sourcing_store:persist_events(Store, stream_B, EventStreamB)),
 
-    ?assertMatch(EventStreamA, event_sourcing_store:retrieve_events(Store, stream_A, [])),
-    ?assertMatch(EventStreamB, event_sourcing_store:retrieve_events(Store, stream_B, [])),
+    ?assertMatch(EventStreamA, event_sourcing_store:retrieve_events(Store, stream_A, #{})),
+    ?assertMatch(EventStreamB, event_sourcing_store:retrieve_events(Store, stream_B, #{})),
     ?assertEqual(ok, event_sourcing_store:stop(Store)).
 
 fetch_streams_event(Store) ->
@@ -89,26 +89,28 @@ fetch_streams_event(Store) ->
          event_sourcing_store:new_event(stream_A, user, user_deleted, 3, Timestamp, {})],
 
     ?assertMatch(ok, event_sourcing_store:persist_events(Store, stream_A, Events)),
-    ?assertMatch([], event_sourcing_store:retrieve_events(Store, stream_X, [])),
+    ?assertMatch([], event_sourcing_store:retrieve_events(Store, stream_X, #{})),
     ?assertMatch([],
-                 event_sourcing_store:retrieve_events(Store, stream_A, [{from, 0}, {to, 1}])),
+                 event_sourcing_store:retrieve_events(Store, stream_A, #{from => 0, to => 1})),
     ?assertMatch([],
-                 event_sourcing_store:retrieve_events(Store, stream_A, [{from, 1}, {to, 1}])),
+                 event_sourcing_store:retrieve_events(Store, stream_A, #{from => 1, to => 1})),
 
     Event1 = lists:nth(1, Events),
     Event2 = lists:nth(2, Events),
     Event3 = lists:nth(3, Events),
     ?assertMatch([Event1],
-                 event_sourcing_store:retrieve_events(Store, stream_A, [{from, 1}, {to, 2}])),
+                 event_sourcing_store:retrieve_events(Store, stream_A, #{from => 1, to => 2})),
     ?assertMatch([Event2],
-                 event_sourcing_store:retrieve_events(Store, stream_A, [{from, 2}, {to, 3}])),
+                 event_sourcing_store:retrieve_events(Store, stream_A, #{from => 2, to => 3})),
     ?assertMatch([Event2, Event3],
-                 event_sourcing_store:retrieve_events(Store, stream_A, [{from, 2}, {to, 4}])),
+                 event_sourcing_store:retrieve_events(Store, stream_A, #{from => 2, to => 4})),
     ?assertMatch([Event2],
                  event_sourcing_store:retrieve_events(Store,
                                                       stream_A,
-                                                      [{from, 2}, {to, 4}, {limit, 1}])),
-    ?assertMatch(Events, event_sourcing_store:retrieve_events(Store, stream_A, [])),
+                                                      #{from => 2,
+                                                        to => 4,
+                                                        limit => 1})),
+    ?assertMatch(Events, event_sourcing_store:retrieve_events(Store, stream_A, #{})),
     ?assertEqual(ok, Store:stop()).
 
 wrong_stream_id(Store) ->
@@ -125,8 +127,8 @@ wrong_stream_id(Store) ->
     ?assertException(error,
                      {badarg, stream_A},
                      event_sourcing_store:persist_events(Store, stream_B, [Event])),
-    ?assertMatch([], event_sourcing_store:retrieve_events(Store, stream_A, [])),
-    ?assertMatch([], event_sourcing_store:retrieve_events(Store, stream_B, [])),
+    ?assertMatch([], event_sourcing_store:retrieve_events(Store, stream_A, #{})),
+    ?assertMatch([], event_sourcing_store:retrieve_events(Store, stream_B, #{})),
     ?assertEqual(ok, Store:stop()).
 
 duplicate_event(Store) ->
@@ -144,7 +146,7 @@ duplicate_event(Store) ->
     ?assertException(error,
                      duplicate_event,
                      event_sourcing_store:persist_events(Store, stream_A, [Event])),
-    ?assertMatch([Event], event_sourcing_store:retrieve_events(Store, stream_A, [])),
+    ?assertMatch([Event], event_sourcing_store:retrieve_events(Store, stream_A, #{})),
     Events =
         [event_sourcing_store:new_event(stream_B,
                                         user,
@@ -163,5 +165,5 @@ duplicate_event(Store) ->
     ?assertException(error,
                      duplicate_event,
                      event_sourcing_store:persist_events(Store, stream_B, Events)),
-    ?assertMatch([], event_sourcing_store:retrieve_events(Store, stream_B, [])),
+    ?assertMatch([], event_sourcing_store:retrieve_events(Store, stream_B, #{})),
     ?assertEqual(ok, Store:stop()).
