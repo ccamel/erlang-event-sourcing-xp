@@ -13,30 +13,7 @@
 -define(SEQUENCE_ZERO, 0).
 -define(INACTIVITY_TIMEOUT, 5000).
 
--type aggregate_state() :: term().
-
-%% @doc
-%% This callback function is used to initialize the state of the aggregate.
-%% It should return the initial state of the aggregate.
--callback init() -> aggregate_state().
-%% @doc
-%% This callback function is used to get the event type from a command.
-%% It takes a command and returns the event type.
--callback event_type(event_payload()) -> atom().
-%% @doc
-%% This callback function is used to handle commands in the aggregate.
-%% It takes a command and the current state as arguments and returns either
-%% an ok tuple with a list of events or an error tuple with a term describing the error.
--callback handle_command(Command, State) -> {ok, [event_payload()]} | {error, term()}
-    when Command :: command(),
-         State :: aggregate_state().
-%% @doc
-%% This callback function is used to apply events to the aggregate state.
-%% It takes an event and the current state as arguments and returns the new state.
--callback apply_event(Event, State0) -> State1
-    when Event :: event_payload(),
-         State0 :: aggregate_state(),
-         State1 :: aggregate_state().
+-type aggregate_state() :: event_sourcing_core_aggregate_beh:aggregate_state().
 
 %% @doc Starts an aggregate process with a given timeout.
 %%
