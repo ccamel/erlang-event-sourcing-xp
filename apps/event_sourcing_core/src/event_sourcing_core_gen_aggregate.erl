@@ -3,9 +3,10 @@
 -behaviour(gen_server).
 
 -export([start_link/3, start_link/4, handle_info/2, init/1, handle_call/3, handle_cast/2,
-         code_change/3, terminate/2]).
+         code_change/3, terminate/2, dispatch/2]).
 
--export_type([command/0, aggregate_state/0, stream_id/0, state/0, sequence/0, timestamp/0]).
+-export_type([command/0, aggregate_state/0, stream_id/0, state/0, sequence/0,
+              timestamp/0]).
 
 -define(SEQUENCE_ZERO, 0).
 -define(INACTIVITY_TIMEOUT, 5000).
@@ -71,6 +72,14 @@ start_link(Aggregate, Store, Id, Opts) ->
                     {ok, pid()} | {error, term()}.
 start_link(Aggregate, Store, Id) ->
     start_link(Aggregate, Store, Id, #{}).
+
+-spec dispatch(Pid, Command) -> {ok, Result} | {error, Reason}
+    when Pid :: pid(),
+         Command :: command(),
+         Result :: term(),
+         Reason :: term().
+dispatch(Pid, Command) ->
+    gen_server:call(Pid, Command).
 
 -record(state,
         {aggregate :: module(),

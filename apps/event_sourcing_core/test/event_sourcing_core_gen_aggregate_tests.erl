@@ -38,20 +38,20 @@ aggregate_behaviour() ->
 
     ?assertState(Pid, Id, #{balance := 0}, 0),
 
-    ?assertEqual(ok, gen_server:call(Pid, {deposit, 100})),
+    ?assertEqual(ok, event_sourcing_core_gen_aggregate:dispatch(Pid, {deposit, 100})),
     ?assertState(Pid, Id, #{balance := 100}, 1),
 
-    ?assertEqual(ok, gen_server:call(Pid, {deposit, 100})),
+    ?assertEqual(ok, event_sourcing_core_gen_aggregate:dispatch(Pid, {deposit, 100})),
     ?assertState(Pid, Id, #{balance := 200}, 2),
 
-    ?assertEqual(ok, gen_server:call(Pid, {withdraw, 50})),
+    ?assertEqual(ok, event_sourcing_core_gen_aggregate:dispatch(Pid, {withdraw, 50})),
     ?assertState(Pid, Id, #{balance := 150}, 3).
 
 aggregate_passivation() ->
     {Id, Pid} = start_test_account(1000),
 
-    ?assertEqual(ok, gen_server:call(Pid, {deposit, 100})),
-    ?assertEqual(ok, gen_server:call(Pid, {withdraw, 25})),
+    ?assertEqual(ok, event_sourcing_core_gen_aggregate:dispatch(Pid, {deposit, 100})),
+    ?assertEqual(ok, event_sourcing_core_gen_aggregate:dispatch(Pid, {withdraw, 25})),
 
     ?assertState(Pid, Id, #{balance := 75}, 2),
 
@@ -68,8 +68,10 @@ aggregate_passivation() ->
 aggregate_invalid_command() ->
     {_, Pid} = start_test_account(5000),
 
-    ?assertEqual({error, invalid_command}, gen_server:call(Pid, invalid)),
-    ?assertEqual({error, insufficient_funds}, gen_server:call(Pid, {withdraw, 100})).
+    ?assertEqual({error, invalid_command},
+                 event_sourcing_core_gen_aggregate:dispatch(Pid, invalid)),
+    ?assertEqual({error, insufficient_funds},
+                 event_sourcing_core_gen_aggregate:dispatch(Pid, {withdraw, 100})).
 
 start_test_account(Timeout) ->
     Id = "bank-account-123",
