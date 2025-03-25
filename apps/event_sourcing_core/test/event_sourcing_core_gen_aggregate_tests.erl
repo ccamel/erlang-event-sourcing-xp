@@ -74,7 +74,7 @@ aggregate_invalid_command() ->
                  event_sourcing_core_gen_aggregate:dispatch(Pid, {withdraw, 100})).
 
 start_test_account(Timeout) ->
-    Id = "bank-account-123",
+    Id = <<"bank-account-123">>,
     {ok, Pid} =
         event_sourcing_core_gen_aggregate:start_link(bank_account_aggregate,
                                                      event_sourcing_store_ets,
