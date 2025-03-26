@@ -62,11 +62,12 @@ While not yet implemented, the event store could be extended to:
 The _aggregate_ is implemented as a [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) that encapsulates _domain logic_ and delegates event persistence to a pluggable Event Store (e.g. [ETS](https://www.erlang.org/doc/apps/stdlib/ets.html) or [Mnesia](https://www.erlang.org/doc/apps/mnesia/mnesia.html)).
 
 The core idea is to separate concerns between domain behavior and infrastructure. To achieve this, the system is structured into three main components:
-• 🧩 **Domain Module** — a pure module that implements domain-specific logic via behaviour callbacks.
-• ⚙️ **`gen_aggregate`** — the glue that bridges domain logic and infrastructure (event sourcing logic, event persistence, etc.).
-• 🚦 [`gen_server`](https://www.erlang.org/doc/apps/stdlib/gen_server.html) — the OTP mechanism that provides lifecycle management and message orchestration.
 
-The `gen_aggregate` provides:
+- 🧩 **Domain Module** — a pure module that implements domain-specific logic via _behaviour_ callbacks.
+- ⚙️ **`aggregate`** — the glue that bridges domain logic and infrastructure (event sourcing logic, event persistence, etc.).
+- 🚦 [`gen_server`](https://www.erlang.org/doc/apps/stdlib/gen_server.html) — the OTP mechanism that provides lifecycle management and message orchestration.
+
+The `aggregate` provides:
 
 - A [behaviour](https://www.erlang.org/doc/system/design_principles.html#behaviours) for domain-specific modules to implement.
 - A generic [OTP](https://www.erlang.org/doc/system/design_principles.html) [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) that:
@@ -80,7 +81,7 @@ The following diagram shows how the system processes a command using the event-s
 ```mermaid
 sequenceDiagram
     actor User
-    participant GenAggregate as gen_aggregate
+    participant GenAggregate as aggregate
     participant GenServer as gen_server
     participant DomainModule as AggregateModule (callback)
 
@@ -102,6 +103,25 @@ sequenceDiagram
         GenAggregate ->> DomainModule: apply_event(Event, State)
     end
     deactivate GenAggregate
+```
+
+### File Structure
+
+```plaintext
+apps/event_sourcing_core
+├── include
+│   └── event_sourcing_core.hrl                     % Shared types and macros
+├── src
+│   ├── event_sourcing_core.app.src                 % Application definition
+│   ├── event_sourcing_core_aggregate.erl           % Aggregate process (gen_server)
+│   ├── event_sourcing_core_aggregate_behaviour.erl % Aggregate behaviour (domain contract)
+│   ├── event_sourcing_core_store.erl               % Event store behaviour
+│   ├── event_sourcing_core_store_ets.erl           % ETS-backed store implementation
+│   └── event_sourcing_core_store_mnesia.erl        % Mnesia-backed store implementation
+└── test
+    ├── bank_account_aggregate.erl                  % Sample domain aggregate
+    ├── event_sourcing_core_aggregate_tests.erl     % Aggregate process tests
+    └── event_sourcing_core_store_tests.erl         % Store behaviour tests
 ```
 
 ## Build

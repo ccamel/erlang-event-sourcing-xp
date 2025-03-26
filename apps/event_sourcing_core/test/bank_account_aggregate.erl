@@ -1,6 +1,6 @@
 -module(bank_account_aggregate).
 
--behaviour(event_sourcing_core_gen_aggregate).
+-behaviour(event_sourcing_core_aggregate_behaviour).
 
 %% Callbacks implementation
 

@@ -1,16 +1,16 @@
--module(event_sourcing_store_mnesia).
+-module(event_sourcing_core_store_mnesia).
 
--behaviour(event_sourcing_store).
+-behaviour(event_sourcing_core_store).
 
 -include_lib("stdlib/include/qlc.hrl").
+-include_lib("event_sourcing_core.hrl").
 
 -export([start/0, stop/0, retrieve_and_fold_events/4, persist_events/2]).
 
+-export_type([event/0, stream_id/0]).
+
 -record(event_record,
-        {key :: event_sourcing_store:id(),
-         stream_id :: event_sourcing_store:stream_id(),
-         sequence :: event_sourcing_store:sequence(),
-         event :: event_sourcing_store:event()}).
+        {key :: event_id(), stream_id :: stream_id(), sequence :: sequence(), event :: event()}).
 
 %% @doc The name of the table that will store events.
 -define(EVENT_TABLE_NAME, events).
@@ -40,8 +40,8 @@ stop() ->
     ok.
 
 -spec persist_events(StreamId, Events) -> ok
-    when StreamId :: event_sourcing_store:stream_id(),
-         Events :: [event_sourcing_store:event()].
+    when StreamId :: stream_id(),
+         Events :: [event()].
 persist_events(StreamId, Events) ->
     case mnesia:transaction(fun() -> persist_events_in_tx(StreamId, Events) end) of
         {atomic, _Result} ->
@@ -53,11 +53,11 @@ persist_events(StreamId, Events) ->
 persist_events_in_tx(_, []) ->
     ok;
 persist_events_in_tx(StreamId, [Event | Rest]) ->
-    Id = event_sourcing_store:id(Event),
+    Id = event_sourcing_core_store:id(Event),
     Record =
         #event_record{key = Id,
-                      stream_id = event_sourcing_store:stream_id(Event),
-                      sequence = event_sourcing_store:sequence(Event),
+                      stream_id = event_sourcing_core_store:stream_id(Event),
+                      sequence = event_sourcing_core_store:sequence(Event),
                       event = Event},
     case mnesia:read(?EVENT_TABLE_NAME, Id, read) of
         [_] ->
@@ -68,9 +68,9 @@ persist_events_in_tx(StreamId, [Event | Rest]) ->
     end.
 
 -spec retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1
-    when StreamId :: event_sourcing_store:stream_id(),
-         Options :: event_sourcing_store:fold_events_opts(),
-         Fun :: fun((Event :: event_sourcing_store:event(), AccIn) -> AccOut),
+    when StreamId :: stream_id(),
+         Options :: event_sourcing_core_store:fold_events_opts(),
+         Fun :: fun((Event :: event(), AccIn) -> AccOut),
          Acc0 :: term(),
          Acc1 :: term(),
          AccIn :: term(),

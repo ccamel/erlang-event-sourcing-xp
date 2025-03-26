@@ -1,4 +1,6 @@
--module(event_sourcing_core_gen_aggregate).
+-module(event_sourcing_core_aggregate).
+
+-include_lib("event_sourcing_core.hrl").
 
 -behaviour(gen_server).
 
@@ -11,35 +13,7 @@
 -define(SEQUENCE_ZERO, 0).
 -define(INACTIVITY_TIMEOUT, 5000).
 
--type command() :: term().
--type event_payload() :: term().
--type aggregate_state() :: term().
--type stream_id() :: event_sourcing_store:stream_id().
--type sequence() :: event_sourcing_store:sequence().
--type timestamp() :: event_sourcing_store:timestamp().
-
-%% @doc
-%% This callback function is used to initialize the state of the aggregate.
-%% It should return the initial state of the aggregate.
--callback init() -> aggregate_state().
-%% @doc
-%% This callback function is used to get the event type from a command.
-%% It takes a command and returns the event type.
--callback event_type(event_payload()) -> atom().
-%% @doc
-%% This callback function is used to handle commands in the aggregate.
-%% It takes a command and the current state as arguments and returns either
-%% an ok tuple with a list of events or an error tuple with a term describing the error.
--callback handle_command(Command, State) -> {ok, [event_payload()]} | {error, term()}
-    when Command :: command(),
-         State :: aggregate_state().
-%% @doc
-%% This callback function is used to apply events to the aggregate state.
-%% It takes an event and the current state as arguments and returns the new state.
--callback apply_event(Event, State0) -> State1
-    when Event :: event_payload(),
-         State0 :: aggregate_state(),
-         State1 :: aggregate_state().
+-type aggregate_state() :: event_sourcing_core_aggregate_behaviour:aggregate_state().
 
 %% @doc Starts an aggregate process with a given timeout.
 %%
@@ -121,17 +95,18 @@ init({Aggregate, Store, Id, Opts}) ->
     State0 = Aggregate:init(),
     SequenceZero = maps:get(sequence_zero, Opts, fun() -> ?SEQUENCE_ZERO end),
     SequenceNext = maps:get(sequence_next, Opts, fun(Sequence) -> Sequence + 1 end),
+    FoldFun =
+        fun(Event, {StateAcc, _SeqAcc}) ->
+           {Aggregate:apply_event(
+                event_sourcing_core_store:payload(Event), StateAcc),
+            event_sourcing_core_store:sequence(Event)}
+        end,
     {State1, Sequence1} =
-        event_sourcing_store:retrieve_and_fold_events(Store,
-                                                      Id,
-                                                      #{},
-                                                      fun(Event, {StateAcc, _SeqAcc}) ->
-                                                         {Aggregate:apply_event(
-                                                              event_sourcing_store:payload(Event),
-                                                              StateAcc),
-                                                          event_sourcing_store:sequence(Event)}
-                                                      end,
-                                                      {State0, SequenceZero()}),
+        event_sourcing_core_store:retrieve_and_fold_events(Store,
+                                                           Id,
+                                                           #{},
+                                                           FoldFun,
+                                                           {State0, SequenceZero()}),
     Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
     TimerRef = install_passivation(Timeout, undefined),
     {ok,
@@ -249,17 +224,17 @@ process_command(#state{aggregate = Aggregate,
                                SequenceN1 = SequenceNext(SequenceN),
                                EventType = Aggregate:event_type(PayloadEvent),
                                Event =
-                                   event_sourcing_store:new_event(Id,
-                                                                  Aggregate,
-                                                                  EventType,
-                                                                  SequenceN1,
-                                                                  Now,
-                                                                  PayloadEvent),
+                                   event_sourcing_core_store:new_event(Id,
+                                                                       Aggregate,
+                                                                       EventType,
+                                                                       SequenceN1,
+                                                                       Now,
+                                                                       PayloadEvent),
                                {[Event | Events], SequenceN1}
                             end,
                             {[], Sequence0},
                             PayloadEvents),
-            ok = event_sourcing_store:persist_events(Store, Id, Events),
+            ok = event_sourcing_core_store:persist_events(Store, Id, Events),
             {State1, Sequence1} =
                 apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}),
             {ok, {State1, Sequence1}};
