@@ -95,16 +95,17 @@ init({Aggregate, Store, Id, Opts}) ->
     State0 = Aggregate:init(),
     SequenceZero = maps:get(sequence_zero, Opts, fun() -> ?SEQUENCE_ZERO end),
     SequenceNext = maps:get(sequence_next, Opts, fun(Sequence) -> Sequence + 1 end),
+    FoldFun =
+        fun(Event, {StateAcc, _SeqAcc}) ->
+           {Aggregate:apply_event(
+                event_sourcing_core_store:payload(Event), StateAcc),
+            event_sourcing_core_store:sequence(Event)}
+        end,
     {State1, Sequence1} =
         event_sourcing_core_store:retrieve_and_fold_events(Store,
                                                            Id,
                                                            #{},
-                                                           fun(Event, {StateAcc, _SeqAcc}) ->
-                                                              {Aggregate:apply_event(
-                                                                   event_sourcing_core_store:payload(Event),
-                                                                   StateAcc),
-                                                               event_sourcing_core_store:sequence(Event)}
-                                                           end,
+                                                           FoldFun,
                                                            {State0, SequenceZero()}),
     Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
     TimerRef = install_passivation(Timeout, undefined),
