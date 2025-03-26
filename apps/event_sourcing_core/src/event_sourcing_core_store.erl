@@ -7,7 +7,7 @@
 %% Implementing modules (e.g., an in-memory store or database-backed store) must
 %% provide the callbacks defined here. The module also exports utility functions
 %% to interact with the store and access event record fields.
--module(event_sourcing_store).
+-module(event_sourcing_core_store).
 
 -include_lib("event_sourcing_core.hrl").
 

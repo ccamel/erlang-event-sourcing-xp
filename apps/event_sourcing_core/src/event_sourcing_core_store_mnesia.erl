@@ -1,6 +1,6 @@
--module(event_sourcing_store_mnesia).
+-module(event_sourcing_core_store_mnesia).
 
--behaviour(event_sourcing_store).
+-behaviour(event_sourcing_core_store).
 
 -include_lib("stdlib/include/qlc.hrl").
 -include_lib("event_sourcing_core.hrl").
@@ -53,11 +53,11 @@ persist_events(StreamId, Events) ->
 persist_events_in_tx(_, []) ->
     ok;
 persist_events_in_tx(StreamId, [Event | Rest]) ->
-    Id = event_sourcing_store:id(Event),
+    Id = event_sourcing_core_store:id(Event),
     Record =
         #event_record{key = Id,
-                      stream_id = event_sourcing_store:stream_id(Event),
-                      sequence = event_sourcing_store:sequence(Event),
+                      stream_id = event_sourcing_core_store:stream_id(Event),
+                      sequence = event_sourcing_core_store:sequence(Event),
                       event = Event},
     case mnesia:read(?EVENT_TABLE_NAME, Id, read) of
         [_] ->
@@ -69,7 +69,7 @@ persist_events_in_tx(StreamId, [Event | Rest]) ->
 
 -spec retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1
     when StreamId :: stream_id(),
-         Options :: event_sourcing_store:fold_events_opts(),
+         Options :: event_sourcing_core_store:fold_events_opts(),
          Fun :: fun((Event :: event(), AccIn) -> AccOut),
          Acc0 :: term(),
          Acc1 :: term(),

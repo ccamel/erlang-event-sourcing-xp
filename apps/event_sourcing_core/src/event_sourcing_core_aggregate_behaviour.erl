@@ -11,7 +11,7 @@
 %% - Handling commands and returning domain events (`handle_command/2`)
 %% - Applying events to evolve state (`apply_event/2`)
 %% - Identifying the event type for a payload (`event_type/1`)
--module(event_sourcing_core_aggregate_beh).
+-module(event_sourcing_core_aggregate_behaviour).
 
 -include_lib("event_sourcing_core.hrl").
 

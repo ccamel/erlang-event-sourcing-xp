@@ -1,4 +1,4 @@
--module(event_sourcing_core_gen_aggregate).
+-module(event_sourcing_core_aggregate).
 
 -include_lib("event_sourcing_core.hrl").
 
@@ -13,7 +13,7 @@
 -define(SEQUENCE_ZERO, 0).
 -define(INACTIVITY_TIMEOUT, 5000).
 
--type aggregate_state() :: event_sourcing_core_aggregate_beh:aggregate_state().
+-type aggregate_state() :: event_sourcing_core_aggregate_behaviour:aggregate_state().
 
 %% @doc Starts an aggregate process with a given timeout.
 %%
@@ -96,16 +96,16 @@ init({Aggregate, Store, Id, Opts}) ->
     SequenceZero = maps:get(sequence_zero, Opts, fun() -> ?SEQUENCE_ZERO end),
     SequenceNext = maps:get(sequence_next, Opts, fun(Sequence) -> Sequence + 1 end),
     {State1, Sequence1} =
-        event_sourcing_store:retrieve_and_fold_events(Store,
-                                                      Id,
-                                                      #{},
-                                                      fun(Event, {StateAcc, _SeqAcc}) ->
-                                                         {Aggregate:apply_event(
-                                                              event_sourcing_store:payload(Event),
-                                                              StateAcc),
-                                                          event_sourcing_store:sequence(Event)}
-                                                      end,
-                                                      {State0, SequenceZero()}),
+        event_sourcing_core_store:retrieve_and_fold_events(Store,
+                                                           Id,
+                                                           #{},
+                                                           fun(Event, {StateAcc, _SeqAcc}) ->
+                                                              {Aggregate:apply_event(
+                                                                   event_sourcing_core_store:payload(Event),
+                                                                   StateAcc),
+                                                               event_sourcing_core_store:sequence(Event)}
+                                                           end,
+                                                           {State0, SequenceZero()}),
     Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
     TimerRef = install_passivation(Timeout, undefined),
     {ok,
@@ -223,17 +223,17 @@ process_command(#state{aggregate = Aggregate,
                                SequenceN1 = SequenceNext(SequenceN),
                                EventType = Aggregate:event_type(PayloadEvent),
                                Event =
-                                   event_sourcing_store:new_event(Id,
-                                                                  Aggregate,
-                                                                  EventType,
-                                                                  SequenceN1,
-                                                                  Now,
-                                                                  PayloadEvent),
+                                   event_sourcing_core_store:new_event(Id,
+                                                                       Aggregate,
+                                                                       EventType,
+                                                                       SequenceN1,
+                                                                       Now,
+                                                                       PayloadEvent),
                                {[Event | Events], SequenceN1}
                             end,
                             {[], Sequence0},
                             PayloadEvents),
-            ok = event_sourcing_store:persist_events(Store, Id, Events),
+            ok = event_sourcing_core_store:persist_events(Store, Id, Events),
             {State1, Sequence1} =
                 apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}),
             {ok, {State1, Sequence1}};

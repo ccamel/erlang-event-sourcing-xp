@@ -1,8 +1,7 @@
--module(event_sourcing_store_ets).
+-module(event_sourcing_core_store_ets).
 
--behaviour(event_sourcing_store).
+-behaviour(event_sourcing_core_store).
 
--include_lib("stdlib/include/qlc.hrl").
 -include_lib("event_sourcing_core.hrl").
 
 -export([start/0, stop/0, retrieve_and_fold_events/4, persist_events/2]).
@@ -45,7 +44,7 @@ persist_events(_, Events) ->
 
 -spec retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1
     when StreamId :: stream_id(),
-         Options :: event_sourcing_store:fold_events_opts(),
+         Options :: event_sourcing_core_store:fold_events_opts(),
          Fun :: fun((Event :: event(), AccIn) -> AccOut),
          Acc0 :: term(),
          Acc1 :: term(),
@@ -76,7 +75,7 @@ retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
     lists:foldl(FoldFun, InitialAcc, ResultEvents).
 
 event_to_record(Event) ->
-    #event_record{key = event_sourcing_store:id(Event),
-                  stream_id = event_sourcing_store:stream_id(Event),
-                  sequence = event_sourcing_store:sequence(Event),
+    #event_record{key = event_sourcing_core_store:id(Event),
+                  stream_id = event_sourcing_core_store:stream_id(Event),
+                  sequence = event_sourcing_core_store:sequence(Event),
                   event = Event}.
