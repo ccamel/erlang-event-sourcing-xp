@@ -105,7 +105,30 @@ sequenceDiagram
     deactivate GenAggregate
 ```
 
-### File Structure
+#### Passivation
+
+Each aggregate instance (a `gen_server`) is automatically passivated — i.e., stopped — after a period of inactivity.
+
+This helps:
+
+- Free up memory in long-lived systems
+- Keep the number of live processes bounded
+- Rehydrate state on demand from the event store
+
+Passivation is configured via a `timeout` value when the aggregate is started (defaults to 5000 ms):
+
+```erlang
+event_sourcing_core_aggregate:start_link(Module, Store, Id, #{timeout => 10000}).
+```
+
+When no messages are received within the timeout window:
+
+- A passivate message is sent to the process.
+- The aggregate process exits normally (`stop`).
+- Its state is discarded.
+- Future commands will cause the manager to rehydrate it from persisted events.
+
+### Project organization
 
 ```plaintext
 apps/event_sourcing_core
