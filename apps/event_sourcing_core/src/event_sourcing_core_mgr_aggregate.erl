@@ -1,11 +1,12 @@
-%% @doc
-%% This module implements a `gen_server` that manages event-sourcing aggregates.
-%%
-%% It acts as a router and supervisor for aggregate processes, dispatching commands
-%% to the appropriate aggregate instance based on a stream ID. It ensures that each
-%% stream ID maps to a single aggregate process, starting new ones as needed and
-%% monitoring them for crashes.
 -module(event_sourcing_core_mgr_aggregate).
+-moduledoc """
+This module implements a `gen_server` that manages event-sourcing aggregates.
+
+It acts as a router and supervisor for aggregate processes, dispatching commands
+to the appropriate aggregate instance based on a stream ID. It ensures that each
+stream ID maps to a single aggregate process, starting new ones as needed and
+monitoring them for crashes.
+""".
 
 -behaviour(gen_server).
 
@@ -29,19 +30,20 @@
 
 -opaque state() :: #state{}.
 
-%% @doc
-%% Starts the aggregate manager with custom options.
-%%
-%% @param Aggregate The module implementing the aggregate logic.
-%% @param Store The module implementing the event store.
-%% @param Router The module extracting routing info from commands.
-%% @param Opts Configuration options:
-%%   - `timeout`: Timeout for operations (default: `infinity`).
-%%   - `sequence_zero`: Function to initialize sequence (default: returns 0).
-%%   - `sequence_next`: Function to increment sequence (default: adds 1).
-%%   - `now_fun`: Function to get current timestamp (default: system time).
-%% @returns `{ok, Pid}` on success, or an error tuple if the server fails to start.
+-doc """
+Starts the aggregate manager with custom options.
 
+- Aggregate is he module implementing the aggregate logic.
+- Store is the module implementing the event store.
+- Router is the module extracting routing info from commands.
+- Opts is the configuration options:
+  - `timeout`: Timeout for operations (default: `infinity`).
+  - `sequence_zero`: Function to initialize sequence (default: returns 0).
+  - `sequence_next`: Function to increment sequence (default: adds 1).
+  - `now_fun`: Function to get current timestamp (default: system time).
+
+Function returns `{ok, Pid}` on success, or an error tuple if the server fails to start.
+""".
 -spec start_link(Aggregate, Store, Router, Opts) -> gen_server:start_ret()
     when Aggregate :: module(),
          Store :: module(),
@@ -54,14 +56,16 @@
 start_link(Aggregate, Store, Router, Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, {Aggregate, Store, Router, Opts}, []).
 
-%% @doc
-%% Starts the aggregate manager with the given aggregate, store, and router modules,
-%% using default options.
-%%
-%% @param Aggregate The module implementing the aggregate logic.
-%% @param Store The module implementing the event store.
-%% @param Router The module extracting routing info from commands.
-%% @returns `{ok, Pid}` on success, or an error tuple if the server fails to start.
+-doc """
+Starts the aggregate manager with the given aggregate, store, and router modules,
+using default options.
+
+- Aggregate is the module implementing the aggregate logic.
+- Store is the module implementing the event store.
+- Router is the module extracting routing info from commands.
+
+Function returns `{ok, Pid}` on success, or an error tuple if the server fails to start.
+""".
 -spec start_link(Aggregate, Store, Router) -> gen_server:start_ret()
     when Aggregate :: module(),
          Store :: module(),
@@ -69,24 +73,28 @@ start_link(Aggregate, Store, Router, Opts) ->
 start_link(Aggregate, Store, Router) ->
     start_link(Aggregate, Store, Router, #{}).
 
-%% @doc
-%% Stops the aggregate manager.
-%%
-%% @param ServerRef Reference to the gen_server (e.g., pid or name).
-%% @returns `ok` on success; may throw an exception if the server is unreachable.
+-doc """
+Stops the aggregate manager.
+
+- ServerRef is a Reference to the gen_server (e.g., pid or name).
+
+Function returns `ok` on success; may throw an exception if the server is unreachable.
+""".
 -spec stop(ServerRef) -> ok when ServerRef :: gen_server:server_ref().
 stop(ServerRef) ->
     gen_server:stop(ServerRef).
 
-%% @doc
-%% Dispatches a command to the appropriate aggregate instance.
-%%
-%% Routes the command via the manager to the aggregate process for the stream ID
-%% extracted by the router module.
-%%
-%% @param Pid The pid of the manager process.
-%% @param Command The command to dispatch.
-%% @returns `{ok, Result}` on success, or `{error, Reason}` if routing or execution fails.
+-doc """
+Dispatches a command to the appropriate aggregate instance.
+
+Routes the command via the manager to the aggregate process for the stream ID
+extracted by the router module.
+
+- Pid is the pid of the manager process.
+- Command is the command to dispatch.
+
+Function returns `{ok, Result}` on success, or `{error, Reason}` if routing or execution fails.
+""".
 -spec dispatch(Pid, Command) -> {ok, Result} | {error, Reason}
     when Pid :: pid(),
          Command :: command(),
@@ -95,11 +103,13 @@ stop(ServerRef) ->
 dispatch(Pid, Command) ->
     gen_server:call(Pid, Command).
 
-%% @doc
-%% Initializes the aggregate manager state.
-%%
-%% @param Args Tuple containing the aggregate, store, router modules, and options.
-%% @returns `{ok, State}` with an initialized state record.
+-doc """
+Initializes the aggregate manager state.
+
+- Args is the tuple containing the aggregate, store, router modules, and options.
+
+Function returns `{ok, State}` with an initialized state record.
+""".
 -spec init({Aggregate, Store, Router, Opts}) -> {ok, State}
     when Aggregate :: module(),
          Store :: module(),
@@ -146,13 +156,15 @@ handle_cast(_Msg, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-%% @doc
-%% Handles process monitoring messages.
-%%
-%% Removes the pid of a downed aggregate from the state’s `pids` map.
-%%
-%% @param Info The `'DOWN'` message from a monitored process.
-%% @returns `{noreply, State}` with updated state.
+-doc """
+Handles process monitoring messages.
+
+Removes the pid of a downed aggregate from the state's `pids` map.
+
+- Info represents the `'DOWN'` message from a monitored process.
+
+Function returns `{noreply, State}` with updated state.
+""".
 -spec handle_info(Info, State) -> {noreply, State}
     when Info :: {'DOWN', _Ref, process, Pid, _Reason},
          State :: state(),
@@ -169,12 +181,13 @@ handle_info({'DOWN', _Ref, process, Pid, _Reason}, #state{pids = Pids} = State) 
 handle_info(_Any, State) ->
     {noreply, State}.
 
-%% @doc
-%% Ensures an aggregate process exists for the stream ID and dispatches the command.
-%%
-%% Starts a new aggregate if none exists, then forwards the command.
-%%
-%% @returns `{reply, {ok, Result}, State}` or `{reply, {error, Reason}, State}`.
+-doc """
+Ensures an aggregate process exists for the stream ID and dispatches the command.
+
+Starts a new aggregate if none exists, then forwards the command.
+
+Function returns `{reply, {ok, Result}, State}` or `{reply, {error, Reason}, State}`.
+""".
 -spec ensure_and_dispatch(Aggregate, Id, Command, State) -> {reply, Result, State}
     when Aggregate :: module(),
          Id :: stream_id(),
@@ -203,10 +216,11 @@ ensure_and_dispatch(Aggregate,
             {reply, Result, State}
     end.
 
-%% @doc
-%% Forwards a command to an aggregate process.
-%%
-%% @returns The result of the aggregate’s dispatch function.
+-doc """
+Forwards a command to an aggregate process.
+
+Function returns The result of the aggregate's dispatch function.
+""".
 -spec forward(Pid, Command) -> {ok, Result} | {error, Reason}
     when Pid :: pid(),
          Command :: command(),
@@ -215,12 +229,13 @@ ensure_and_dispatch(Aggregate,
 forward(Pid, Command) ->
     event_sourcing_core_aggregate:dispatch(Pid, Command).
 
-%% @doc
-%% Starts an aggregate process for a given stream ID.
-%%
-%% Monitors the new process and returns its pid.
-%%
-%% @returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
+-doc """
+Starts an aggregate process for a given stream ID.
+
+Monitors the new process and returns its pid.
+
+Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
+""".
 -spec start_aggregate(Aggregate, Store, Id, Opts) -> {ok, Result} | {error, Reason}
     when Aggregate :: module(),
          Store :: module(),

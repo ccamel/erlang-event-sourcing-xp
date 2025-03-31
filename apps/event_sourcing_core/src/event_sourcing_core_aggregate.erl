@@ -15,13 +15,16 @@
 
 -type aggregate_state() :: event_sourcing_core_aggregate_behaviour:aggregate_state().
 
-%% @doc Starts an aggregate process with a given timeout.
-%%
-%% @param Aggregate The aggregate module implementing the behavior.
-%% @param Store The event-store module.
-%% @param Id The unique identifier for the aggregate instance.
-%% @param Timeout The inactivity timeout in milliseconds before passivation.
-%% @return `{ok, Pid}` if successful, `{error, Reason}` otherwise.
+-doc """
+Starts an aggregate process with a given timeout.
+
+- Aggregate is the aggregate module implementing the behavior.
+- Store is the event-store module.
+- Id is the unique identifier for the aggregate instance.
+- Timeout is the inactivity timeout in milliseconds before passivation.
+
+Function returns `{ok, Pid}` if successful, `{error, Reason}` otherwise.
+""".
 -spec start_link(Aggregate, Store, Id, Opts) -> gen_server:start_ret()
     when Aggregate :: module(),
          Store :: module(),
@@ -34,12 +37,13 @@
 start_link(Aggregate, Store, Id, Opts) ->
     gen_server:start_link(?MODULE, {Aggregate, Store, Id, Opts}, []).
 
-%% @doc
-%% Starts a new aggregate process.
-%%
-%% @param Aggregate The aggregate module to start.
-%% @param Store The persistence module (event-store) implementing event retrieval.
-%% @param Id The unique identifier for the aggregate instance.
+-doc """
+Starts a new aggregate process.
+
+- Aggregate is the aggregate module to start.
+- Store is the persistence module (event-store) implementing event retrieval.
+- Id is the unique identifier for the aggregate instance.
+""".
 -spec start_link(Aggregate :: module(), Store :: module(), Id :: stream_id()) ->
                     gen_server:start_ret().
 start_link(Aggregate, Store, Id) ->
@@ -67,20 +71,19 @@ dispatch(Pid, Command) ->
 
 -opaque state() :: #state{}.
 
-%% @doc
-%% Initializes the aggregate process.
-%%
-%% Retrieves all events for the aggregate from the persistence layer and applies them
-%% sequentially to rehydrate the aggregate's state.
-%%
-%% @param Aggregate The aggregate module implementing the domain logic.
-%% @param Store The persistence module (store) implementing event retrieval.
-%% @param Id The unique identifier for the aggregate.
-%% @param Timeout The inactivity timeout (in milliseconds) for the aggregate process.
-%%
-%% @return {ok, state()} on success,
-%%         Returns {stop, Reason} on failure.
+-doc """
+Initializes the aggregate process.
 
+Retrieves all events for the aggregate from the persistence layer and applies them
+sequentially to rehydrate the aggregate's state.
+
+- Aggregate is the aggregate module implementing the domain logic.
+- Store is the persistence module (store) implementing event retrieval.
+- Id is the unique identifier for the aggregate.
+- Timeout is the inactivity timeout (in milliseconds) for the aggregate process.
+
+Function returns {ok, state()} on success, and returns {stop, Reason} on failure.
+""".
 -spec init({module(),
             module(),
             stream_id(),
@@ -119,14 +122,15 @@ init({Aggregate, Store, Id, Opts}) ->
             now_fun = maps:get(now_fun, Opts, fun() -> erlang:system_time() end),
             timer_ref = TimerRef}}.
 
-%% @doc
-%% Handles a call to the aggregate.
-%%
-%% @param Command The command to be processed by the aggregate.
-%% @param From The caller's process identifier and a reference term.
-%% @param State The current state of the aggregate.
-%%
-%% @return A tuple indicating the result of the call and the new state of the aggregate.
+-doc """
+Handles a call to the aggregate.
+
+- Command is the command to be processed by the aggregate.
+- From is the caller's process identifier and a reference term.
+- State is the current state of the aggregate.
+
+Function returns A tuple indicating the result of the call and the new state of the aggregate.
+""".
 -spec handle_call(Command :: command(), From :: {pid(), term()}, State :: state()) ->
                      {reply, ok, state()} | {reply, {error, term()}, State :: state()}.
 handle_call(Command, _From, State) ->
@@ -142,13 +146,14 @@ handle_call(Command, _From, State) ->
             {reply, {error, Reason}, State}
     end.
 
-%% @doc
-%% Handles a cast message (asynchronous message) sent to the aggregate process.
-%%
-%% @param Command The command to be processed by the aggregate.
-%% @param State The current state of the aggregate process.
-%%
-%% @return A tuple indicating no reply and the updated state of the aggregate process.
+-doc """
+Handles a cast message (asynchronous message) sent to the aggregate process.
+
+- Command is the command to be processed by the aggregate.
+- State is the current state of the aggregate process.
+
+Function returns A tuple indicating no reply and the updated state of the aggregate process.
+""".
 -spec handle_cast(Command :: command(), State :: state()) -> {noreply, state()}.
 handle_cast(Command, State) ->
     NewTimerRef = install_passivation(State#state.timeout, State#state.timer_ref),
@@ -173,11 +178,12 @@ handle_info(_Info, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%% @doc
-%% Installs a passivation mechanism for the aggregate.
-%%
-%% @param Timeout The time in milliseconds after which the aggregate should be passivated.
-%% @param TimerRef A reference to the timer that will trigger the passivation.
+-doc """
+Installs a passivation mechanism for the aggregate.
+
+- Timeout is the time in milliseconds after which the aggregate should be passivated.
+- TimerRef is a reference to the timer that will trigger the passivation.
+""".
 -spec install_passivation(Timeout, TimerRef0) -> TimerRef1
     when Timeout :: non_neg_integer(),
          TimerRef0 :: reference() | undefined,
@@ -191,12 +197,14 @@ install_passivation(Timeout, TimerRef) ->
         end,
     erlang:send_after(Timeout, self(), passivate).
 
-%% @doc
-%% Handles a command for the given aggregate.
-%%
-%% @param State The current state of the server.
-%% @param Command The command to be handled.
-%% @return The new state and sequence of the aggregate after the command is applied.
+-doc """
+Handles a command for the given aggregate.
+
+- State is the current state of the server.
+- Command is the command to be handled.
+
+Function returns the new state and sequence of the aggregate after the command is applied.
+""".
 -spec process_command(State, Command) -> {ok, Result} | {error, Reason}
     when State :: state(),
          Command :: command(),

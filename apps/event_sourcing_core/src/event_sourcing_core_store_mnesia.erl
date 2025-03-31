@@ -12,7 +12,9 @@
 -record(event_record,
         {key :: event_id(), stream_id :: stream_id(), sequence :: sequence(), event :: event()}).
 
-%% @doc The name of the table that will store events.
+-doc """
+The name of the table that will store events.
+""".
 -define(EVENT_TABLE_NAME, events).
 
 -spec start() -> ok.
