@@ -22,7 +22,7 @@
 %% @param Id The unique identifier for the aggregate instance.
 %% @param Timeout The inactivity timeout in milliseconds before passivation.
 %% @return `{ok, Pid}` if successful, `{error, Reason}` otherwise.
--spec start_link(Aggregate, Store, Id, Opts) -> {ok, Result} | {error, Reason}
+-spec start_link(Aggregate, Store, Id, Opts) -> gen_server:start_ret()
     when Aggregate :: module(),
          Store :: module(),
          Id :: stream_id(),
@@ -30,9 +30,7 @@
              #{timeout => timeout(),
                sequence_zero => fun(() -> sequence()),
                sequence_next => fun((sequence()) -> sequence()),
-               now_fun => fun(() -> timestamp())},
-         Result :: pid(),
-         Reason :: term().
+               now_fun => fun(() -> timestamp())}.
 start_link(Aggregate, Store, Id, Opts) ->
     gen_server:start_link(?MODULE, {Aggregate, Store, Id, Opts}, []).
 
@@ -43,7 +41,7 @@ start_link(Aggregate, Store, Id, Opts) ->
 %% @param Store The persistence module (event-store) implementing event retrieval.
 %% @param Id The unique identifier for the aggregate instance.
 -spec start_link(Aggregate :: module(), Store :: module(), Id :: stream_id()) ->
-                    {ok, pid()} | {error, term()}.
+                    gen_server:start_ret().
 start_link(Aggregate, Store, Id) ->
     start_link(Aggregate, Store, Id, #{}).
 
