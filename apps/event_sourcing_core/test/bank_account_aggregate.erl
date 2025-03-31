@@ -15,8 +15,9 @@ event_type(#{type := Type}) ->
 
 handle_command({bank, deposit, _, Amount}, _) when Amount > 0 ->
     {ok, [#{type => deposited, amount => Amount}]};
-handle_command({bank, withdraw, _, Amount}, #{balance := Balance})
-    when Amount =< Balance ->
+handle_command({bank, withdraw, _, Amount}, #{balance := Balance}) when
+    Amount =< Balance
+->
     {ok, [#{type => withdrawn, amount => Amount}]};
 handle_command({bank, withdraw, _, Amount}, _) when Amount > 0 ->
     {error, insufficient_funds};

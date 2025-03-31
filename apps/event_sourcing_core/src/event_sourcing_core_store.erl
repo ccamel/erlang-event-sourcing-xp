@@ -12,12 +12,37 @@ to interact with the store and access event record fields.
 
 -include_lib("event_sourcing_core.hrl").
 
--export([start/1, stop/1, persist_events/3, retrieve_and_fold_events/5, retrieve_events/3,
-         id/1, domain/1, type/1, stream_id/1, sequence/1, timestamp/1, tags/1, metadata/1,
-         payload/1, new_event/8, new_event/6]).
+-export([
+    start/1,
+    stop/1,
+    persist_events/3,
+    retrieve_and_fold_events/5,
+    retrieve_events/3,
+    id/1,
+    domain/1,
+    type/1,
+    stream_id/1,
+    sequence/1,
+    timestamp/1,
+    tags/1,
+    metadata/1,
+    payload/1,
+    new_event/8, new_event/6
+]).
 
--export_type([fold_events_opts/0, domain/0, event/0, event_id/0, event_payload/0,
-              event_type/0, metadata/0, sequence/0, stream_id/0, tags/0, timestamp/0]).
+-export_type([
+    fold_events_opts/0,
+    domain/0,
+    event/0,
+    event_id/0,
+    event_payload/0,
+    event_type/0,
+    metadata/0,
+    sequence/0,
+    stream_id/0,
+    tags/0,
+    timestamp/0
+]).
 
 -doc """
 Starts the event store, performing any necessary initialization.
@@ -52,9 +77,9 @@ belong to the same stream.
 Returns `ok` on success. May throw an exception if persistence fails (e.g., badarg if the
 stream ID is incorrect, duplicate events if the sequence number is not unique).
 """.
--callback persist_events(StreamId, Events) -> ok
-    when StreamId :: stream_id(),
-         Events :: [event()].
+-callback persist_events(StreamId, Events) -> ok when
+    StreamId :: stream_id(),
+    Events :: [event()].
 -doc """
 Retrieves events from a stream and folds them into an accumulator.
 
@@ -72,14 +97,14 @@ rebuild application state by replaying events.
 
 Returns `{ok, Acc}` where `Acc` is the result of folding all events.
 """.
--callback retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1
-    when StreamId :: stream_id(),
-         Options :: fold_events_opts(),
-         Fun :: fun((Event :: event(), AccIn) -> AccOut),
-         Acc0 :: term(),
-         Acc1 :: term(),
-         AccIn :: term(),
-         AccOut :: term().
+-callback retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1 when
+    StreamId :: stream_id(),
+    Options :: fold_events_opts(),
+    Fun :: fun((Event :: event(), AccIn) -> AccOut),
+    Acc0 :: term(),
+    Acc1 :: term(),
+    AccIn :: term(),
+    AccOut :: term().
 
 -spec start(module()) -> ok.
 start(Module) ->
@@ -92,63 +117,69 @@ stop(Module) ->
 -doc """
 Persists a event in the event store using the specified persistence module.
 """.
--spec persist_events(StoreModule, StreamId, Events) -> ok
-    when StoreModule :: module(),
-         StreamId :: stream_id(),
-         Events :: [event()].
+-spec persist_events(StoreModule, StreamId, Events) -> ok when
+    StoreModule :: module(),
+    StreamId :: stream_id(),
+    Events :: [event()].
 persist_events(StoreModule, StreamId, Events) when is_list(Events) ->
-    _ = lists:foldl(fun(Event, Seen) ->
-                       case stream_id(Event) of
-                           StreamId ->
-                               Id = id(Event),
-                               case lists:member(Id, Seen) of
-                                   true ->
-                                       erlang:error(duplicate_event);
-                                   false ->
-                                       [Id | Seen]
-                               end;
-                           WrongStreamId ->
-                               erlang:error({badarg, WrongStreamId})
-                       end
-                    end,
-                    [],
-                    Events),
+    _ = lists:foldl(
+        fun(Event, Seen) ->
+            case stream_id(Event) of
+                StreamId ->
+                    Id = id(Event),
+                    case lists:member(Id, Seen) of
+                        true ->
+                            erlang:error(duplicate_event);
+                        false ->
+                            [Id | Seen]
+                    end;
+                WrongStreamId ->
+                    erlang:error({badarg, WrongStreamId})
+            end
+        end,
+        [],
+        Events
+    ),
     StoreModule:persist_events(StreamId, Events).
 
 -doc """
 Retrieves and folds events from the event store using the specified persistence module.
 """.
--spec retrieve_and_fold_events(StoreModule, StreamId, Options, Fun, Acc0) -> Acc1
-    when StoreModule :: module(),
-         StreamId :: stream_id(),
-         Options :: fold_events_opts(),
-         Fun :: fun((Event :: event(), AccIn) -> AccOut),
-         Acc0 :: term(),
-         Acc1 :: term(),
-         AccIn :: term(),
-         AccOut :: term().
+-spec retrieve_and_fold_events(StoreModule, StreamId, Options, Fun, Acc0) -> Acc1 when
+    StoreModule :: module(),
+    StreamId :: stream_id(),
+    Options :: fold_events_opts(),
+    Fun :: fun((Event :: event(), AccIn) -> AccOut),
+    Acc0 :: term(),
+    Acc1 :: term(),
+    AccIn :: term(),
+    AccOut :: term().
 retrieve_and_fold_events(StoreModule, StreamId, Options, Fun, InitialResult) ->
     StoreModule:retrieve_and_fold_events(StreamId, Options, Fun, InitialResult).
 
 -doc """
 Retrieves events for a given stream using the specified store module and options.
 """.
--spec retrieve_events(StoreModule, StreamId, Options) -> Result
-    when StoreModule :: module(),
-         StreamId :: stream_id(),
-         Options :: fold_events_opts(),
-         Result :: [event()].
+-spec retrieve_events(StoreModule, StreamId, Options) -> Result when
+    StoreModule :: module(),
+    StreamId :: stream_id(),
+    Options :: fold_events_opts(),
+    Result :: [event()].
 retrieve_events(StoreModule, StreamId, Options) ->
-    retrieve_and_fold_events(StoreModule,
-                             StreamId,
-                             Options,
-                             fun(Event, Acc) -> Acc ++ [Event] end,
-                             []).
+    retrieve_and_fold_events(
+        StoreModule,
+        StreamId,
+        Options,
+        fun(Event, Acc) -> Acc ++ [Event] end,
+        []
+    ).
 
 -type fold_events_opts() ::
-    #{from => non_neg_integer(),
-      to => non_neg_integer() | infinity,
-      limit => pos_integer() | infinity}.
+    #{
+        from => non_neg_integer(),
+        to => non_neg_integer() | infinity,
+        limit => pos_integer() | infinity
+    }.
 
 -doc """
 Creates a new event.
@@ -164,24 +195,28 @@ Creates a new event.
 
 Returns the created event.
 """.
--spec new_event(StreamId :: stream_id(),
-                Domain :: domain(),
-                Type :: event_type(),
-                Seq :: sequence(),
-                Tags :: tags(),
-                Timestamp :: timestamp(),
-                Metadata :: metadata(),
-                Payload :: event_payload()) ->
-                   event().
+-spec new_event(
+    StreamId :: stream_id(),
+    Domain :: domain(),
+    Type :: event_type(),
+    Seq :: sequence(),
+    Tags :: tags(),
+    Timestamp :: timestamp(),
+    Metadata :: metadata(),
+    Payload :: event_payload()
+) ->
+    event().
 new_event(StreamId, Domain, Type, Sequence, Tags, Timestamp, Metadata, Payload) ->
-    #event{stream_id = StreamId,
-           domain = Domain,
-           type = Type,
-           sequence = Sequence,
-           tags = Tags,
-           timestamp = Timestamp,
-           metadata = Metadata,
-           payload = Payload}.
+    #event{
+        stream_id = StreamId,
+        domain = Domain,
+        type = Type,
+        sequence = Sequence,
+        tags = Tags,
+        timestamp = Timestamp,
+        metadata = Metadata,
+        payload = Payload
+    }.
 
 -doc """
 Creates a new event.
@@ -195,13 +230,15 @@ Creates a new event.
 
 @return The created event.
 """.
--spec new_event(StreamId :: stream_id(),
-                Domain :: domain(),
-                Type :: event_type(),
-                Sequence :: sequence(),
-                Timestamp :: timestamp(),
-                Payload :: event_payload()) ->
-                   event().
+-spec new_event(
+    StreamId :: stream_id(),
+    Domain :: domain(),
+    Type :: event_type(),
+    Sequence :: sequence(),
+    Timestamp :: timestamp(),
+    Payload :: event_payload()
+) ->
+    event().
 new_event(StreamId, Domain, Type, Sequence, Timestamp, Payload) ->
     new_event(StreamId, Domain, Type, Sequence, [], Timestamp, #{}, Payload).
 
@@ -210,9 +247,11 @@ Returns the unique identifier of the event.
 The identifier is a string composed of the domain, the stream id and sequence number.
 """.
 -spec id(Event :: event()) -> event_id().
-id(#event{domain = Domain,
-          stream_id = StreamId,
-          sequence = Sequence}) ->
+id(#event{
+    domain = Domain,
+    stream_id = StreamId,
+    sequence = Sequence
+}) ->
     {Domain, StreamId, Sequence}.
 
 -doc """

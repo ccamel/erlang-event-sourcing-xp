@@ -12,21 +12,33 @@ monitoring them for crashes.
 
 -include_lib("event_sourcing_core.hrl").
 
--export([init/1, handle_cast/2, handle_call/3, handle_info/2, terminate/2, start_link/4,
-         start_link/3, stop/1, dispatch/2]).
+-export([
+    init/1,
+    handle_cast/2,
+    handle_call/3,
+    handle_info/2,
+    terminate/2,
+    start_link/4,
+    start_link/3,
+    stop/1,
+    dispatch/2
+]).
 
 -export_type([command/0, state/0, sequence/0, timestamp/0]).
 
--record(state,
-        {aggregate :: module(),
-         store :: module(),
-         router :: module(),
-         opts ::
-             #{timeout => timeout(),
-               sequence_zero => fun(() -> sequence()),
-               sequence_next => fun((sequence()) -> sequence()),
-               now_fun => fun(() -> timestamp())},
-         pids :: #{stream_id() => pid()}}).
+-record(state, {
+    aggregate :: module(),
+    store :: module(),
+    router :: module(),
+    opts ::
+        #{
+            timeout => timeout(),
+            sequence_zero => fun(() -> sequence()),
+            sequence_next => fun((sequence()) -> sequence()),
+            now_fun => fun(() -> timestamp())
+        },
+    pids :: #{stream_id() => pid()}
+}).
 
 -opaque state() :: #state{}.
 
@@ -44,15 +56,17 @@ Starts the aggregate manager with custom options.
 
 Function returns `{ok, Pid}` on success, or an error tuple if the server fails to start.
 """.
--spec start_link(Aggregate, Store, Router, Opts) -> gen_server:start_ret()
-    when Aggregate :: module(),
-         Store :: module(),
-         Router :: module(),
-         Opts ::
-             #{timeout => timeout(),
-               sequence_zero => fun(() -> sequence()),
-               sequence_next => fun((sequence()) -> sequence()),
-               now_fun => fun(() -> timestamp())}.
+-spec start_link(Aggregate, Store, Router, Opts) -> gen_server:start_ret() when
+    Aggregate :: module(),
+    Store :: module(),
+    Router :: module(),
+    Opts ::
+        #{
+            timeout => timeout(),
+            sequence_zero => fun(() -> sequence()),
+            sequence_next => fun((sequence()) -> sequence()),
+            now_fun => fun(() -> timestamp())
+        }.
 start_link(Aggregate, Store, Router, Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, {Aggregate, Store, Router, Opts}, []).
 
@@ -66,10 +80,10 @@ using default options.
 
 Function returns `{ok, Pid}` on success, or an error tuple if the server fails to start.
 """.
--spec start_link(Aggregate, Store, Router) -> gen_server:start_ret()
-    when Aggregate :: module(),
-         Store :: module(),
-         Router :: module().
+-spec start_link(Aggregate, Store, Router) -> gen_server:start_ret() when
+    Aggregate :: module(),
+    Store :: module(),
+    Router :: module().
 start_link(Aggregate, Store, Router) ->
     start_link(Aggregate, Store, Router, #{}).
 
@@ -95,11 +109,11 @@ extracted by the router module.
 
 Function returns `{ok, Result}` on success, or `{error, Reason}` if routing or execution fails.
 """.
--spec dispatch(Pid, Command) -> {ok, Result} | {error, Reason}
-    when Pid :: pid(),
-         Command :: command(),
-         Result :: term(),
-         Reason :: term().
+-spec dispatch(Pid, Command) -> {ok, Result} | {error, Reason} when
+    Pid :: pid(),
+    Command :: command(),
+    Result :: term(),
+    Reason :: term().
 dispatch(Pid, Command) ->
     gen_server:call(Pid, Command).
 
@@ -110,30 +124,34 @@ Initializes the aggregate manager state.
 
 Function returns `{ok, State}` with an initialized state record.
 """.
--spec init({Aggregate, Store, Router, Opts}) -> {ok, State}
-    when Aggregate :: module(),
-         Store :: module(),
-         Router :: module(),
-         Opts ::
-             #{timeout => timeout(),
-               sequence_zero => fun(() -> sequence()),
-               sequence_next => fun((sequence()) -> sequence()),
-               now_fun => fun(() -> timestamp())},
-         State :: state().
+-spec init({Aggregate, Store, Router, Opts}) -> {ok, State} when
+    Aggregate :: module(),
+    Store :: module(),
+    Router :: module(),
+    Opts ::
+        #{
+            timeout => timeout(),
+            sequence_zero => fun(() -> sequence()),
+            sequence_next => fun((sequence()) -> sequence()),
+            now_fun => fun(() -> timestamp())
+        },
+    State :: state().
 init({Aggregate, Store, Router, Opts}) ->
-    {ok,
-     #state{aggregate = Aggregate,
-            store = Store,
-            router = Router,
-            opts = Opts,
-            pids = #{}}}.
+    {ok, #state{
+        aggregate = Aggregate,
+        store = Store,
+        router = Router,
+        opts = Opts,
+        pids = #{}
+    }}.
 
 -spec handle_call(Command, From, State) ->
-                     {reply, ok, State} | {reply, {error, Reason}, State}
-    when Command :: command(),
-         From :: {pid(), term()},
-         State :: state(),
-         Reason :: term().
+    {reply, ok, State} | {reply, {error, Reason}, State}
+when
+    Command :: command(),
+    From :: {pid(), term()},
+    State :: state(),
+    Reason :: term().
 handle_call(Command, _From, #state{aggregate = Aggregate, router = Router} = State) ->
     case Router:extract_routing(Command) of
         {ok, {Aggregate, Id}} ->
@@ -144,15 +162,15 @@ handle_call(Command, _From, #state{aggregate = Aggregate, router = Router} = Sta
             {reply, {error, Reason}, State}
     end.
 
--spec handle_cast(Command, State) -> {noreply, State}
-    when Command :: command(),
-         State :: state().
+-spec handle_cast(Command, State) -> {noreply, State} when
+    Command :: command(),
+    State :: state().
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
--spec terminate(Reason, State) -> ok
-    when Reason :: term(),
-         State :: state().
+-spec terminate(Reason, State) -> ok when
+    Reason :: term(),
+    State :: state().
 terminate(_Reason, _State) ->
     ok.
 
@@ -165,10 +183,10 @@ Removes the pid of a downed aggregate from the state's `pids` map.
 
 Function returns `{noreply, State}` with updated state.
 """.
--spec handle_info(Info, State) -> {noreply, State}
-    when Info :: {'DOWN', _Ref, process, Pid, _Reason},
-         State :: state(),
-         Pid :: pid().
+-spec handle_info(Info, State) -> {noreply, State} when
+    Info :: {'DOWN', _Ref, process, Pid, _Reason},
+    State :: state(),
+    Pid :: pid().
 handle_info({'DOWN', _Ref, process, Pid, _Reason}, #state{pids = Pids} = State) ->
     IdToRemove = maps:filter(fun(_, ThisPid) -> ThisPid =:= Pid end, Pids),
     case maps:keys(IdToRemove) of
@@ -188,19 +206,23 @@ Starts a new aggregate if none exists, then forwards the command.
 
 Function returns `{reply, {ok, Result}, State}` or `{reply, {error, Reason}, State}`.
 """.
--spec ensure_and_dispatch(Aggregate, Id, Command, State) -> {reply, Result, State}
-    when Aggregate :: module(),
-         Id :: stream_id(),
-         Command :: command(),
-         Result :: term(),
-         State :: state().
-ensure_and_dispatch(Aggregate,
-                    Id,
-                    Command,
-                    #state{store = Store,
-                           pids = Pids,
-                           opts = Opts} =
-                        State) ->
+-spec ensure_and_dispatch(Aggregate, Id, Command, State) -> {reply, Result, State} when
+    Aggregate :: module(),
+    Id :: stream_id(),
+    Command :: command(),
+    Result :: term(),
+    State :: state().
+ensure_and_dispatch(
+    Aggregate,
+    Id,
+    Command,
+    #state{
+        store = Store,
+        pids = Pids,
+        opts = Opts
+    } =
+        State
+) ->
     case maps:get(Id, Pids, undefined) of
         undefined ->
             case start_aggregate(Aggregate, Store, Id, Opts) of
@@ -221,11 +243,11 @@ Forwards a command to an aggregate process.
 
 Function returns The result of the aggregate's dispatch function.
 """.
--spec forward(Pid, Command) -> {ok, Result} | {error, Reason}
-    when Pid :: pid(),
-         Command :: command(),
-         Result :: pid(),
-         Reason :: term().
+-spec forward(Pid, Command) -> {ok, Result} | {error, Reason} when
+    Pid :: pid(),
+    Command :: command(),
+    Result :: pid(),
+    Reason :: term().
 forward(Pid, Command) ->
     event_sourcing_core_aggregate:dispatch(Pid, Command).
 
@@ -236,17 +258,19 @@ Monitors the new process and returns its pid.
 
 Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
 """.
--spec start_aggregate(Aggregate, Store, Id, Opts) -> {ok, Result} | {error, Reason}
-    when Aggregate :: module(),
-         Store :: module(),
-         Id :: stream_id(),
-         Opts ::
-             #{timeout => timeout(),
-               sequence_zero => fun(() -> sequence()),
-               sequence_next => fun((sequence()) -> sequence()),
-               now_fun => fun(() -> timestamp())},
-         Result :: pid(),
-         Reason :: term().
+-spec start_aggregate(Aggregate, Store, Id, Opts) -> {ok, Result} | {error, Reason} when
+    Aggregate :: module(),
+    Store :: module(),
+    Id :: stream_id(),
+    Opts ::
+        #{
+            timeout => timeout(),
+            sequence_zero => fun(() -> sequence()),
+            sequence_next => fun((sequence()) -> sequence()),
+            now_fun => fun(() -> timestamp())
+        },
+    Result :: pid(),
+    Reason :: term().
 start_aggregate(Aggregate, Store, Id, Opts) ->
     case event_sourcing_core_aggregate:start_link(Aggregate, Store, Id, Opts) of
         {ok, Pid} ->

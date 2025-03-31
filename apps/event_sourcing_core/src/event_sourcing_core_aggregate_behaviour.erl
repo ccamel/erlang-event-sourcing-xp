@@ -56,9 +56,9 @@ This function should be pure and side-effect free.
 - Command is the incoming domain command.
 - State is the current aggregate state.
 """.
--callback handle_command(Command, State) -> {ok, [event_payload()]} | {error, term()}
-    when Command :: command(),
-         State :: aggregate_state().
+-callback handle_command(Command, State) -> {ok, [event_payload()]} | {error, term()} when
+    Command :: command(),
+    State :: aggregate_state().
 -doc """
 Apply a domain event to the aggregate state.
 
@@ -71,7 +71,7 @@ it should always return the same result. It is used both during rehydration
 
 Function shall return the updated aggregate state.
 """.
--callback apply_event(Event, State0) -> State1
-    when Event :: event_payload(),
-         State0 :: aggregate_state(),
-         State1 :: aggregate_state().
+-callback apply_event(Event, State0) -> State1 when
+    Event :: event_payload(),
+    State0 :: aggregate_state(),
+    State1 :: aggregate_state().
