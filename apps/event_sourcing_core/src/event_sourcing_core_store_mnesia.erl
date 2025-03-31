@@ -1,4 +1,7 @@
 -module(event_sourcing_core_store_mnesia).
+-moduledoc """
+The Mnesia-based implementation of the event store.
+""".
 
 -behaviour(event_sourcing_core_store).
 

@@ -1,4 +1,7 @@
 -module(event_sourcing_core_store_ets).
+-moduledoc """
+The ETS-based implementation of the event store.
+""".
 
 -behaviour(event_sourcing_core_store).
 
