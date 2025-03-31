@@ -4,9 +4,11 @@
 
 suite_test_() ->
     TestCases =
-        [{"aggregate_behaviour", fun aggregate_behaviour/0},
-         {"aggregate_passivation", fun aggregate_passivation/0},
-         {"aggregate_invalid_command", fun aggregate_invalid_command/0}],
+        [
+            {"aggregate_behaviour", fun aggregate_behaviour/0},
+            {"aggregate_passivation", fun aggregate_passivation/0},
+            {"aggregate_invalid_command", fun aggregate_invalid_command/0}
+        ],
     {foreach, fun setup/0, fun teardown/1, TestCases}.
 
 setup() ->
@@ -20,18 +22,12 @@ teardown(_) ->
 %%%  Test cases
 
 -define(assertState(Pid, Id, ExpectedState, ExpectedSeq),
-        ?assertMatch({state,
-                      bank_account_aggregate,
-                      event_sourcing_core_store_ets,
-                      Id,
-                      ExpectedState,
-                      ExpectedSeq,
-                      _,
-                      _,
-                      _,
-                      _,
-                      _},
-                     sys:get_state(Pid))).
+    ?assertMatch(
+        {state, bank_account_aggregate, event_sourcing_core_store_ets, Id, ExpectedState,
+            ExpectedSeq, _, _, _, _, _},
+        sys:get_state(Pid)
+    )
+).
 
 aggregate_behaviour() ->
     {Id, Pid} = start_test_account(5000),
@@ -68,16 +64,22 @@ aggregate_passivation() ->
 aggregate_invalid_command() ->
     {Id, Pid} = start_test_account(5000),
 
-    ?assertEqual({error, invalid_command},
-                 event_sourcing_core_aggregate:dispatch(Pid, invalid)),
-    ?assertEqual({error, insufficient_funds},
-                 event_sourcing_core_aggregate:dispatch(Pid, {bank, withdraw, Id, 100})).
+    ?assertEqual(
+        {error, invalid_command},
+        event_sourcing_core_aggregate:dispatch(Pid, invalid)
+    ),
+    ?assertEqual(
+        {error, insufficient_funds},
+        event_sourcing_core_aggregate:dispatch(Pid, {bank, withdraw, Id, 100})
+    ).
 
 start_test_account(Timeout) ->
     Id = <<"bank-account-123">>,
     {ok, Pid} =
-        event_sourcing_core_aggregate:start_link(bank_account_aggregate,
-                                                 event_sourcing_core_store_ets,
-                                                 Id,
-                                                 #{timeout => Timeout}),
+        event_sourcing_core_aggregate:start_link(
+            bank_account_aggregate,
+            event_sourcing_core_store_ets,
+            Id,
+            #{timeout => Timeout}
+        ),
     {Id, Pid}.

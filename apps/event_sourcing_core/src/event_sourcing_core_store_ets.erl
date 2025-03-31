@@ -1,4 +1,7 @@
 -module(event_sourcing_core_store_ets).
+-moduledoc """
+The ETS-based implementation of the event store.
+""".
 
 -behaviour(event_sourcing_core_store).
 
@@ -8,18 +11,23 @@
 
 -export_type([event/0, stream_id/0]).
 
--record(event_record,
-        {key :: event_id(), stream_id :: stream_id(), sequence :: sequence(), event :: event()}).
+-record(event_record, {
+    key :: event_id(), stream_id :: stream_id(), sequence :: sequence(), event :: event()
+}).
 
-%% @doc The name of the ETS table that will store events.
+-doc """
+The name of the ETS table that will store events.
+""".
 -define(EVENT_TABLE_NAME, events).
 
 -spec start() -> ok.
 start() ->
     case ets:info(?EVENT_TABLE_NAME) of
         undefined ->
-            _ = ets:new(?EVENT_TABLE_NAME,
-                        [ordered_set, named_table, public, {keypos, #event_record.key}]),
+            _ = ets:new(
+                ?EVENT_TABLE_NAME,
+                [ordered_set, named_table, public, {keypos, #event_record.key}]
+            ),
             ok;
         _ ->
             ok
@@ -30,9 +38,9 @@ stop() ->
     ets:delete(?EVENT_TABLE_NAME),
     ok.
 
--spec persist_events(StreamId, Events) -> ok
-    when StreamId :: stream_id(),
-         Events :: [event()].
+-spec persist_events(StreamId, Events) -> ok when
+    StreamId :: stream_id(),
+    Events :: [event()].
 persist_events(_, Events) ->
     Records = lists:map(fun event_to_record/1, Events),
     case ets:insert_new(?EVENT_TABLE_NAME, Records) of
@@ -42,16 +50,17 @@ persist_events(_, Events) ->
             erlang:error(duplicate_event)
     end.
 
--spec retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1
-    when StreamId :: stream_id(),
-         Options :: event_sourcing_core_store:fold_events_opts(),
-         Fun :: fun((Event :: event(), AccIn) -> AccOut),
-         Acc0 :: term(),
-         Acc1 :: term(),
-         AccIn :: term(),
-         AccOut :: term().
-retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
-    when is_map(Options), is_function(FoldFun, 2) ->
+-spec retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1 when
+    StreamId :: stream_id(),
+    Options :: event_sourcing_core_store:fold_events_opts(),
+    Fun :: fun((Event :: event(), AccIn) -> AccOut),
+    Acc0 :: term(),
+    Acc1 :: term(),
+    AccIn :: term(),
+    AccOut :: term().
+retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc) when
+    is_map(Options), is_function(FoldFun, 2)
+->
     From = maps:get(from, Options, 0),
     To = maps:get(to, Options, infinity),
     Limit = maps:get(limit, Options, infinity),
@@ -75,7 +84,9 @@ retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc)
     lists:foldl(FoldFun, InitialAcc, ResultEvents).
 
 event_to_record(Event) ->
-    #event_record{key = event_sourcing_core_store:id(Event),
-                  stream_id = event_sourcing_core_store:stream_id(Event),
-                  sequence = event_sourcing_core_store:sequence(Event),
-                  event = Event}.
+    #event_record{
+        key = event_sourcing_core_store:id(Event),
+        stream_id = event_sourcing_core_store:stream_id(Event),
+        sequence = event_sourcing_core_store:sequence(Event),
+        event = Event
+    }.
