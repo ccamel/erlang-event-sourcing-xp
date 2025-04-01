@@ -12,12 +12,10 @@ suite_test_() ->
     {foreach, fun setup/0, fun teardown/1, TestCases}.
 
 setup() ->
-    event_sourcing_core_store:start(event_sourcing_core_store_ets),
-    ok.
+    event_sourcing_core_store:start(event_sourcing_core_store_ets).
 
 teardown(_) ->
-    event_sourcing_core_store:stop(event_sourcing_core_store_ets),
-    ok.
+    event_sourcing_core_store:stop(event_sourcing_core_store_ets).
 
 %%%  Test cases
 

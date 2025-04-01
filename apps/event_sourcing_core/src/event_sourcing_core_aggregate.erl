@@ -1,6 +1,7 @@
 -module(event_sourcing_core_aggregate).
 
 -include_lib("event_sourcing_core.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -behaviour(gen_server).
 
@@ -254,27 +255,7 @@ process_command(
         {ok, []} ->
             {ok, {State0, Sequence0}};
         {ok, PayloadEvents} when is_list(PayloadEvents) ->
-            {Events, _} =
-                lists:foldl(
-                    fun(PayloadEvent, {Events, SequenceN}) ->
-                        Now = erlang:system_time(millisecond),
-                        SequenceN1 = SequenceNext(SequenceN),
-                        EventType = Aggregate:event_type(PayloadEvent),
-                        Event =
-                            event_sourcing_core_store:new_event(
-                                Id,
-                                Aggregate,
-                                EventType,
-                                SequenceN1,
-                                Now,
-                                PayloadEvent
-                            ),
-                        {[Event | Events], SequenceN1}
-                    end,
-                    {[], Sequence0},
-                    PayloadEvents
-                ),
-            ok = event_sourcing_core_store:persist_events(Store, Id, Events),
+            ok = persist_events(PayloadEvents, {Aggregate, Store, Id, Sequence0, SequenceNext}),
             {State1, Sequence1} =
                 apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}),
             {ok, {State1, Sequence1}};
@@ -283,16 +264,16 @@ process_command(
     end.
 
 -spec apply_events(
-    Event :: [event_payload()],
+    PayloadEvents :: [event_payload()],
     {
         Aggregate :: module(),
         State :: aggregate_state(),
-        Sequence :: sequence(),
+        Sequence0 :: sequence(),
         SequenceNext :: fun((sequence()) -> sequence())
     }
 ) ->
     {State :: aggregate_state(), Sequence :: sequence()}.
-apply_events(Events, {Aggregate, State0, Sequence0, SequenceNext}) ->
+apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}) ->
     lists:foldl(
         fun(Event, {StateN, SequenceN}) ->
             StateN1 = Aggregate:apply_event(Event, StateN),
@@ -300,5 +281,44 @@ apply_events(Events, {Aggregate, State0, Sequence0, SequenceNext}) ->
             {StateN1, SequenceN1}
         end,
         {State0, Sequence0},
-        Events
+        PayloadEvents
     ).
+
+-spec persist_events(
+    PayloadEvents :: [event_payload()],
+    {
+        Aggregate :: module(),
+        Store :: module(),
+        Id :: stream_id(),
+        Sequence0 :: sequence(),
+        SequenceNext :: fun((sequence()) -> sequence())
+    }
+) -> ok.
+persist_events(PayloadEvents, {Aggregate, Store, Id, Sequence0, SequenceNext}) ->
+    {Events, _} =
+        lists:foldl(
+            fun(PayloadEvent, {Events, SequenceN}) ->
+                Now = erlang:system_time(millisecond),
+                SequenceN1 = SequenceNext(SequenceN),
+                EventType = Aggregate:event_type(PayloadEvent),
+                Event =
+                    event_sourcing_core_store:new_event(
+                        Id,
+                        Aggregate,
+                        EventType,
+                        SequenceN1,
+                        Now,
+                        PayloadEvent
+                    ),
+                {[Event | Events], SequenceN1}
+            end,
+            {[], Sequence0},
+            PayloadEvents
+        ),
+    lists:foreach(
+        fun(Event) ->
+            logger:info("Persisting Event: ~p", [Event])
+        end,
+        Events
+    ),
+    event_sourcing_core_store:persist_events(Store, Id, Events).
