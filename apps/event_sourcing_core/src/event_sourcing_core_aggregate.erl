@@ -1,6 +1,7 @@
 -module(event_sourcing_core_aggregate).
 
 -include_lib("event_sourcing_core.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -behaviour(gen_server).
 
@@ -314,4 +315,10 @@ persist_events(PayloadEvents, {Aggregate, Store, Id, Sequence0, SequenceNext}) -
             {[], Sequence0},
             PayloadEvents
         ),
+    lists:foreach(
+        fun(Event) ->
+            logger:info("Persisting Event: ~p", [Event])
+        end,
+        Events
+    ),
     event_sourcing_core_store:persist_events(Store, Id, Events).
