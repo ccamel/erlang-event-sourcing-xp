@@ -1,0 +1,55 @@
+branches:
+  - main
+
+plugins:
+  - - "@semantic-release/commit-analyzer"
+    - preset: conventionalcommits
+      releaseRules:
+        - type: build
+          scope: deps
+          release: patch
+        - type: build
+          scope: deps-dev
+          release: patch
+        - type: refactor
+          release: patch
+        - type: style
+          release: patch
+        - type: ci
+          release: patch
+        - type: chore
+          release: patch
+        - type: docs
+          release: patch
+        - breaking: true
+          release: major
+  - - "@semantic-release/release-notes-generator"
+    - preset: conventionalcommits
+  - - "@semantic-release/changelog"
+    - changelogFile: CHANGELOG.md
+      changelogTitle: "# erlang-event-sourcing-xp changelog"
+  - - "semantic-release-replace-plugin"
+    - replacements:
+        - files: [rebar.config]
+          from: "{release, {event_sourcing_xp, \".*\"}"
+          to: "{release, {event_sourcing_xp, \"${nextRelease.version}\"}"
+          countMatches: true
+          results:
+            - file: rebar.config
+              hasChanged: true
+              numMatches: 1
+              numReplacements: 1
+  - - "@semantic-release/exec"
+    - prepareCmd: |
+        rebar3 as prod tar
+  - - "@semantic-release/github"
+    - successComment: false
+      assets:
+        - "_build/prod/rel/event_sourcing_xp/event_sourcing_xp-*.tar.gz"
+  - - "@semantic-release/git"
+    - assets:
+        - README.md
+        - CHANGELOG.md
+        - rebar.config
+        - rebar.lock
+      message: "chore(release): perform release ${nextRelease.version}"
