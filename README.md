@@ -11,6 +11,38 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 [Erlang]: https://www.erlang.org/
 [Event Sourcing]: https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing
 
+## Let's play
+
+This project is a work in progress, and I welcome any feedback or contributions. If you're interested in [Event Sourcing](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing), [Erlang/OTP](https://www.erlang.org/), or both, feel free to reach out!
+
+Start the Erlang [shell](https://www.erlang.org/docs/20/man/shell.html) and run the following commands to play with the example:
+
+```erlang
+$ rebar3 shell
+1> % Start the ETS-based event store
+.. event_sourcing_core_store:start(event_sourcing_core_store_ets).
+ok
+2> % Start the Bank Account aggregate (and get its pid)
+.. {ok, BankMgr} = event_sourcing_core_mgr_aggregate:start_link(bank_account_aggregate, event_sourcing_core_store_ets, bank_account_aggregate).
+{ok,<0.321.0>}
+3> % Dispatch the Deposit $100 command to the Bank Account aggregate
+.. event_sourcing_core_mgr_aggregate:dispatch(BankMgr, {bank, deposit, <<"bank-account-123">>, 100}).
+=INFO REPORT==== 1-Apr-2025::17:06:41.660921 ===
+Persisting Event: {event,<<"bank-account-123">>,bank_account_aggregate,
+                         deposited,1,[],1743520001661,#{},
+                         #{type => deposited,amount => 100}}
+ok
+4> % Dispatch the Withdraw $10 command to the Bank Account aggregate
+.. event_sourcing_core_mgr_aggregate:dispatch(BankMgr, {bank, withdraw, <<"bank-account-123">>, 10}).
+=INFO REPORT==== 1-Apr-2025::17:07:23.271971 ===
+Persisting Event: {event,<<"bank-account-123">>,bank_account_aggregate,
+                         withdrawn,2,[],1743520043272,#{},
+                         #{type => withdrawn,amount => 10}}
+5> % Dispatch the Withdraw $1000 command to the Bank Account aggregate
+.. event_sourcing_core_mgr_aggregate:dispatch(BankMgr, {bank, withdraw, <<"bank-account-123">>, 1000}).
+{error,insufficient_funds}
+````
+
 ## Architecture
 
 ### Overview
