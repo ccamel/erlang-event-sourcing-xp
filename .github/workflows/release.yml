@@ -23,6 +23,10 @@ jobs:
       - build
       - test
     runs-on: ubuntu-22.04
+    env:
+      ERL_FLAGS: "-enable-feature all"
+      OTP_VERSION: "27"
+      REBAR3_VERSION: "3.24.0"
     steps:
       - name: Import GPG key
         uses: crazy-max/ghaction-import-gpg@v6
@@ -39,6 +43,30 @@ jobs:
           ref: main
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Setup Erlang/OTP and rebar3
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          rebar3-version: ${{ env.REBAR3_VERSION }}
+
+      - name: Restore _build folder
+        uses: actions/cache@v4
+        with:
+          path: _build
+          key: "_build-cache-for\
+            -otp-${{ env.OTP_VERSION }}\
+            -rebar3-${{ env.REBAR3_VERSION }}\
+            -hash-${{ hashFiles('rebar.lock') }}"
+
+      - name: Restore rebar3's cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/rebar3
+          key: "rebar3-cache-for\
+            -otp-${{ env.OTP_VERSION }}\
+            -rebar3-${{ env.REBAR3_VERSION }}\
+            -hash-${{ hashFiles('rebar.lock') }}"
 
       - name: Release project
         uses: cycjimmy/semantic-release-action@v4
