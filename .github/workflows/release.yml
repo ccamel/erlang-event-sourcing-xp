@@ -3,6 +3,10 @@ name: Release
 on:
   workflow_dispatch:
 
+permissions:
+  pull-requests: read
+  contents: read
+
 jobs:
   lint:
     uses: ./.github/workflows/lint.yml
