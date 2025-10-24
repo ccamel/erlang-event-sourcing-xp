@@ -86,12 +86,44 @@ The event store is a core component in this experiment, designed as a customizab
          InitialAcc :: Acc.
 ```
 
-#### Future Features
+#### Snapshot Support
 
-While not yet implemented, the event store could be extended to:
+The event store supports snapshotting to optimize aggregate rehydration. Instead of replaying all events from the beginning, aggregates can:
 
-- Store snapshots of the aggregate’s state for efficient retrieval.
+1. Load the latest snapshot (if available)
+2. Replay only events that occurred after the snapshot
+3. Automatically create new snapshots at configurable intervals
+
+**Snapshot Callbacks:**
+
+```erlang
+% Save a snapshot of aggregate state
+-callback save_snapshot(Snapshot) -> ok when Snapshot :: snapshot().
+
+% Retrieve the latest snapshot for a stream
+-callback retrieve_latest_snapshot(StreamId) -> {ok, Snapshot} | {error, not_found}.
+```
+
+The snapshot record contains all necessary fields (domain, stream_id, sequence, timestamp, state), making the API consistent with event persistence where events are passed as complete records.
+
+**Configuring Snapshots:**
+
+```erlang
+% Start aggregate with snapshot every 10 events
+event_sourcing_core_aggregate:start_link(
+    Module,
+    Store,
+    Id,
+    #{snapshot_interval => 10}
+).
+```
+
+When `snapshot_interval` is set to a positive integer, a snapshot is automatically saved whenever the aggregate's sequence number is a multiple of that interval.
+
+#### Additional future features
+
 - Support event subscriptions for real-time updates.
+- Implement snapshot retention policies (e.g., keep only last N snapshots).
 
 #### Current Implementation
 
@@ -112,10 +144,11 @@ The `aggregate` provides:
 
 - A [behaviour](https://www.erlang.org/doc/system/design_principles.html#behaviours) for domain-specific modules to implement.
 - A generic [OTP](https://www.erlang.org/doc/system/design_principles.html) [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) that:
-  - Rehydrates state from events on startup.
+  - Rehydrates state from events on startup (with optional snapshot loading).
   - Processes commands to produce events.
   - Applies events to evolve internal state.
   - Automatically passivates (shuts down) after inactivity.
+  - Saves snapshots at configurable intervals for optimization.
 
 The following diagram shows how the system processes a command using the event-sourced aggregate infrastructure.
 
@@ -168,6 +201,39 @@ When no messages are received within the timeout window:
 - The aggregate process exits normally (`stop`).
 - Its state is discarded.
 - Future commands will cause the manager to rehydrate it from persisted events.
+
+#### Snapshots
+
+Snapshots provide a performance optimization for aggregate rehydration by avoiding the need to replay all events from the beginning of a stream.
+
+**How it works:**
+
+1. **On startup**, the aggregate:
+   - Attempts to load the latest snapshot from the event store
+   - If found, initializes state from the snapshot
+   - Replays only events that occurred after the snapshot sequence
+
+2. **During command processing**, snapshots are automatically created when:
+   - A `snapshot_interval` is configured (e.g., `10`)
+   - The current sequence number is a multiple of the interval
+   - For example, with `snapshot_interval => 10`, snapshots are saved at sequences 10, 20, 30, etc.
+
+**Configuration:**
+
+```erlang
+% Create aggregate with snapshots every 10 events
+event_sourcing_core_aggregate:start_link(
+    bank_account_aggregate,
+    event_sourcing_core_store_ets,
+    <<"account-123">>,
+    #{
+        timeout => 5000,
+        snapshot_interval => 10  % Save snapshot every 10 events
+    }
+).
+```
+
+Setting `snapshot_interval => 0` (the default) disables automatic snapshotting.
 
 ### Aggregate Manager
 
