@@ -18,6 +18,14 @@ to interact with the store and access event record fields.
     persist_events/3,
     retrieve_and_fold_events/5,
     retrieve_events/3,
+    save_snapshot/2,
+    retrieve_latest_snapshot/2,
+    new_snapshot/5,
+    snapshot_stream_id/1,
+    snapshot_domain/1,
+    snapshot_sequence/1,
+    snapshot_timestamp/1,
+    snapshot_state/1,
     id/1,
     domain/1,
     type/1,
@@ -41,7 +49,10 @@ to interact with the store and access event record fields.
     sequence/0,
     stream_id/0,
     tags/0,
-    timestamp/0
+    timestamp/0,
+    snapshot/0,
+    snapshot_id/0,
+    snapshot_data/0
 ]).
 
 -doc """
@@ -106,6 +117,39 @@ Returns `{ok, Acc}` where `Acc` is the result of folding all events.
     AccIn :: term(),
     AccOut :: term().
 
+-doc """
+Save a snapshot for a stream.
+
+This callback saves a snapshot of the aggregate state at a specific point in time.
+The snapshot represents the aggregate state after all events up to and including
+the given sequence number have been applied.
+
+The snapshot record already contains all necessary information including domain,
+stream_id, sequence, timestamp, and state. This is consistent with how events
+are handled - they are passed as complete records rather than decomposed fields.
+
+- Snapshot is the complete snapshot record to persist.
+
+Returns `ok` on success. May throw an exception if persistence fails.
+""".
+-callback save_snapshot(Snapshot) -> ok when
+    Snapshot :: snapshot().
+
+-doc """
+Retrieve the latest snapshot for a stream.
+
+This callback retrieves the most recent snapshot for the given stream, if one exists.
+The snapshot can be used to restore aggregate state without replaying all events.
+
+- StreamId is the unique identifier for the stream.
+
+Returns `{ok, Snapshot}` if a snapshot exists, or `{error, not_found}` if no snapshot
+has been saved for this stream.
+""".
+-callback retrieve_latest_snapshot(StreamId) -> {ok, Snapshot} | {error, not_found} when
+    StreamId :: stream_id(),
+    Snapshot :: snapshot().
+
 -spec start(module()) -> ok.
 start(Module) ->
     Module:start().
@@ -115,7 +159,7 @@ stop(Module) ->
     Module:stop().
 
 -doc """
-Persists a event in the event store using the specified persistence module.
+Persists a list of events to the event store using the specified store module.
 """.
 -spec persist_events(StoreModule, StreamId, Events) -> ok when
     StoreModule :: module(),
@@ -311,3 +355,102 @@ Retrieves the payload containing the domain-specific data of this event.
 -spec payload(event()) -> event_payload().
 payload(#event{payload = Payload}) ->
     Payload.
+
+-doc """
+Creates a new snapshot record.
+
+- Domain is the domain (aggregate module) to which the stream belongs.
+- StreamId is the unique identifier for the stream.
+- Sequence is the sequence number of the last event included in the snapshot.
+- Timestamp is the timestamp when the snapshot was created.
+- State is the aggregate state to snapshot.
+
+Returns the created snapshot record.
+""".
+-spec new_snapshot(Domain, StreamId, Sequence, Timestamp, State) -> Snapshot when
+    Domain :: domain(),
+    StreamId :: stream_id(),
+    Sequence :: sequence(),
+    Timestamp :: timestamp(),
+    State :: snapshot_data(),
+    Snapshot :: snapshot().
+new_snapshot(Domain, StreamId, Sequence, Timestamp, State) ->
+    #snapshot{
+        domain = Domain,
+        stream_id = StreamId,
+        sequence = Sequence,
+        timestamp = Timestamp,
+        state = State
+    }.
+
+-doc """
+Saves a snapshot using the specified store module.
+
+This function delegates snapshot saving to the store module implementation.
+The snapshot captures the aggregate state at a specific point in time, allowing
+for faster aggregate rehydration by avoiding full event replay.
+
+The snapshot record contains all necessary fields (domain, stream_id, sequence,
+timestamp, state), making the API consistent with event persistence where events
+are passed as complete records.
+
+- StoreModule is the persistence module implementing snapshot storage.
+- Snapshot is the complete snapshot record to persist.
+
+Returns `ok` on success.
+""".
+-spec save_snapshot(StoreModule, Snapshot) -> ok when
+    StoreModule :: module(),
+    Snapshot :: snapshot().
+save_snapshot(StoreModule, Snapshot) ->
+    StoreModule:save_snapshot(Snapshot).
+
+-doc """
+Retrieves the latest snapshot for a stream using the specified store module.
+
+- StoreModule is the module implementing the event_sourcing_core_store behaviour.
+- StreamId is the unique identifier for the stream.
+
+Returns `{ok, Snapshot}` if found, `{error, not_found}` otherwise.
+""".
+-spec retrieve_latest_snapshot(StoreModule, StreamId) -> {ok, Snapshot} | {error, not_found} when
+    StoreModule :: module(),
+    StreamId :: stream_id(),
+    Snapshot :: snapshot().
+retrieve_latest_snapshot(StoreModule, StreamId) ->
+    StoreModule:retrieve_latest_snapshot(StreamId).
+
+-doc """
+Returns the stream identifier of the snapshot.
+""".
+-spec snapshot_stream_id(snapshot()) -> stream_id().
+snapshot_stream_id(#snapshot{stream_id = StreamId}) ->
+    StreamId.
+
+-doc """
+Returns the domain of the snapshot.
+""".
+-spec snapshot_domain(snapshot()) -> domain().
+snapshot_domain(#snapshot{domain = Domain}) ->
+    Domain.
+
+-doc """
+Returns the sequence number of the snapshot (last event included).
+""".
+-spec snapshot_sequence(snapshot()) -> sequence().
+snapshot_sequence(#snapshot{sequence = Sequence}) ->
+    Sequence.
+
+-doc """
+Returns the timestamp when the snapshot was created.
+""".
+-spec snapshot_timestamp(snapshot()) -> timestamp().
+snapshot_timestamp(#snapshot{timestamp = Timestamp}) ->
+    Timestamp.
+
+-doc """
+Returns the state stored in the snapshot.
+""".
+-spec snapshot_state(snapshot()) -> snapshot_data().
+snapshot_state(#snapshot{state = State}) ->
+    State.

@@ -50,3 +50,30 @@ Commands are domain-defined and passed to the aggregate.
 Each aggregate defines its own command structure.
 """.
 -type command() :: term().
+
+%%% Snapshot specification
+-type snapshot_id() :: {domain(), stream_id()}.
+-type snapshot_data() :: term().
+
+-record(snapshot,
+        {stream_id :: stream_id(),
+         domain :: domain(),
+         sequence :: sequence(),
+         timestamp :: timestamp(),
+         state :: snapshot_data()}).
+
+-doc """
+Represents a snapshot of an aggregate's state at a specific point in time.
+
+Snapshots are used to optimize aggregate rehydration by avoiding the need to
+replay all events from the beginning of a stream. Instead, the aggregate can
+load the latest snapshot and replay only the events that occurred after it.
+
+Fields:
+- `stream_id`: Stream identifier (e.g., "user-001").
+- `domain`: Domain name (e.g., "user").
+- `sequence`: The sequence number of the last event included in this snapshot.
+- `timestamp`: UTC timestamp when the snapshot was created (milliseconds since epoch).
+- `state`: The serialized aggregate state at the snapshot point.
+""".
+-type snapshot() :: #snapshot{}.
