@@ -12,7 +12,10 @@ suite_test_() ->
             {"persist_2_streams_event", fun persist_2_streams_event/1},
             {"fetch_streams_event", fun fetch_streams_event/1},
             {"wrong_stream_id", fun wrong_stream_id/1},
-            {"duplicate_event", fun duplicate_event/1}
+            {"duplicate_event", fun duplicate_event/1},
+            {"snapshot_not_found", fun snapshot_not_found/1},
+            {"save_and_retrieve_snapshot", fun save_and_retrieve_snapshot/1},
+            {"overwrite_snapshot", fun overwrite_snapshot/1}
         ],
     TestCases =
         [
@@ -236,4 +239,60 @@ duplicate_event(Store) ->
         event_sourcing_core_store:persist_events(Store, stream_B, Events)
     ),
     ?assertMatch([], event_sourcing_core_store:retrieve_events(Store, stream_B, #{})),
+    ?assertEqual(ok, Store:stop()).
+
+snapshot_not_found(Store) ->
+    ?assertMatch(ok, event_sourcing_core_store:start(Store)),
+    ?assertMatch(
+        {error, not_found},
+        event_sourcing_core_store:retrieve_latest_snapshot(Store, stream_A)
+    ),
+    ?assertEqual(ok, Store:stop()).
+
+save_and_retrieve_snapshot(Store) ->
+    ?assertMatch(ok, event_sourcing_core_store:start(Store)),
+    Timestamp = erlang:system_time(),
+    State = #{balance => 100, name => "John"},
+    Sequence = 5,
+    Domain = user,
+
+    Snapshot = event_sourcing_core_store:new_snapshot(Domain, stream_A, Sequence, Timestamp, State),
+    ?assertMatch(ok, event_sourcing_core_store:save_snapshot(Store, Snapshot)),
+
+    {ok, RetrievedSnapshot} = event_sourcing_core_store:retrieve_latest_snapshot(Store, stream_A),
+    ?assertEqual(stream_A, event_sourcing_core_store:snapshot_stream_id(RetrievedSnapshot)),
+    ?assertEqual(Domain, event_sourcing_core_store:snapshot_domain(RetrievedSnapshot)),
+    ?assertEqual(Sequence, event_sourcing_core_store:snapshot_sequence(RetrievedSnapshot)),
+    ?assertEqual(Timestamp, event_sourcing_core_store:snapshot_timestamp(RetrievedSnapshot)),
+    ?assertEqual(State, event_sourcing_core_store:snapshot_state(RetrievedSnapshot)),
+
+    ?assertEqual(ok, Store:stop()).
+
+overwrite_snapshot(Store) ->
+    ?assertMatch(ok, event_sourcing_core_store:start(Store)),
+    Timestamp1 = erlang:system_time(),
+    State1 = #{balance => 100},
+    Sequence1 = 5,
+    Domain = user,
+
+    Snapshot1 = event_sourcing_core_store:new_snapshot(
+        Domain, stream_A, Sequence1, Timestamp1, State1
+    ),
+    ?assertMatch(ok, event_sourcing_core_store:save_snapshot(Store, Snapshot1)),
+
+    %% Save a new snapshot for the same stream
+    Timestamp2 = erlang:system_time(),
+    State2 = #{balance => 200},
+    Sequence2 = 10,
+
+    Snapshot2 = event_sourcing_core_store:new_snapshot(
+        Domain, stream_A, Sequence2, Timestamp2, State2
+    ),
+    ?assertMatch(ok, event_sourcing_core_store:save_snapshot(Store, Snapshot2)),
+
+    %% Should retrieve the latest snapshot
+    {ok, RetrievedSnapshot} = event_sourcing_core_store:retrieve_latest_snapshot(Store, stream_A),
+    ?assertEqual(Sequence2, event_sourcing_core_store:snapshot_sequence(RetrievedSnapshot)),
+    ?assertEqual(State2, event_sourcing_core_store:snapshot_state(RetrievedSnapshot)),
+
     ?assertEqual(ok, Store:stop()).
