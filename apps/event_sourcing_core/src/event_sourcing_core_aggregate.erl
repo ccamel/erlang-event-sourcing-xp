@@ -49,7 +49,8 @@ Function returns `{ok, Pid}` if successful, `{error, Reason}` otherwise.
             timeout => timeout(),
             sequence_zero => fun(() -> sequence()),
             sequence_next => fun((sequence()) -> sequence()),
-            now_fun => fun(() -> timestamp())
+            now_fun => fun(() -> timestamp()),
+            snapshot_interval => non_neg_integer()
         }.
 start_link(Aggregate, Store, Id, Opts) ->
     gen_server:start_link(?MODULE, {Aggregate, Store, Id, Opts}, []).
@@ -84,7 +85,8 @@ dispatch(Pid, Command) ->
     sequence_zero :: fun(() -> sequence()),
     sequence_next :: fun((sequence()) -> sequence()),
     now_fun :: fun(() -> timestamp()),
-    timer_ref = undefined :: reference()
+    timer_ref = undefined :: reference() | undefined,
+    snapshot_interval = 0 :: non_neg_integer()
 }).
 
 -opaque state() :: #state{}.
@@ -98,7 +100,12 @@ sequentially to rehydrate the aggregate's state.
 - Aggregate is the aggregate module implementing the domain logic.
 - Store is the persistence module (store) implementing event retrieval.
 - Id is the unique identifier for the aggregate.
-- Timeout is the inactivity timeout (in milliseconds) for the aggregate process.
+- Opts is a map of options including:
+  - `timeout`: Inactivity timeout in milliseconds.
+  - `sequence_zero`: Function to get the initial sequence number.
+  - `sequence_next`: Function to get the next sequence number.
+  - `now_fun`: Function to get the current timestamp.
+  - `snapshot_interval`: Interval for snapshot creation.
 
 Function returns {ok, state()} on success, and returns {stop, Reason} on failure.
 """.
@@ -107,7 +114,8 @@ Function returns {ok, state()} on success, and returns {stop, Reason} on failure
         timeout => timeout(),
         sequence_zero => fun(() -> sequence()),
         sequence_next => fun((sequence()) -> sequence()),
-        now_fun => fun(() -> timestamp())
+        now_fun => fun(() -> timestamp()),
+        snapshot_interval => non_neg_integer()
     }}
 ) ->
     {ok, state()}.
@@ -115,6 +123,19 @@ init({Aggregate, Store, Id, Opts}) ->
     State0 = Aggregate:init(),
     SequenceZero = maps:get(sequence_zero, Opts, fun() -> ?SEQUENCE_ZERO end),
     SequenceNext = maps:get(sequence_next, Opts, fun(Sequence) -> Sequence + 1 end),
+
+    %% Try to load the latest snapshot
+    {StateFromSnapshot, SequenceFromSnapshot} =
+        case event_sourcing_core_store:retrieve_latest_snapshot(Store, Id) of
+            {ok, Snapshot} ->
+                SnapshotState = event_sourcing_core_store:snapshot_state(Snapshot),
+                SnapshotSeq = event_sourcing_core_store:snapshot_sequence(Snapshot),
+                {SnapshotState, SnapshotSeq};
+            {error, not_found} ->
+                {State0, SequenceZero()}
+        end,
+
+    %% Replay events after the snapshot
     FoldFun =
         fun(Event, {StateAcc, _SeqAcc}) ->
             {
@@ -128,11 +149,12 @@ init({Aggregate, Store, Id, Opts}) ->
         event_sourcing_core_store:retrieve_and_fold_events(
             Store,
             Id,
-            #{},
+            #{from => SequenceFromSnapshot + 1},
             FoldFun,
-            {State0, SequenceZero()}
+            {StateFromSnapshot, SequenceFromSnapshot}
         ),
     Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
+    SnapshotInterval = maps:get(snapshot_interval, Opts, 0),
     TimerRef = install_passivation(Timeout, undefined),
     {ok, #state{
         aggregate = Aggregate,
@@ -143,8 +165,9 @@ init({Aggregate, Store, Id, Opts}) ->
         timeout = Timeout,
         sequence_zero = SequenceZero,
         sequence_next = SequenceNext,
-        now_fun = maps:get(now_fun, Opts, fun() -> erlang:system_time() end),
-        timer_ref = TimerRef
+        now_fun = maps:get(now_fun, Opts, fun() -> erlang:system_time(millisecond) end),
+        timer_ref = TimerRef,
+        snapshot_interval = SnapshotInterval
     }}.
 
 -doc """
@@ -162,6 +185,7 @@ handle_call(Command, _From, State) ->
     NewTimerRef = install_passivation(State#state.timeout, State#state.timer_ref),
     case process_command(State, Command) of
         {ok, {State1, Sequence1}} ->
+            maybe_save_snapshot(State#state{state = State1, sequence = Sequence1}),
             {reply, ok, State#state{
                 state = State1,
                 sequence = Sequence1,
@@ -184,6 +208,7 @@ handle_cast(Command, State) ->
     NewTimerRef = install_passivation(State#state.timeout, State#state.timer_ref),
     case process_command(State, Command) of
         {ok, {State1, Sequence1}} ->
+            maybe_save_snapshot(State#state{state = State1, sequence = Sequence1}),
             {noreply, State#state{
                 state = State1,
                 sequence = Sequence1,
@@ -246,7 +271,8 @@ process_command(
         id = Id,
         state = State0,
         sequence = Sequence0,
-        sequence_next = SequenceNext
+        sequence_next = SequenceNext,
+        now_fun = NowFun
     },
     Command
 ) ->
@@ -255,7 +281,9 @@ process_command(
         {ok, []} ->
             {ok, {State0, Sequence0}};
         {ok, PayloadEvents} when is_list(PayloadEvents) ->
-            ok = persist_events(PayloadEvents, {Aggregate, Store, Id, Sequence0, SequenceNext}),
+            ok = persist_events(
+                PayloadEvents, {Aggregate, Store, Id, Sequence0, SequenceNext, NowFun}
+            ),
             {State1, Sequence1} =
                 apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}),
             {ok, {State1, Sequence1}};
@@ -291,14 +319,15 @@ apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}) ->
         Store :: module(),
         Id :: stream_id(),
         Sequence0 :: sequence(),
-        SequenceNext :: fun((sequence()) -> sequence())
+        SequenceNext :: fun((sequence()) -> sequence()),
+        NowFun :: fun(() -> timestamp())
     }
 ) -> ok.
-persist_events(PayloadEvents, {Aggregate, Store, Id, Sequence0, SequenceNext}) ->
+persist_events(PayloadEvents, {Aggregate, Store, Id, Sequence0, SequenceNext, NowFun}) ->
     {Events, _} =
         lists:foldl(
             fun(PayloadEvent, {Events, SequenceN}) ->
-                Now = erlang:system_time(millisecond),
+                Now = NowFun(),
                 SequenceN1 = SequenceNext(SequenceN),
                 EventType = Aggregate:event_type(PayloadEvent),
                 Event =
@@ -322,3 +351,31 @@ persist_events(PayloadEvents, {Aggregate, Store, Id, Sequence0, SequenceNext}) -
         Events
     ),
     event_sourcing_core_store:persist_events(Store, Id, Events).
+
+-doc """
+Saves a snapshot if the snapshot interval is configured and the current
+sequence is a multiple of the interval.
+
+- State is the current aggregate state record.
+""".
+-spec maybe_save_snapshot(State) -> ok when State :: state().
+maybe_save_snapshot(#state{snapshot_interval = 0}) ->
+    ok;
+maybe_save_snapshot(
+    #state{
+        snapshot_interval = Interval,
+        sequence = Sequence,
+        store = Store,
+        aggregate = Aggregate,
+        id = Id,
+        state = AggState,
+        now_fun = NowFun
+    }
+) when Sequence rem Interval =:= 0 ->
+    Timestamp = NowFun(),
+    logger:info("Saving snapshot for ~p at sequence ~p", [Id, Sequence]),
+    Snapshot = event_sourcing_core_store:new_snapshot(Aggregate, Id, Sequence, Timestamp, AggState),
+    event_sourcing_core_store:save_snapshot(Store, Snapshot),
+    ok;
+maybe_save_snapshot(_) ->
+    ok.

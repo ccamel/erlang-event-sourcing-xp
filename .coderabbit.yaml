@@ -38,6 +38,7 @@ reviews:
     drafts: false
     base_branches:
       - "main"
+    auto_incremental_review: false # review on demand
 
 chat:
   auto_reply: true

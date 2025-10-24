@@ -8,18 +8,33 @@ The Mnesia-based implementation of the event store.
 -include_lib("stdlib/include/qlc.hrl").
 -include_lib("event_sourcing_core.hrl").
 
--export([start/0, stop/0, retrieve_and_fold_events/4, persist_events/2]).
+-export([
+    start/0,
+    stop/0,
+    retrieve_and_fold_events/4,
+    persist_events/2,
+    save_snapshot/1,
+    retrieve_latest_snapshot/1
+]).
 
--export_type([event/0, stream_id/0]).
+-export_type([event/0, stream_id/0, sequence/0, timestamp/0, snapshot/0, snapshot_data/0]).
 
 -record(event_record, {
     key :: event_id(), stream_id :: stream_id(), sequence :: sequence(), event :: event()
 }).
 
--doc """
-The name of the table that will store events.
-""".
+-record(snapshot_record, {
+    stream_id :: stream_id(),
+    sequence :: sequence(),
+    timestamp :: timestamp(),
+    snapshot :: snapshot()
+}).
+
+%% The name of the table that will store events.
 -define(EVENT_TABLE_NAME, events).
+
+%% The name of the table that will store snapshots.
+-define(SNAPSHOT_TABLE_NAME, snapshots).
 
 -spec start() -> ok.
 start() ->
@@ -43,6 +58,27 @@ start() ->
                     ok;
                 {aborted, Reason} ->
                     erlang:error(Reason)
+            end
+    end,
+    try mnesia:table_info(?SNAPSHOT_TABLE_NAME, all) of
+        _ ->
+            ok
+    catch
+        exit:{aborted, {no_exists, ?SNAPSHOT_TABLE_NAME, all}} ->
+            case
+                mnesia:create_table(
+                    ?SNAPSHOT_TABLE_NAME,
+                    [
+                        {attributes, record_info(fields, snapshot_record)},
+                        {record_name, snapshot_record},
+                        {type, set}
+                    ]
+                )
+            of
+                {atomic, ok} ->
+                    ok;
+                {aborted, SnapshotReason} ->
+                    erlang:error(SnapshotReason)
             end
     end.
 
@@ -121,6 +157,37 @@ retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc) when
     case mnesia:transaction(FunQuery) of
         {atomic, Events} ->
             lists:foldl(FoldFun, InitialAcc, Events);
+        {aborted, Reason} ->
+            erlang:error(Reason)
+    end.
+
+-spec save_snapshot(Snapshot) -> ok when
+    Snapshot :: snapshot().
+save_snapshot(Snapshot) ->
+    Record = #snapshot_record{
+        stream_id = event_sourcing_core_store:snapshot_stream_id(Snapshot),
+        sequence = event_sourcing_core_store:snapshot_sequence(Snapshot),
+        timestamp = event_sourcing_core_store:snapshot_timestamp(Snapshot),
+        snapshot = Snapshot
+    },
+    Fun = fun() -> mnesia:write(?SNAPSHOT_TABLE_NAME, Record, write) end,
+    case mnesia:transaction(Fun) of
+        {atomic, ok} ->
+            ok;
+        {aborted, Reason} ->
+            erlang:error(Reason)
+    end.
+
+-spec retrieve_latest_snapshot(StreamId) -> {ok, Snapshot} | {error, not_found} when
+    StreamId :: stream_id(),
+    Snapshot :: snapshot().
+retrieve_latest_snapshot(StreamId) ->
+    Fun = fun() -> mnesia:read(?SNAPSHOT_TABLE_NAME, StreamId, read) end,
+    case mnesia:transaction(Fun) of
+        {atomic, [#snapshot_record{snapshot = Snapshot}]} ->
+            {ok, Snapshot};
+        {atomic, []} ->
+            {error, not_found};
         {aborted, Reason} ->
             erlang:error(Reason)
     end.

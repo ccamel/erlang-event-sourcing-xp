@@ -26,7 +26,7 @@ agg_id(Pid, Id) ->
 -define(assertState(Pid, Id, ExpectedState, ExpectedSeq),
     ?assertMatch(
         {state, bank_account_aggregate, event_sourcing_core_store_ets, Id, ExpectedState,
-            ExpectedSeq, _, _, _, _, _},
+            ExpectedSeq, _, _, _, _, _, _},
         sys:get_state(Pid)
     )
 ).
