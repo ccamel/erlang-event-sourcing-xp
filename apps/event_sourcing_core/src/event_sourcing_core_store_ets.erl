@@ -117,17 +117,23 @@ event_to_record(Event) ->
         event = Event
     }.
 
--spec save_snapshot(Snapshot) -> ok when
-    Snapshot :: snapshot().
+-spec save_snapshot(Snapshot) -> ok | {error, Reason} when
+    Snapshot :: snapshot(),
+    Reason :: term().
 save_snapshot(Snapshot) ->
-    Record = #snapshot_record{
-        stream_id = event_sourcing_core_store:snapshot_stream_id(Snapshot),
-        sequence = event_sourcing_core_store:snapshot_sequence(Snapshot),
-        timestamp = event_sourcing_core_store:snapshot_timestamp(Snapshot),
-        snapshot = Snapshot
-    },
-    true = ets:insert(?SNAPSHOT_TABLE_NAME, Record),
-    ok.
+    try
+        Record = #snapshot_record{
+            stream_id = event_sourcing_core_store:snapshot_stream_id(Snapshot),
+            sequence = event_sourcing_core_store:snapshot_sequence(Snapshot),
+            timestamp = event_sourcing_core_store:snapshot_timestamp(Snapshot),
+            snapshot = Snapshot
+        },
+        true = ets:insert(?SNAPSHOT_TABLE_NAME, Record),
+        ok
+    catch
+        error:Reason ->
+            {error, Reason}
+    end.
 
 -spec retrieve_latest_snapshot(StreamId) -> {ok, Snapshot} | {error, not_found} when
     StreamId :: stream_id(),

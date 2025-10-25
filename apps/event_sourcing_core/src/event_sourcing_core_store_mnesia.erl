@@ -161,8 +161,9 @@ retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc) when
             erlang:error(Reason)
     end.
 
--spec save_snapshot(Snapshot) -> ok when
-    Snapshot :: snapshot().
+-spec save_snapshot(Snapshot) -> ok | {error, Reason} when
+    Snapshot :: snapshot(),
+    Reason :: term().
 save_snapshot(Snapshot) ->
     Record = #snapshot_record{
         stream_id = event_sourcing_core_store:snapshot_stream_id(Snapshot),
@@ -175,7 +176,7 @@ save_snapshot(Snapshot) ->
         {atomic, ok} ->
             ok;
         {aborted, Reason} ->
-            erlang:error(Reason)
+            {error, Reason}
     end.
 
 -spec retrieve_latest_snapshot(StreamId) -> {ok, Snapshot} | {error, not_found} when

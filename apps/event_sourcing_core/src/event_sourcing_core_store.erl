@@ -130,10 +130,13 @@ are handled - they are passed as complete records rather than decomposed fields.
 
 - Snapshot is the complete snapshot record to persist.
 
-Returns `ok` on success. May throw an exception if persistence fails.
+Returns `ok` on success, or `{error, Reason}` if persistence fails. Returning an
+error is preferred over throwing an exception, as snapshot failures should not
+crash aggregates (events are the source of truth).
 """.
--callback save_snapshot(Snapshot) -> ok when
-    Snapshot :: snapshot().
+-callback save_snapshot(Snapshot) -> ok | {error, Reason} when
+    Snapshot :: snapshot(),
+    Reason :: term().
 
 -doc """
 Retrieve the latest snapshot for a stream.
@@ -397,11 +400,12 @@ are passed as complete records.
 - StoreModule is the persistence module implementing snapshot storage.
 - Snapshot is the complete snapshot record to persist.
 
-Returns `ok` on success.
+Returns `ok` on success, or `{error, Reason}` if persistence fails.
 """.
--spec save_snapshot(StoreModule, Snapshot) -> ok when
+-spec save_snapshot(StoreModule, Snapshot) -> ok | {error, Reason} when
     StoreModule :: module(),
-    Snapshot :: snapshot().
+    Snapshot :: snapshot(),
+    Reason :: term().
 save_snapshot(StoreModule, Snapshot) ->
     StoreModule:save_snapshot(Snapshot).
 
