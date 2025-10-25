@@ -34,7 +34,7 @@
 Starts an aggregate process with a given timeout.
 
 - Aggregate is the aggregate module implementing the behavior.
-- Store is the event-store module.
+- Store is a `{EventStore, SnapshotStore}` tuple.
 - Id is the unique identifier for the aggregate instance.
 - Timeout is the inactivity timeout in milliseconds before passivation.
 
@@ -42,7 +42,7 @@ Function returns `{ok, Pid}` if successful, `{error, Reason}` otherwise.
 """.
 -spec start_link(Aggregate, Store, Id, Opts) -> gen_server:start_ret() when
     Aggregate :: module(),
-    Store :: module(),
+    Store :: event_sourcing_core_store:store(),
     Id :: stream_id(),
     Opts ::
         #{
@@ -59,10 +59,12 @@ start_link(Aggregate, Store, Id, Opts) ->
 Starts a new aggregate process.
 
 - Aggregate is the aggregate module to start.
-- Store is the persistence module (event-store) implementing event retrieval.
+- Store must be provided as `{EventStore, SnapshotStore}`.
 - Id is the unique identifier for the aggregate instance.
 """.
--spec start_link(Aggregate :: module(), Store :: module(), Id :: stream_id()) ->
+-spec start_link(
+    Aggregate :: module(), Store :: event_sourcing_core_store:store(), Id :: stream_id()
+) ->
     gen_server:start_ret().
 start_link(Aggregate, Store, Id) ->
     start_link(Aggregate, Store, Id, #{}).
@@ -77,7 +79,7 @@ dispatch(Pid, Command) ->
 
 -record(state, {
     aggregate :: module(),
-    store :: module(),
+    store :: event_sourcing_core_store:store(),
     id :: stream_id(),
     state :: aggregate_state(),
     sequence = ?SEQUENCE_ZERO :: non_neg_integer(),
@@ -110,7 +112,7 @@ sequentially to rehydrate the aggregate's state.
 Function returns {ok, state()} on success, and returns {stop, Reason} on failure.
 """.
 -spec init(
-    {module(), module(), stream_id(), #{
+    {module(), event_sourcing_core_store:store(), stream_id(), #{
         timeout => timeout(),
         sequence_zero => fun(() -> sequence()),
         sequence_next => fun((sequence()) -> sequence()),
@@ -316,7 +318,7 @@ apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}) ->
     PayloadEvents :: [event_payload()],
     {
         Aggregate :: module(),
-        Store :: module(),
+        Store :: event_sourcing_core_store:store(),
         Id :: stream_id(),
         Sequence0 :: sequence(),
         SequenceNext :: fun((sequence()) -> sequence()),

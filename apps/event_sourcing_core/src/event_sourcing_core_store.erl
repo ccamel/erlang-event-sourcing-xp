@@ -52,8 +52,12 @@ to interact with the store and access event record fields.
     timestamp/0,
     snapshot/0,
     snapshot_id/0,
-    snapshot_data/0
+    snapshot_data/0,
+    store/0
 ]).
+
+-type store_backend() :: module().
+-type store() :: {store_backend(), store_backend()}.
 
 -doc """
 Starts the event store, performing any necessary initialization.
@@ -153,22 +157,34 @@ has been saved for this stream.
     StreamId :: stream_id(),
     Snapshot :: snapshot().
 
--spec start(module()) -> ok.
-start(Module) ->
-    Module:start().
+-spec start(store()) -> ok.
+start({EventModule, SnapshotModule}) ->
+    ok = EventModule:start(),
+    case SnapshotModule of
+        EventModule ->
+            ok;
+        _ ->
+            SnapshotModule:start()
+    end.
 
--spec stop(module()) -> ok.
-stop(Module) ->
-    Module:stop().
+-spec stop(store()) -> ok.
+stop({EventModule, SnapshotModule}) ->
+    case SnapshotModule of
+        EventModule ->
+            EventModule:stop();
+        _ ->
+            ok = SnapshotModule:stop(),
+            EventModule:stop()
+    end.
 
 -doc """
 Persists a list of events to the event store using the specified store module.
 """.
--spec persist_events(StoreModule, StreamId, Events) -> ok when
-    StoreModule :: module(),
+-spec persist_events(Store, StreamId, Events) -> ok when
+    Store :: store(),
     StreamId :: stream_id(),
     Events :: [event()].
-persist_events(StoreModule, StreamId, Events) when is_list(Events) ->
+persist_events({EventModule, _}, StreamId, Events) when is_list(Events) ->
     _ = lists:foldl(
         fun(Event, Seen) ->
             case stream_id(Event) of
@@ -187,13 +203,13 @@ persist_events(StoreModule, StreamId, Events) when is_list(Events) ->
         [],
         Events
     ),
-    StoreModule:persist_events(StreamId, Events).
+    EventModule:persist_events(StreamId, Events).
 
 -doc """
 Retrieves and folds events from the event store using the specified persistence module.
 """.
--spec retrieve_and_fold_events(StoreModule, StreamId, Options, Fun, Acc0) -> Acc1 when
-    StoreModule :: module(),
+-spec retrieve_and_fold_events(Store, StreamId, Options, Fun, Acc0) -> Acc1 when
+    Store :: store(),
     StreamId :: stream_id(),
     Options :: fold_events_opts(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
@@ -201,20 +217,20 @@ Retrieves and folds events from the event store using the specified persistence 
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
-retrieve_and_fold_events(StoreModule, StreamId, Options, Fun, InitialResult) ->
-    StoreModule:retrieve_and_fold_events(StreamId, Options, Fun, InitialResult).
+retrieve_and_fold_events({EventModule, _}, StreamId, Options, Fun, InitialResult) ->
+    EventModule:retrieve_and_fold_events(StreamId, Options, Fun, InitialResult).
 
 -doc """
 Retrieves events for a given stream using the specified store module and options.
 """.
--spec retrieve_events(StoreModule, StreamId, Options) -> Result when
-    StoreModule :: module(),
+-spec retrieve_events(Store, StreamId, Options) -> Result when
+    Store :: store(),
     StreamId :: stream_id(),
     Options :: fold_events_opts(),
     Result :: [event()].
-retrieve_events(StoreModule, StreamId, Options) ->
+retrieve_events(Store, StreamId, Options) ->
     retrieve_and_fold_events(
-        StoreModule,
+        Store,
         StreamId,
         Options,
         fun(Event, Acc) -> Acc ++ [Event] end,
@@ -402,12 +418,12 @@ are passed as complete records.
 
 Returns `ok` on success, or `{warning, Reason}` if persistence fails.
 """.
--spec save_snapshot(StoreModule, Snapshot) -> ok | {warning, Reason} when
-    StoreModule :: module(),
+-spec save_snapshot(Store, Snapshot) -> ok | {warning, Reason} when
+    Store :: store(),
     Snapshot :: snapshot(),
     Reason :: term().
-save_snapshot(StoreModule, Snapshot) ->
-    StoreModule:save_snapshot(Snapshot).
+save_snapshot({_, SnapshotModule}, Snapshot) ->
+    SnapshotModule:save_snapshot(Snapshot).
 
 -doc """
 Retrieves the latest snapshot for a stream using the specified store module.
@@ -417,12 +433,12 @@ Retrieves the latest snapshot for a stream using the specified store module.
 
 Returns `{ok, Snapshot}` if found, `{error, not_found}` otherwise.
 """.
--spec retrieve_latest_snapshot(StoreModule, StreamId) -> {ok, Snapshot} | {error, not_found} when
-    StoreModule :: module(),
+-spec retrieve_latest_snapshot(Store, StreamId) -> {ok, Snapshot} | {error, not_found} when
+    Store :: store(),
     StreamId :: stream_id(),
     Snapshot :: snapshot().
-retrieve_latest_snapshot(StoreModule, StreamId) ->
-    StoreModule:retrieve_latest_snapshot(StreamId).
+retrieve_latest_snapshot({_, SnapshotModule}, StreamId) ->
+    SnapshotModule:retrieve_latest_snapshot(StreamId).
 
 -doc """
 Returns the stream identifier of the snapshot.

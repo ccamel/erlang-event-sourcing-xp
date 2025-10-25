@@ -2,6 +2,8 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-define(ETS_STORE, {event_sourcing_store_ets, event_sourcing_store_ets}).
+
 suite_test_() ->
     TestCases =
         [
@@ -15,17 +17,17 @@ suite_test_() ->
     {foreach, fun setup/0, fun teardown/1, TestCases}.
 
 setup() ->
-    event_sourcing_core_store:start(event_sourcing_store_ets).
+    event_sourcing_core_store:start(?ETS_STORE).
 
 teardown(_) ->
-    event_sourcing_core_store:stop(event_sourcing_store_ets).
+    event_sourcing_core_store:stop(?ETS_STORE).
 
 %%%  Test cases
 
 -define(assertState(Pid, Id, ExpectedState, ExpectedSeq),
     ?assertMatch(
-        {state, bank_account_aggregate, event_sourcing_store_ets, Id, ExpectedState, ExpectedSeq, _,
-            _, _, _, _, _},
+        {state, bank_account_aggregate, ?ETS_STORE, Id, ExpectedState, ExpectedSeq, _, _, _, _, _,
+            _},
         sys:get_state(Pid)
     )
 ).
@@ -62,7 +64,7 @@ aggregate_passivation() ->
     {ok, Pid2} =
         event_sourcing_core_aggregate:start_link(
             bank_account_aggregate,
-            event_sourcing_store_ets,
+            ?ETS_STORE,
             Id,
             #{timeout => 5000}
         ),
@@ -86,7 +88,7 @@ start_test_account(Timeout) ->
     {ok, Pid} =
         event_sourcing_core_aggregate:start_link(
             bank_account_aggregate,
-            event_sourcing_store_ets,
+            ?ETS_STORE,
             Id,
             #{timeout => Timeout}
         ),
@@ -98,7 +100,7 @@ start_test_account_with_snapshots(Timeout, SnapshotInterval) ->
     {ok, Pid} =
         event_sourcing_core_aggregate:start_link(
             bank_account_aggregate,
-            event_sourcing_store_ets,
+            ?ETS_STORE,
             Id,
             #{timeout => Timeout, snapshot_interval => SnapshotInterval}
         ),
@@ -115,7 +117,7 @@ aggregate_snapshot_creation() ->
 
     %% Snapshot should be saved at sequence 3 (3 % 3 == 0)
     {ok, Snapshot} = event_sourcing_core_store:retrieve_latest_snapshot(
-        event_sourcing_store_ets,
+        ?ETS_STORE,
         Id
     ),
     ?assertEqual(3, event_sourcing_core_store:snapshot_sequence(Snapshot)),
@@ -129,7 +131,7 @@ aggregate_snapshot_creation() ->
 
     %% Snapshot should now be at sequence 6 (6 % 3 == 0)
     {ok, Snapshot2} = event_sourcing_core_store:retrieve_latest_snapshot(
-        event_sourcing_store_ets,
+        ?ETS_STORE,
         Id
     ),
     ?assertEqual(6, event_sourcing_core_store:snapshot_sequence(Snapshot2)),
@@ -143,7 +145,7 @@ aggregate_snapshot_rehydration() ->
     {ok, Pid1} =
         event_sourcing_core_aggregate:start_link(
             bank_account_aggregate,
-            event_sourcing_store_ets,
+            ?ETS_STORE,
             Id,
             #{timeout => 5000, snapshot_interval => 2}
         ),
@@ -155,7 +157,7 @@ aggregate_snapshot_rehydration() ->
 
     %% Snapshot should exist at sequence 2
     {ok, _Snapshot} = event_sourcing_core_store:retrieve_latest_snapshot(
-        event_sourcing_store_ets,
+        ?ETS_STORE,
         Id
     ),
 
@@ -171,7 +173,7 @@ aggregate_snapshot_rehydration() ->
     {ok, Pid2} =
         event_sourcing_core_aggregate:start_link(
             bank_account_aggregate,
-            event_sourcing_store_ets,
+            ?ETS_STORE,
             Id,
             #{timeout => 5000}
         ),
@@ -191,7 +193,7 @@ aggregate_custom_now_fun() ->
     {ok, Pid} =
         event_sourcing_core_aggregate:start_link(
             bank_account_aggregate,
-            event_sourcing_store_ets,
+            ?ETS_STORE,
             Id,
             #{timeout => 5000, now_fun => fun() -> Now end}
         ),
@@ -200,7 +202,7 @@ aggregate_custom_now_fun() ->
     ?assertEqual(ok, event_sourcing_core_aggregate:dispatch(Pid, {bank, deposit, Id, 42})),
 
     %% Retrieve persisted events and assert the timestamp matches the injected Now
-    Events = event_sourcing_core_store:retrieve_events(event_sourcing_store_ets, Id, #{}),
+    Events = event_sourcing_core_store:retrieve_events(?ETS_STORE, Id, #{}),
     ?assertEqual(1, length(Events)),
     [Event] = Events,
     ?assertEqual(Now, event_sourcing_core_store:timestamp(Event)).

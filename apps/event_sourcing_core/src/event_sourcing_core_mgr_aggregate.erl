@@ -28,7 +28,7 @@ monitoring them for crashes.
 
 -record(state, {
     aggregate :: module(),
-    store :: module(),
+    store :: event_sourcing_core_store:store(),
     router :: module(),
     opts ::
         #{
@@ -46,7 +46,7 @@ monitoring them for crashes.
 Starts the aggregate manager with custom options.
 
 - Aggregate is he module implementing the aggregate logic.
-- Store is the module implementing the event store.
+- Store is a `{EventStore, SnapshotStore}` tuple.
 - Router is the module extracting routing info from commands.
 - Opts is the configuration options:
   - `timeout`: Timeout for operations (default: `infinity`).
@@ -58,7 +58,7 @@ Function returns `{ok, Pid}` on success, or an error tuple if the server fails t
 """.
 -spec start_link(Aggregate, Store, Router, Opts) -> gen_server:start_ret() when
     Aggregate :: module(),
-    Store :: module(),
+    Store :: event_sourcing_core_store:store(),
     Router :: module(),
     Opts ::
         #{
@@ -75,14 +75,14 @@ Starts the aggregate manager with the given aggregate, store, and router modules
 using default options.
 
 - Aggregate is the module implementing the aggregate logic.
-- Store is the module implementing the event store.
+- Store follows the same `{EventStore, SnapshotStore}` convention.
 - Router is the module extracting routing info from commands.
 
 Function returns `{ok, Pid}` on success, or an error tuple if the server fails to start.
 """.
 -spec start_link(Aggregate, Store, Router) -> gen_server:start_ret() when
     Aggregate :: module(),
-    Store :: module(),
+    Store :: event_sourcing_core_store:store(),
     Router :: module().
 start_link(Aggregate, Store, Router) ->
     start_link(Aggregate, Store, Router, #{}).
@@ -126,7 +126,7 @@ Function returns `{ok, State}` with an initialized state record.
 """.
 -spec init({Aggregate, Store, Router, Opts}) -> {ok, State} when
     Aggregate :: module(),
-    Store :: module(),
+    Store :: event_sourcing_core_store:store(),
     Router :: module(),
     Opts ::
         #{
@@ -260,7 +260,7 @@ Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
 """.
 -spec start_aggregate(Aggregate, Store, Id, Opts) -> {ok, Result} | {error, Reason} when
     Aggregate :: module(),
-    Store :: module(),
+    Store :: event_sourcing_core_store:store(),
     Id :: stream_id(),
     Opts ::
         #{
