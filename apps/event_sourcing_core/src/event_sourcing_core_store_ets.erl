@@ -117,7 +117,7 @@ event_to_record(Event) ->
         event = Event
     }.
 
--spec save_snapshot(Snapshot) -> ok | {error, Reason} when
+-spec save_snapshot(Snapshot) -> ok | {warning, Reason} when
     Snapshot :: snapshot(),
     Reason :: term().
 save_snapshot(Snapshot) ->
@@ -132,7 +132,7 @@ save_snapshot(Snapshot) ->
         ok
     catch
         Class:Reason ->
-            {error, {Class, Reason}}
+            {warning, {Class, Reason}}
     end.
 
 -spec retrieve_latest_snapshot(StreamId) -> {ok, Snapshot} | {error, not_found} when

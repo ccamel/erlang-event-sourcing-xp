@@ -161,22 +161,22 @@ retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc) when
             erlang:error(Reason)
     end.
 
--spec save_snapshot(Snapshot) -> ok | {error, Reason} when
+-spec save_snapshot(Snapshot) -> ok | {warning, Reason} when
     Snapshot :: snapshot(),
     Reason :: term().
 save_snapshot(Snapshot) ->
-    Record = #snapshot_record{
-        stream_id = event_sourcing_core_store:snapshot_stream_id(Snapshot),
-        sequence = event_sourcing_core_store:snapshot_sequence(Snapshot),
-        timestamp = event_sourcing_core_store:snapshot_timestamp(Snapshot),
-        snapshot = Snapshot
-    },
-    Fun = fun() -> mnesia:write(?SNAPSHOT_TABLE_NAME, Record, write) end,
-    case mnesia:transaction(Fun) of
-        {atomic, ok} ->
-            ok;
-        {aborted, Reason} ->
-            {error, Reason}
+    try
+        Record = #snapshot_record{
+            stream_id = event_sourcing_core_store:snapshot_stream_id(Snapshot),
+            sequence = event_sourcing_core_store:snapshot_sequence(Snapshot),
+            timestamp = event_sourcing_core_store:snapshot_timestamp(Snapshot),
+            snapshot = Snapshot
+        },
+        ok = mnesia:dirty_write(?SNAPSHOT_TABLE_NAME, Record),
+        ok
+    catch
+        Class:Reason ->
+            {warning, {Class, Reason}}
     end.
 
 -spec retrieve_latest_snapshot(StreamId) -> {ok, Snapshot} | {error, not_found} when

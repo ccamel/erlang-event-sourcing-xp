@@ -378,7 +378,7 @@ maybe_save_snapshot(
     case event_sourcing_core_store:save_snapshot(Store, Snapshot) of
         ok ->
             ok;
-        {error, Reason} ->
+        {warning, Reason} ->
             logger:warning("Snapshot save failed for ~p at seq ~p: ~p", [Id, Sequence, Reason]),
             ok
     end;
