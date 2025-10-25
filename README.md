@@ -32,8 +32,8 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 
 | Backend                                                                     | Status     | Icon                                                                                                                               | Highlights                                                                                     | Ideal use cases                                                                                   |
 | --------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [ETS](apps/event_sourcing_core/src/event_sourcing_core_store_ets.erl)       | ✅ Ready   | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png" alt="ets-logo">     | In-memory tables backed by the BEAM VM, blazing-fast reads/writes, zero external dependencies. | Local development, benchmarks, ephemeral environments where latency matters more than durability. |
-| [Mnesia](apps/event_sourcing_core/src/event_sourcing_core_store_mnesia.erl) | ✅ Ready   | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png" alt="mnesia-logo">     | Distributed, transactional, and replicated storage built into Erlang/OTP.                      | Clusters that need lightweight distribution without introducing an external database.             |
+| [ETS](https://www.erlang.org/doc/apps/stdlib/ets.html)       | ✅ Ready   | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png" alt="ets-logo">     | In-memory tables backed by the BEAM VM, blazing-fast reads/writes, zero external dependencies. | Local development, benchmarks, ephemeral environments where latency matters more than durability. |
+| [Mnesia](https://www.erlang.org/docs/29/apps/mnesia/mnesia.html) | ✅ Ready   | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png" alt="mnesia-logo">     | Distributed, transactional, and replicated storage built into Erlang/OTP.                      | Clusters that need lightweight distribution without introducing an external database.             |
 | [PostgreSQL](https://www.postgresql.org/)                                   | 🛠️ Planned | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/postgresql.png" alt="postgresql-logo"> | Durable SQL store with strong transactional guarantees and easy horizontal scaling.            | Production setups that already rely on Postgres or need rock-solid consistency.                   |
 | [MongoDB](https://www.mongodb.com/)                                         | 🛠️ Planned | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/mongodb.png" alt="mongodb-logo">    | Flexible document database with built-in replication and sharding.                             | Event streams that benefit from schemaless payload storage or multi-region clusters.              |
 
@@ -48,10 +48,10 @@ Start the Erlang [shell](https://www.erlang.org/docs/20/man/shell.html) and run 
 ```erlang
 $ rebar3 shell
 1> % Start the ETS-based event store
-.. event_sourcing_core_store:start(event_sourcing_core_store_ets).
+.. event_sourcing_core_store:start(event_sourcing_store_ets).
 ok
 2> % Start the Bank Account aggregate (and get its pid)
-.. {ok, BankMgr} = event_sourcing_core_mgr_aggregate:start_link(bank_account_aggregate, event_sourcing_core_store_ets, bank_account_aggregate).
+.. {ok, BankMgr} = event_sourcing_core_mgr_aggregate:start_link(bank_account_aggregate, event_sourcing_store_ets, bank_account_aggregate).
 {ok,<0.321.0>}
 3> % Dispatch the Deposit $100 command to the Bank Account aggregate
 .. event_sourcing_core_mgr_aggregate:dispatch(BankMgr, {bank, deposit, <<"bank-account-123">>, 100}).
@@ -244,7 +244,7 @@ Snapshots provide a performance optimization for aggregate rehydration by avoidi
 % Create aggregate with snapshots every 10 events
 event_sourcing_core_aggregate:start_link(
     bank_account_aggregate,
-    event_sourcing_core_store_ets,
+    event_sourcing_store_ets,
     <<"account-123">>,
     #{
         timeout => 5000,
@@ -311,23 +311,23 @@ The manager can be configured with options such as:
 ### Project organization
 
 ```plaintext
-apps/event_sourcing_core
-├── include
-│   └── event_sourcing_core.hrl                     % Shared types and macros
-├── src
-│   ├── event_sourcing_core.app.src                 % Application definition
-│   ├── event_sourcing_core_aggregate.erl           % Aggregate process (gen_server)
-│   ├── event_sourcing_core_aggregate_behaviour.erl % Aggregate behaviour (domain contract)
-│   ├── event_sourcing_core_mgr_aggregate.erl       % Aggregate manager process (gen_server)
-│   ├── event_sourcing_core_mgr_behaviour.erl       % Aggregate manager behaviour (routing contract)
-│   ├── event_sourcing_core_store.erl               % Event store behaviour
-│   ├── event_sourcing_core_store_ets.erl           % ETS-backed store implementation
-│   └── event_sourcing_core_store_mnesia.erl        % Mnesia-backed store implementation
-└── test
-    ├── bank_account_aggregate.erl                  % Sample domain aggregate
-    ├── event_sourcing_core_aggregate_tests.erl     % Aggregate process tests
-    ├── event_sourcing_core_mgr_aggregate_tests.erl % Aggregate manager tests
-    └── event_sourcing_core_store_tests.erl         % Store behaviour tests
+apps/
+├── event_sourcing_core
+│   ├── include/event_sourcing_core.hrl             % Shared types and macros
+│   ├── src                                         % Core behaviours + processes
+│   │   ├── event_sourcing_core.app.src
+│   │   ├── event_sourcing_core_aggregate.erl
+│   │   ├── event_sourcing_core_aggregate_behaviour.erl
+│   │   ├── event_sourcing_core_mgr_aggregate.erl
+│   │   ├── event_sourcing_core_mgr_behaviour.erl
+│   │   └── event_sourcing_core_store.erl
+│   └── test                                        % Aggregate + behaviour suites
+├── event_sourcing_store_ets
+│   ├── src/event_sourcing_store_ets.erl            % ETS-backed store implementation
+│   └── test                                        % ETS-focused tests (planned)
+└── event_sourcing_store_mnesia
+    ├── src/event_sourcing_store_mnesia.erl         % Mnesia-backed store implementation
+    └── test                                        % Mnesia-focused tests (planned)
 ```
 
 ## Build

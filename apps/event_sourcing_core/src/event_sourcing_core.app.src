@@ -5,8 +5,6 @@
     {applications, [kernel, stdlib]},
     {env, []},
     {modules, [
-        event_sourcing_core_store_mnesia,
-        event_sourcing_core_store_ets,
         event_sourcing_core_aggregate_behaviour,
         event_sourcing_core_store,
         event_sourcing_core_mgr_aggregate,

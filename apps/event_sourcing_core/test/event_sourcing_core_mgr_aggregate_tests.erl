@@ -12,10 +12,10 @@ suite_test_() ->
     {foreach, fun setup/0, fun teardown/1, TestCases}.
 
 setup() ->
-    event_sourcing_core_store:start(event_sourcing_core_store_ets).
+    event_sourcing_core_store:start(event_sourcing_store_ets).
 
 teardown(_) ->
-    event_sourcing_core_store:stop(event_sourcing_core_store_ets).
+    event_sourcing_core_store:stop(event_sourcing_store_ets).
 
 %%%  Test cases
 
@@ -25,8 +25,8 @@ agg_id(Pid, Id) ->
 
 -define(assertState(Pid, Id, ExpectedState, ExpectedSeq),
     ?assertMatch(
-        {state, bank_account_aggregate, event_sourcing_core_store_ets, Id, ExpectedState,
-            ExpectedSeq, _, _, _, _, _, _},
+        {state, bank_account_aggregate, event_sourcing_store_ets, Id, ExpectedState, ExpectedSeq, _,
+            _, _, _, _, _},
         sys:get_state(Pid)
     )
 ).
@@ -105,7 +105,7 @@ start_mgr(Timeout) ->
     {ok, Pid} =
         event_sourcing_core_mgr_aggregate:start_link(
             bank_account_aggregate,
-            event_sourcing_core_store_ets,
+            event_sourcing_store_ets,
             bank_account_aggregate,
             #{timeout => Timeout}
         ),

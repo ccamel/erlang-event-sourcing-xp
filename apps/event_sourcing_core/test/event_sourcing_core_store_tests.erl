@@ -3,7 +3,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 suite_test_() ->
-    Stores = [event_sourcing_core_store_mnesia, event_sourcing_core_store_ets],
+    Stores = [event_sourcing_store_mnesia, event_sourcing_store_ets],
     BaseTests =
         [
             {"start_once", fun start_once/1},
@@ -298,7 +298,7 @@ overwrite_snapshot(Store) ->
 
     ?assertEqual(ok, Store:stop()).
 
-snapshot_save_error(event_sourcing_core_store_ets = Store) ->
+snapshot_save_error(event_sourcing_store_ets = Store) ->
     ?assertMatch(ok, event_sourcing_core_store:start(Store)),
     ?assertEqual(ok, Store:stop()),
 
@@ -313,7 +313,7 @@ snapshot_save_error(event_sourcing_core_store_ets = Store) ->
 
     %% Should return a warning tuple, not throw an exception
     ?assertMatch({warning, _}, Result);
-snapshot_save_error(event_sourcing_core_store_mnesia = Store) ->
+snapshot_save_error(event_sourcing_store_mnesia = Store) ->
     %% For Mnesia, the store persists even after stop() is called.
     %% Test that the error handling works correctly by verifying successful save
     %% The error path is tested implicitly through the try/catch in the implementation
