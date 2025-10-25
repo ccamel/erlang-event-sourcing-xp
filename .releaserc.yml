@@ -25,6 +25,28 @@ plugins:
           release: major
   - - "@semantic-release/release-notes-generator"
     - preset: conventionalcommits
+      presetConfig:
+        types:
+          - type: feat
+            section: Features
+          - type: fix
+            section: Bug Fixes
+          - type: docs
+            section: Documentation
+          - type: style
+            section: Styles
+          - type: refactor
+            section: Refactors
+          - type: perf
+            section: Performance Improvements
+          - type: test
+            section: Tests
+          - type: build
+            section: Build System
+          - type: ci
+            section: Continuous Integration
+          - type: chore
+            section: Chores
   - - "@semantic-release/changelog"
     - changelogFile: CHANGELOG.md
       changelogTitle: "# erlang-event-sourcing-xp changelog"
