@@ -9,7 +9,7 @@ for commands.
 Implementations of this behaviour are responsible for extracting routing information,
 enabling the aggregate manager to dispatch commands to the correct aggregate instance.
 """.
--include_lib("event_sourcing_core.hrl").
+-include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
 
 -doc """
 Extracts the routing information from the command.

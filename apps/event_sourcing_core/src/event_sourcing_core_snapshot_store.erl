@@ -20,7 +20,7 @@ Common implementations include key–value stores, databases, or object storage
 systems (e.g., S3).
 """.
 
--include_lib("event_sourcing_core.hrl").
+-include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
 
 -doc """
 Save a snapshot for a stream.

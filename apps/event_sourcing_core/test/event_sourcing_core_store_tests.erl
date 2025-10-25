@@ -2,11 +2,11 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--define(ETS_STORE, {event_sourcing_store_ets, event_sourcing_store_ets}).
--define(MNESIA_STORE, {event_sourcing_store_mnesia, event_sourcing_store_mnesia}).
+-define(ETS_STORE_CONTEXT, {event_sourcing_store_ets, event_sourcing_store_ets}).
+-define(MNESIA_STORE_CONTEXT, {event_sourcing_store_mnesia, event_sourcing_store_mnesia}).
 
 suite_test_() ->
-    Stores = [?MNESIA_STORE, ?ETS_STORE],
+    Stores = [?MNESIA_STORE_CONTEXT, ?ETS_STORE_CONTEXT],
     BaseTests =
         [
             {"start_once", fun start_once/1},
@@ -331,7 +331,7 @@ composite_store_supports_mixed_backends() ->
 
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
-snapshot_save_error(?ETS_STORE = Store) ->
+snapshot_save_error(?ETS_STORE_CONTEXT = Store) ->
     ?assertMatch(ok, event_sourcing_core_store:start(Store)),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)),
 
@@ -346,7 +346,7 @@ snapshot_save_error(?ETS_STORE = Store) ->
 
     %% Should return a warning tuple, not throw an exception
     ?assertMatch({warning, _}, Result);
-snapshot_save_error(?MNESIA_STORE = Store) ->
+snapshot_save_error(?MNESIA_STORE_CONTEXT = Store) ->
     %% For Mnesia, the store persists even after stop() is called.
     %% Test that the error handling works correctly by verifying successful save
     %% The error path is tested implicitly through the try/catch in the implementation

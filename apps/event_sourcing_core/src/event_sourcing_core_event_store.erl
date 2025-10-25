@@ -20,7 +20,7 @@ Implementations must guarantee:
 Typical implementations include in-memory stores (ETS) and relational databases.
 """.
 
--include_lib("event_sourcing_core.hrl").
+-include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
 
 -doc """
 Starts the event store, performing any necessary initialization.
