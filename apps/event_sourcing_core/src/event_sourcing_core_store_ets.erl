@@ -131,8 +131,8 @@ save_snapshot(Snapshot) ->
         true = ets:insert(?SNAPSHOT_TABLE_NAME, Record),
         ok
     catch
-        error:Reason ->
-            {error, Reason}
+        Class:Reason ->
+            {error, {Class, Reason}}
     end.
 
 -spec retrieve_latest_snapshot(StreamId) -> {ok, Snapshot} | {error, not_found} when
