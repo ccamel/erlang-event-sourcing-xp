@@ -35,7 +35,9 @@ to interact with the store and access event record fields.
     tags/1,
     metadata/1,
     payload/1,
-    new_event/8, new_event/6
+    new_event/8, new_event/6,
+    ensure_started/1,
+    ensure_stopped/1
 ]).
 
 -export_type([
@@ -159,22 +161,22 @@ has been saved for this stream.
 
 -spec start(store()) -> ok.
 start({EventModule, SnapshotModule}) ->
-    ok = EventModule:start(),
-    case SnapshotModule of
-        EventModule ->
+    ensure_started(EventModule),
+    case SnapshotModule =:= EventModule of
+        true ->
             ok;
-        _ ->
-            SnapshotModule:start()
+        false ->
+            ensure_started(SnapshotModule)
     end.
 
 -spec stop(store()) -> ok.
 stop({EventModule, SnapshotModule}) ->
-    case SnapshotModule of
-        EventModule ->
-            EventModule:stop();
-        _ ->
-            ok = SnapshotModule:stop(),
-            EventModule:stop()
+    case SnapshotModule =:= EventModule of
+        true ->
+            ensure_stopped(EventModule);
+        false ->
+            ensure_stopped(SnapshotModule),
+            ensure_stopped(EventModule)
     end.
 
 -doc """
@@ -185,24 +187,28 @@ Persists a list of events to the event store using the specified store module.
     StreamId :: stream_id(),
     Events :: [event()].
 persist_events({EventModule, _}, StreamId, Events) when is_list(Events) ->
-    _ = lists:foldl(
-        fun(Event, Seen) ->
+    %% Validate that all events target the same StreamId
+    ok = lists:foreach(
+        fun(Event) ->
             case stream_id(Event) of
                 StreamId ->
-                    Id = id(Event),
-                    case lists:member(Id, Seen) of
-                        true ->
-                            erlang:error(duplicate_event);
-                        false ->
-                            [Id | Seen]
-                    end;
+                    ok;
                 WrongStreamId ->
                     erlang:error({badarg, WrongStreamId})
             end
         end,
-        [],
         Events
     ),
+
+    %% Detect duplicates (same event id twice in the batch)
+    SeenIds = [id(E) || E <- Events],
+    case length(SeenIds) =:= length(lists:usort(SeenIds)) of
+        true ->
+            ok;
+        false ->
+            erlang:error(duplicate_event)
+    end,
+
     EventModule:persist_events(StreamId, Events).
 
 -doc """
@@ -474,3 +480,27 @@ Returns the state stored in the snapshot.
 -spec snapshot_state(snapshot()) -> snapshot_data().
 snapshot_state(#snapshot{state = State}) ->
     State.
+
+%% @private
+-spec ensure_started(module()) -> ok | no_return().
+ensure_started(Mod) ->
+    case Mod:start() of
+        ok ->
+            ok;
+        {error, Reason} ->
+            error({init_failed, Mod, Reason});
+        Other ->
+            error({unexpected_start_result, Mod, Other})
+    end.
+
+%% @private
+-spec ensure_stopped(module()) -> ok | no_return().
+ensure_stopped(Mod) ->
+    case Mod:stop() of
+        ok ->
+            ok;
+        {error, Reason} ->
+            error({stop_failed, Mod, Reason});
+        Other ->
+            error({unexpected_stop_result, Mod, Other})
+    end.
