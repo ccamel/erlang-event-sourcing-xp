@@ -375,7 +375,12 @@ maybe_save_snapshot(
     Timestamp = NowFun(),
     logger:info("Saving snapshot for ~p at sequence ~p", [Id, Sequence]),
     Snapshot = event_sourcing_core_store:new_snapshot(Aggregate, Id, Sequence, Timestamp, AggState),
-    event_sourcing_core_store:save_snapshot(Store, Snapshot),
-    ok;
+    case event_sourcing_core_store:save_snapshot(Store, Snapshot) of
+        ok ->
+            ok;
+        {warning, Reason} ->
+            logger:warning("Snapshot save failed for ~p at seq ~p: ~p", [Id, Sequence, Reason]),
+            ok
+    end;
 maybe_save_snapshot(_) ->
     ok.
