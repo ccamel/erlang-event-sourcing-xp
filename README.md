@@ -20,6 +20,23 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 [Erlang]: https://www.erlang.org/
 [Event Sourcing]: https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing
 
+## Features
+
+- **Aggregate** — a reusable [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) harness that keeps domain logic pure while delegating event sourcing boilerplate.
+- **Aggregate Manager** — a router and lifecycle supervisor that spins up aggregates on demand, rehydrates them from persisted events, and passivates idle instances.
+- **Event Store** — a behaviour-driven abstraction with drop-in backends so you can pick the storage engine that fits your deployment.
+- **Snapshots** — automatic checkpointing at configurable intervals to avoid replaying entire streams.
+- **Passivation** — idle aggregates are shut down cleanly and will rehydrate from the store on the next command.
+
+### Current backends:
+
+| Backend | Icon | Highlights | Ideal use cases |
+| --- | --- | --- | --- |
+| [ETS](apps/event_sourcing_core/src/event_sourcing_core_store_ets.erl) | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png">  | In-memory tables backed by the BEAM VM, blazing-fast reads/writes, zero external dependencies. | Local development, benchmarks, ephemeral environments where latency matters more than durability. |
+| [Mnesia](apps/event_sourcing_core/src/event_sourcing_core_store_mnesia.erl) | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png">  | Distributed, transactional, and replicated storage built into Erlang/OTP. | Clusters that need lightweight distribution without introducing an external database. |
+
+Both stores implement the same behaviour, so switching backends is just a matter of wiring a different module into the aggregate manager configuration.
+
 ## Let's play
 
 This project is a work in progress, and I welcome any feedback or contributions. If you're interested in [Event Sourcing](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing), [Erlang/OTP](https://www.erlang.org/), or both, feel free to reach out!
