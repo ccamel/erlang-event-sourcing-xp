@@ -1,6 +1,6 @@
 -module(event_sourcing_core_aggregate).
 
--include_lib("event_sourcing_core.hrl").
+-include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -behaviour(gen_server).
@@ -34,15 +34,15 @@
 Starts an aggregate process with a given timeout.
 
 - Aggregate is the aggregate module implementing the behavior.
-- Store is the event-store module.
+- StoreContext is a `{EventStore, SnapshotStore}` tuple.
 - Id is the unique identifier for the aggregate instance.
 - Timeout is the inactivity timeout in milliseconds before passivation.
 
 Function returns `{ok, Pid}` if successful, `{error, Reason}` otherwise.
 """.
--spec start_link(Aggregate, Store, Id, Opts) -> gen_server:start_ret() when
+-spec start_link(Aggregate, StoreContext, Id, Opts) -> gen_server:start_ret() when
     Aggregate :: module(),
-    Store :: module(),
+    StoreContext :: event_sourcing_core_store:store_context(),
     Id :: stream_id(),
     Opts ::
         #{
@@ -52,20 +52,24 @@ Function returns `{ok, Pid}` if successful, `{error, Reason}` otherwise.
             now_fun => fun(() -> timestamp()),
             snapshot_interval => non_neg_integer()
         }.
-start_link(Aggregate, Store, Id, Opts) ->
-    gen_server:start_link(?MODULE, {Aggregate, Store, Id, Opts}, []).
+start_link(Aggregate, StoreContext, Id, Opts) ->
+    gen_server:start_link(?MODULE, {Aggregate, StoreContext, Id, Opts}, []).
 
 -doc """
 Starts a new aggregate process.
 
 - Aggregate is the aggregate module to start.
-- Store is the persistence module (event-store) implementing event retrieval.
+- StoreContext must be provided as `{EventStore, SnapshotStore}`.
 - Id is the unique identifier for the aggregate instance.
 """.
--spec start_link(Aggregate :: module(), Store :: module(), Id :: stream_id()) ->
+-spec start_link(
+    Aggregate :: module(),
+    StoreContext :: event_sourcing_core_store:store_context(),
+    Id :: stream_id()
+) ->
     gen_server:start_ret().
-start_link(Aggregate, Store, Id) ->
-    start_link(Aggregate, Store, Id, #{}).
+start_link(Aggregate, StoreContext, Id) ->
+    start_link(Aggregate, StoreContext, Id, #{}).
 
 -spec dispatch(Pid, Command) -> {ok, Result} | {error, Reason} when
     Pid :: pid(),
@@ -77,7 +81,7 @@ dispatch(Pid, Command) ->
 
 -record(state, {
     aggregate :: module(),
-    store :: module(),
+    store :: event_sourcing_core_store:store_context(),
     id :: stream_id(),
     state :: aggregate_state(),
     sequence = ?SEQUENCE_ZERO :: non_neg_integer(),
@@ -98,7 +102,7 @@ Retrieves all events for the aggregate from the persistence layer and applies th
 sequentially to rehydrate the aggregate's state.
 
 - Aggregate is the aggregate module implementing the domain logic.
-- Store is the persistence module (store) implementing event retrieval.
+- StoreContext is a `{EventStore, SnapshotStore}` tuple used for event and snapshot persistence.
 - Id is the unique identifier for the aggregate.
 - Opts is a map of options including:
   - `timeout`: Inactivity timeout in milliseconds.
@@ -110,7 +114,7 @@ sequentially to rehydrate the aggregate's state.
 Function returns {ok, state()} on success, and returns {stop, Reason} on failure.
 """.
 -spec init(
-    {module(), module(), stream_id(), #{
+    {module(), event_sourcing_core_store:store_context(), stream_id(), #{
         timeout => timeout(),
         sequence_zero => fun(() -> sequence()),
         sequence_next => fun((sequence()) -> sequence()),
@@ -119,14 +123,14 @@ Function returns {ok, state()} on success, and returns {stop, Reason} on failure
     }}
 ) ->
     {ok, state()}.
-init({Aggregate, Store, Id, Opts}) ->
+init({Aggregate, StoreContext, Id, Opts}) ->
     State0 = Aggregate:init(),
     SequenceZero = maps:get(sequence_zero, Opts, fun() -> ?SEQUENCE_ZERO end),
     SequenceNext = maps:get(sequence_next, Opts, fun(Sequence) -> Sequence + 1 end),
 
     %% Try to load the latest snapshot
     {StateFromSnapshot, SequenceFromSnapshot} =
-        case event_sourcing_core_store:retrieve_latest_snapshot(Store, Id) of
+        case event_sourcing_core_store:retrieve_latest_snapshot(StoreContext, Id) of
             {ok, Snapshot} ->
                 SnapshotState = event_sourcing_core_store:snapshot_state(Snapshot),
                 SnapshotSeq = event_sourcing_core_store:snapshot_sequence(Snapshot),
@@ -147,7 +151,7 @@ init({Aggregate, Store, Id, Opts}) ->
         end,
     {State1, Sequence1} =
         event_sourcing_core_store:retrieve_and_fold_events(
-            Store,
+            StoreContext,
             Id,
             #{from => SequenceFromSnapshot + 1},
             FoldFun,
@@ -158,7 +162,7 @@ init({Aggregate, Store, Id, Opts}) ->
     TimerRef = install_passivation(Timeout, undefined),
     {ok, #state{
         aggregate = Aggregate,
-        store = Store,
+        store = StoreContext,
         id = Id,
         state = State1,
         sequence = Sequence1,
@@ -267,7 +271,7 @@ Function returns the new state and sequence of the aggregate after the command i
 process_command(
     #state{
         aggregate = Aggregate,
-        store = Store,
+        store = StoreContext,
         id = Id,
         state = State0,
         sequence = Sequence0,
@@ -282,7 +286,7 @@ process_command(
             {ok, {State0, Sequence0}};
         {ok, PayloadEvents} when is_list(PayloadEvents) ->
             ok = persist_events(
-                PayloadEvents, {Aggregate, Store, Id, Sequence0, SequenceNext, NowFun}
+                PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, SequenceNext, NowFun}
             ),
             {State1, Sequence1} =
                 apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}),
@@ -316,14 +320,14 @@ apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}) ->
     PayloadEvents :: [event_payload()],
     {
         Aggregate :: module(),
-        Store :: module(),
+        StoreContext :: event_sourcing_core_store:store_context(),
         Id :: stream_id(),
         Sequence0 :: sequence(),
         SequenceNext :: fun((sequence()) -> sequence()),
         NowFun :: fun(() -> timestamp())
     }
 ) -> ok.
-persist_events(PayloadEvents, {Aggregate, Store, Id, Sequence0, SequenceNext, NowFun}) ->
+persist_events(PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, SequenceNext, NowFun}) ->
     {Events, _} =
         lists:foldl(
             fun(PayloadEvent, {Events, SequenceN}) ->
@@ -350,7 +354,7 @@ persist_events(PayloadEvents, {Aggregate, Store, Id, Sequence0, SequenceNext, No
         end,
         Events
     ),
-    event_sourcing_core_store:persist_events(Store, Id, Events).
+    event_sourcing_core_store:persist_events(StoreContext, Id, Events).
 
 -doc """
 Saves a snapshot if the snapshot interval is configured and the current
@@ -365,7 +369,7 @@ maybe_save_snapshot(
     #state{
         snapshot_interval = Interval,
         sequence = Sequence,
-        store = Store,
+        store = StoreContext,
         aggregate = Aggregate,
         id = Id,
         state = AggState,
@@ -375,7 +379,7 @@ maybe_save_snapshot(
     Timestamp = NowFun(),
     logger:info("Saving snapshot for ~p at sequence ~p", [Id, Sequence]),
     Snapshot = event_sourcing_core_store:new_snapshot(Aggregate, Id, Sequence, Timestamp, AggState),
-    case event_sourcing_core_store:save_snapshot(Store, Snapshot) of
+    case event_sourcing_core_store:save_snapshot(StoreContext, Snapshot) of
         ok ->
             ok;
         {warning, Reason} ->

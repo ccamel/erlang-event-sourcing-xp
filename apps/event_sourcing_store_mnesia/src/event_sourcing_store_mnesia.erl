@@ -1,12 +1,13 @@
--module(event_sourcing_core_store_mnesia).
+-module(event_sourcing_store_mnesia).
 -moduledoc """
 The Mnesia-based implementation of the event store.
 """.
 
--behaviour(event_sourcing_core_store).
+-behaviour(event_sourcing_core_event_store).
+-behaviour(event_sourcing_core_snapshot_store).
 
 -include_lib("stdlib/include/qlc.hrl").
--include_lib("event_sourcing_core.hrl").
+-include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
 
 -export([
     start/0,

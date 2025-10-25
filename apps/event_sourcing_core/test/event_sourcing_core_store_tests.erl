@@ -2,8 +2,11 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-define(ETS_STORE_CONTEXT, {event_sourcing_store_ets, event_sourcing_store_ets}).
+-define(MNESIA_STORE_CONTEXT, {event_sourcing_store_mnesia, event_sourcing_store_mnesia}).
+
 suite_test_() ->
-    Stores = [event_sourcing_core_store_mnesia, event_sourcing_core_store_ets],
+    Stores = [?MNESIA_STORE_CONTEXT, ?ETS_STORE_CONTEXT],
     BaseTests =
         [
             {"start_once", fun start_once/1},
@@ -20,10 +23,13 @@ suite_test_() ->
         ],
     TestCases =
         [
-            {TestName ++ "__" ++ atom_to_list(Param), fun() -> TestFun(Param) end}
+            {TestName ++ "__" ++ store_label(Param), fun() -> TestFun(Param) end}
          || Param <- Stores, {TestName, TestFun} <- BaseTests
         ],
-    {foreach, fun setup/0, fun teardown/1, TestCases}.
+    CompositeTests = [
+        {"composite_store_supports_mixed_backends", fun composite_store_supports_mixed_backends/0}
+    ],
+    {foreach, fun setup/0, fun teardown/1, TestCases ++ CompositeTests}.
 
 setup() ->
     mnesia:start(),
@@ -162,7 +168,7 @@ fetch_streams_event(Store) ->
         )
     ),
     ?assertMatch(Events, event_sourcing_core_store:retrieve_events(Store, stream_A, #{})),
-    ?assertEqual(ok, Store:stop()).
+    ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
 wrong_stream_id(Store) ->
     ?assertMatch(ok, event_sourcing_core_store:start(Store)),
@@ -184,7 +190,7 @@ wrong_stream_id(Store) ->
     ),
     ?assertMatch([], event_sourcing_core_store:retrieve_events(Store, stream_A, #{})),
     ?assertMatch([], event_sourcing_core_store:retrieve_events(Store, stream_B, #{})),
-    ?assertEqual(ok, Store:stop()).
+    ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
 duplicate_event(Store) ->
     ?assertMatch(ok, event_sourcing_core_store:start(Store)),
@@ -240,7 +246,7 @@ duplicate_event(Store) ->
         event_sourcing_core_store:persist_events(Store, stream_B, Events)
     ),
     ?assertMatch([], event_sourcing_core_store:retrieve_events(Store, stream_B, #{})),
-    ?assertEqual(ok, Store:stop()).
+    ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
 snapshot_not_found(Store) ->
     ?assertMatch(ok, event_sourcing_core_store:start(Store)),
@@ -248,7 +254,7 @@ snapshot_not_found(Store) ->
         {error, not_found},
         event_sourcing_core_store:retrieve_latest_snapshot(Store, stream_A)
     ),
-    ?assertEqual(ok, Store:stop()).
+    ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
 save_and_retrieve_snapshot(Store) ->
     ?assertMatch(ok, event_sourcing_core_store:start(Store)),
@@ -267,7 +273,7 @@ save_and_retrieve_snapshot(Store) ->
     ?assertEqual(Timestamp, event_sourcing_core_store:snapshot_timestamp(RetrievedSnapshot)),
     ?assertEqual(State, event_sourcing_core_store:snapshot_state(RetrievedSnapshot)),
 
-    ?assertEqual(ok, Store:stop()).
+    ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
 overwrite_snapshot(Store) ->
     ?assertMatch(ok, event_sourcing_core_store:start(Store)),
@@ -296,11 +302,38 @@ overwrite_snapshot(Store) ->
     ?assertEqual(Sequence2, event_sourcing_core_store:snapshot_sequence(RetrievedSnapshot)),
     ?assertEqual(State2, event_sourcing_core_store:snapshot_state(RetrievedSnapshot)),
 
-    ?assertEqual(ok, Store:stop()).
+    ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
-snapshot_save_error(event_sourcing_core_store_ets = Store) ->
+composite_store_supports_mixed_backends() ->
+    Store = {event_sourcing_store_ets, event_sourcing_core_store_snapshot_stub},
     ?assertMatch(ok, event_sourcing_core_store:start(Store)),
-    ?assertEqual(ok, Store:stop()),
+
+    Timestamp = erlang:system_time(),
+    Event =
+        event_sourcing_core_store:new_event(
+            stream_A,
+            user,
+            user_registered,
+            1,
+            Timestamp,
+            {"John Doe"}
+        ),
+    ?assertMatch(ok, event_sourcing_core_store:persist_events(Store, stream_A, [Event])),
+    ?assertMatch([Event], event_sourcing_core_store:retrieve_events(Store, stream_A, #{})),
+
+    Snapshot = event_sourcing_core_store:new_snapshot(user, stream_A, 1, Timestamp, #{
+        balance => 100
+    }),
+    ?assertMatch(ok, event_sourcing_core_store:save_snapshot(Store, Snapshot)),
+    {ok, RetrievedSnapshot} = event_sourcing_core_store:retrieve_latest_snapshot(Store, stream_A),
+    ?assertEqual(1, event_sourcing_core_store:snapshot_sequence(RetrievedSnapshot)),
+    ?assertEqual(#{balance => 100}, event_sourcing_core_store:snapshot_state(RetrievedSnapshot)),
+
+    ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
+
+snapshot_save_error(?ETS_STORE_CONTEXT = Store) ->
+    ?assertMatch(ok, event_sourcing_core_store:start(Store)),
+    ?assertEqual(ok, event_sourcing_core_store:stop(Store)),
 
     %% Attempting to save a snapshot to a stopped ETS store should return a warning
     Timestamp = erlang:system_time(),
@@ -313,7 +346,7 @@ snapshot_save_error(event_sourcing_core_store_ets = Store) ->
 
     %% Should return a warning tuple, not throw an exception
     ?assertMatch({warning, _}, Result);
-snapshot_save_error(event_sourcing_core_store_mnesia = Store) ->
+snapshot_save_error(?MNESIA_STORE_CONTEXT = Store) ->
     %% For Mnesia, the store persists even after stop() is called.
     %% Test that the error handling works correctly by verifying successful save
     %% The error path is tested implicitly through the try/catch in the implementation
@@ -329,4 +362,7 @@ snapshot_save_error(event_sourcing_core_store_mnesia = Store) ->
     %% Normal save should still return ok
     ?assertMatch(ok, event_sourcing_core_store:save_snapshot(Store, Snapshot)),
 
-    ?assertEqual(ok, Store:stop()).
+    ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
+
+store_label({EventStore, SnapshotStore}) ->
+    lists:flatten(io_lib:format("~p-~p", [EventStore, SnapshotStore])).

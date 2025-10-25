@@ -1,0 +1,10 @@
+{application, event_sourcing_store_ets, [
+    {description, "ETS backend for event_sourcing_core"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib, event_sourcing_core]},
+    {env, []},
+    {modules, [event_sourcing_store_ets]},
+    {licenses, ["BSD 3-Clause"]},
+    {links, []}
+]}.

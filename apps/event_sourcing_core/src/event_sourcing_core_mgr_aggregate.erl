@@ -10,7 +10,7 @@ monitoring them for crashes.
 
 -behaviour(gen_server).
 
--include_lib("event_sourcing_core.hrl").
+-include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
 
 -export([
     init/1,
@@ -28,7 +28,7 @@ monitoring them for crashes.
 
 -record(state, {
     aggregate :: module(),
-    store :: module(),
+    store :: event_sourcing_core_store:store_context(),
     router :: module(),
     opts ::
         #{
@@ -46,7 +46,7 @@ monitoring them for crashes.
 Starts the aggregate manager with custom options.
 
 - Aggregate is he module implementing the aggregate logic.
-- Store is the module implementing the event store.
+- StoreContext is a `{EventStore, SnapshotStore}` tuple.
 - Router is the module extracting routing info from commands.
 - Opts is the configuration options:
   - `timeout`: Timeout for operations (default: `infinity`).
@@ -56,9 +56,9 @@ Starts the aggregate manager with custom options.
 
 Function returns `{ok, Pid}` on success, or an error tuple if the server fails to start.
 """.
--spec start_link(Aggregate, Store, Router, Opts) -> gen_server:start_ret() when
+-spec start_link(Aggregate, StoreContext, Router, Opts) -> gen_server:start_ret() when
     Aggregate :: module(),
-    Store :: module(),
+    StoreContext :: event_sourcing_core_store:store_context(),
     Router :: module(),
     Opts ::
         #{
@@ -67,25 +67,25 @@ Function returns `{ok, Pid}` on success, or an error tuple if the server fails t
             sequence_next => fun((sequence()) -> sequence()),
             now_fun => fun(() -> timestamp())
         }.
-start_link(Aggregate, Store, Router, Opts) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, {Aggregate, Store, Router, Opts}, []).
+start_link(Aggregate, StoreContext, Router, Opts) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, {Aggregate, StoreContext, Router, Opts}, []).
 
 -doc """
 Starts the aggregate manager with the given aggregate, store, and router modules,
 using default options.
 
 - Aggregate is the module implementing the aggregate logic.
-- Store is the module implementing the event store.
+- StoreContext follows the same `{EventStore, SnapshotStore}` convention.
 - Router is the module extracting routing info from commands.
 
 Function returns `{ok, Pid}` on success, or an error tuple if the server fails to start.
 """.
--spec start_link(Aggregate, Store, Router) -> gen_server:start_ret() when
+-spec start_link(Aggregate, StoreContext, Router) -> gen_server:start_ret() when
     Aggregate :: module(),
-    Store :: module(),
+    StoreContext :: event_sourcing_core_store:store_context(),
     Router :: module().
-start_link(Aggregate, Store, Router) ->
-    start_link(Aggregate, Store, Router, #{}).
+start_link(Aggregate, StoreContext, Router) ->
+    start_link(Aggregate, StoreContext, Router, #{}).
 
 -doc """
 Stops the aggregate manager.
@@ -124,9 +124,9 @@ Initializes the aggregate manager state.
 
 Function returns `{ok, State}` with an initialized state record.
 """.
--spec init({Aggregate, Store, Router, Opts}) -> {ok, State} when
+-spec init({Aggregate, StoreContext, Router, Opts}) -> {ok, State} when
     Aggregate :: module(),
-    Store :: module(),
+    StoreContext :: event_sourcing_core_store:store_context(),
     Router :: module(),
     Opts ::
         #{
@@ -136,10 +136,10 @@ Function returns `{ok, State}` with an initialized state record.
             now_fun => fun(() -> timestamp())
         },
     State :: state().
-init({Aggregate, Store, Router, Opts}) ->
+init({Aggregate, StoreContext, Router, Opts}) ->
     {ok, #state{
         aggregate = Aggregate,
-        store = Store,
+        store = StoreContext,
         router = Router,
         opts = Opts,
         pids = #{}
@@ -217,7 +217,7 @@ ensure_and_dispatch(
     Id,
     Command,
     #state{
-        store = Store,
+        store = StoreContext,
         pids = Pids,
         opts = Opts
     } =
@@ -225,7 +225,7 @@ ensure_and_dispatch(
 ) ->
     case maps:get(Id, Pids, undefined) of
         undefined ->
-            case start_aggregate(Aggregate, Store, Id, Opts) of
+            case start_aggregate(Aggregate, StoreContext, Id, Opts) of
                 {ok, Pid} ->
                     Result = forward(Pid, Command),
                     NewPids = maps:put(Id, Pid, Pids),
@@ -258,9 +258,9 @@ Monitors the new process and returns its pid.
 
 Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
 """.
--spec start_aggregate(Aggregate, Store, Id, Opts) -> {ok, Result} | {error, Reason} when
+-spec start_aggregate(Aggregate, StoreContext, Id, Opts) -> {ok, Result} | {error, Reason} when
     Aggregate :: module(),
-    Store :: module(),
+    StoreContext :: event_sourcing_core_store:store_context(),
     Id :: stream_id(),
     Opts ::
         #{
@@ -271,8 +271,8 @@ Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
         },
     Result :: pid(),
     Reason :: term().
-start_aggregate(Aggregate, Store, Id, Opts) ->
-    case event_sourcing_core_aggregate:start_link(Aggregate, Store, Id, Opts) of
+start_aggregate(Aggregate, StoreContext, Id, Opts) ->
+    case event_sourcing_core_aggregate:start_link(Aggregate, StoreContext, Id, Opts) of
         {ok, Pid} ->
             erlang:monitor(process, Pid),
             {ok, Pid};

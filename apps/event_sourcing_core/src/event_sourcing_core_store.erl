@@ -1,16 +1,18 @@
 -module(event_sourcing_core_store).
 -moduledoc """
-This module defines a behavior for an event sourcing event store.
+Core API for the event sourcing system.
 
-Event sourcing is a design pattern where application state is derived by replaying
-a sequence of immutable events. This behavior provides a standardized behaviour
-for persisting events to a stream and retrieving them for state reconstruction.
-Implementing modules (e.g., an in-memory store or database-backed store) must
-provide the callbacks defined here. The module also exports utility functions
-to interact with the store and access event record fields.
+This module provides:
+- domain types (event, snapshot, sequence, stream_id, etc.)
+- constructors and accessors for these types (`new_event/...`, `id/1`, `sequence/1`,
+  `new_snapshot/...`, `snapshot_state/1`, etc.)
+- utility functions that operate on a pair of storage backends.
+
+A `store_context()` is represented as `{EventStore, SnapshotStore}`.
+Both modules may be the same if one backend implements both roles.
 """.
 
--include_lib("event_sourcing_core.hrl").
+-include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
 
 -export([
     start/1,
@@ -52,148 +54,70 @@ to interact with the store and access event record fields.
     timestamp/0,
     snapshot/0,
     snapshot_id/0,
-    snapshot_data/0
+    snapshot_data/0,
+    store_context/0
 ]).
 
--doc """
-Starts the event store, performing any necessary initialization.
+-type store_backend() :: module().
+-type store_context() :: {store_backend(), store_backend()}.
 
-This callback is called to prepare the store for operation (e.g., setting up
-database connections, initializing in-memory structures). Implementations
-should be idempotent, allowing repeated calls without side effects.
+-spec start(store_context()) -> ok.
+start({EventModule, SnapshotModule}) ->
+    ensure_started(EventModule),
+    case SnapshotModule =:= EventModule of
+        true ->
+            ok;
+        false ->
+            ensure_started(SnapshotModule)
+    end.
 
-Returns `ok` on success. May throw an exception if initialization fails
-(e.g., resource unavailable).
-""".
--callback start() -> ok.
--doc """
-This callback function is used to stop the event store.
-
-The callback should perform any necessary cleanup of the event store.
-The function should be idempotent, allowing repeated calls without side effects.
-
-Returns `ok` on success. May throw an exception if cleanup fails
-(e.g., resource not found).
-""".
--callback stop() -> ok.
--doc """
-Append events to an event stream.
-
-This callback appends events to the specified streams.
-
-- StreamId is an atom identifying the event stream (e.g., order-123).
-- Events is the list of events to append to the stream. The events provided are unique and all
-belong to the same stream.
-
-Returns `ok` on success. May throw an exception if persistence fails (e.g., badarg if the
-stream ID is incorrect, duplicate events if the sequence number is not unique).
-""".
--callback persist_events(StreamId, Events) -> ok when
-    StreamId :: stream_id(),
-    Events :: [event()].
--doc """
-Retrieves events from a stream and folds them into an accumulator.
-
-This callback fetches events for the given `StreamId`, applies the `FoldFun` to each
-event in sequence order, and returns the final accumulator. It’s typically used to
-rebuild application state by replaying events.
-
-- StreamId is an atom identifying the event stream (e.g., order-123).
-- Options is A list of filters:
-  - `{from, Sequence}`: Start at this sequence (default: 0).
-  - `{to, Sequence | infinity}`: End at this sequence (default: infinity).
-  - `{limit, Limit}`: Maximum number of events to retrieve (default: infinity).
-- FoldFun is a function `fun((Event, AccIn) -> AccOut)` to process each event.
-- InitialAcc is The initial accumulator value (e.g., an empty state).
-
-Returns `{ok, Acc}` where `Acc` is the result of folding all events.
-""".
--callback retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1 when
-    StreamId :: stream_id(),
-    Options :: fold_events_opts(),
-    Fun :: fun((Event :: event(), AccIn) -> AccOut),
-    Acc0 :: term(),
-    Acc1 :: term(),
-    AccIn :: term(),
-    AccOut :: term().
-
--doc """
-Save a snapshot for a stream.
-
-This callback saves a snapshot of the aggregate state at a specific point in time.
-The snapshot represents the aggregate state after all events up to and including
-the given sequence number have been applied.
-
-The snapshot record already contains all necessary information including domain,
-stream_id, sequence, timestamp, and state. This is consistent with how events
-are handled - they are passed as complete records rather than decomposed fields.
-
-- Snapshot is the complete snapshot record to persist.
-
-Returns `ok` on success, or `{warning, Reason}` if persistence fails. Returning a
-warning is preferred over throwing an exception, as snapshot failures should not
-crash aggregates (events are the source of truth).
-""".
--callback save_snapshot(Snapshot) -> ok | {warning, Reason} when
-    Snapshot :: snapshot(),
-    Reason :: term().
-
--doc """
-Retrieve the latest snapshot for a stream.
-
-This callback retrieves the most recent snapshot for the given stream, if one exists.
-The snapshot can be used to restore aggregate state without replaying all events.
-
-- StreamId is the unique identifier for the stream.
-
-Returns `{ok, Snapshot}` if a snapshot exists, or `{error, not_found}` if no snapshot
-has been saved for this stream.
-""".
--callback retrieve_latest_snapshot(StreamId) -> {ok, Snapshot} | {error, not_found} when
-    StreamId :: stream_id(),
-    Snapshot :: snapshot().
-
--spec start(module()) -> ok.
-start(Module) ->
-    Module:start().
-
--spec stop(module()) -> ok.
-stop(Module) ->
-    Module:stop().
+-spec stop(store_context()) -> ok.
+stop({EventModule, SnapshotModule}) ->
+    case SnapshotModule =:= EventModule of
+        true ->
+            ensure_stopped(EventModule);
+        false ->
+            ensure_stopped(SnapshotModule),
+            ensure_stopped(EventModule)
+    end.
 
 -doc """
 Persists a list of events to the event store using the specified store module.
 """.
--spec persist_events(StoreModule, StreamId, Events) -> ok when
-    StoreModule :: module(),
+-spec persist_events(StoreContext, StreamId, Events) -> ok when
+    StoreContext :: store_context(),
     StreamId :: stream_id(),
     Events :: [event()].
-persist_events(StoreModule, StreamId, Events) when is_list(Events) ->
-    _ = lists:foldl(
-        fun(Event, Seen) ->
+persist_events({EventModule, _}, StreamId, Events) when is_list(Events) ->
+    %% Validate that all events target the same StreamId
+    ok = lists:foreach(
+        fun(Event) ->
             case stream_id(Event) of
                 StreamId ->
-                    Id = id(Event),
-                    case lists:member(Id, Seen) of
-                        true ->
-                            erlang:error(duplicate_event);
-                        false ->
-                            [Id | Seen]
-                    end;
+                    ok;
                 WrongStreamId ->
                     erlang:error({badarg, WrongStreamId})
             end
         end,
-        [],
         Events
     ),
-    StoreModule:persist_events(StreamId, Events).
+
+    %% Detect duplicates (same event id twice in the batch)
+    SeenIds = [id(E) || E <- Events],
+    case length(SeenIds) =:= length(lists:usort(SeenIds)) of
+        true ->
+            ok;
+        false ->
+            erlang:error(duplicate_event)
+    end,
+
+    EventModule:persist_events(StreamId, Events).
 
 -doc """
 Retrieves and folds events from the event store using the specified persistence module.
 """.
--spec retrieve_and_fold_events(StoreModule, StreamId, Options, Fun, Acc0) -> Acc1 when
-    StoreModule :: module(),
+-spec retrieve_and_fold_events(StoreContext, StreamId, Options, Fun, Acc0) -> Acc1 when
+    StoreContext :: store_context(),
     StreamId :: stream_id(),
     Options :: fold_events_opts(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
@@ -201,20 +125,20 @@ Retrieves and folds events from the event store using the specified persistence 
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
-retrieve_and_fold_events(StoreModule, StreamId, Options, Fun, InitialResult) ->
-    StoreModule:retrieve_and_fold_events(StreamId, Options, Fun, InitialResult).
+retrieve_and_fold_events({EventModule, _}, StreamId, Options, Fun, InitialResult) ->
+    EventModule:retrieve_and_fold_events(StreamId, Options, Fun, InitialResult).
 
 -doc """
 Retrieves events for a given stream using the specified store module and options.
 """.
--spec retrieve_events(StoreModule, StreamId, Options) -> Result when
-    StoreModule :: module(),
+-spec retrieve_events(StoreContext, StreamId, Options) -> Result when
+    StoreContext :: store_context(),
     StreamId :: stream_id(),
     Options :: fold_events_opts(),
     Result :: [event()].
-retrieve_events(StoreModule, StreamId, Options) ->
+retrieve_events(StoreContext, StreamId, Options) ->
     retrieve_and_fold_events(
-        StoreModule,
+        StoreContext,
         StreamId,
         Options,
         fun(Event, Acc) -> Acc ++ [Event] end,
@@ -397,32 +321,26 @@ The snapshot record contains all necessary fields (domain, stream_id, sequence,
 timestamp, state), making the API consistent with event persistence where events
 are passed as complete records.
 
-- StoreModule is the persistence module implementing snapshot storage.
-- Snapshot is the complete snapshot record to persist.
-
 Returns `ok` on success, or `{warning, Reason}` if persistence fails.
 """.
--spec save_snapshot(StoreModule, Snapshot) -> ok | {warning, Reason} when
-    StoreModule :: module(),
+-spec save_snapshot(StoreContext, Snapshot) -> ok | {warning, Reason} when
+    StoreContext :: store_context(),
     Snapshot :: snapshot(),
     Reason :: term().
-save_snapshot(StoreModule, Snapshot) ->
-    StoreModule:save_snapshot(Snapshot).
+save_snapshot({_, SnapshotModule}, Snapshot) ->
+    SnapshotModule:save_snapshot(Snapshot).
 
 -doc """
 Retrieves the latest snapshot for a stream using the specified store module.
 
-- StoreModule is the module implementing the event_sourcing_core_store behaviour.
-- StreamId is the unique identifier for the stream.
-
 Returns `{ok, Snapshot}` if found, `{error, not_found}` otherwise.
 """.
--spec retrieve_latest_snapshot(StoreModule, StreamId) -> {ok, Snapshot} | {error, not_found} when
-    StoreModule :: module(),
+-spec retrieve_latest_snapshot(StoreContext, StreamId) -> {ok, Snapshot} | {error, not_found} when
+    StoreContext :: store_context(),
     StreamId :: stream_id(),
     Snapshot :: snapshot().
-retrieve_latest_snapshot(StoreModule, StreamId) ->
-    StoreModule:retrieve_latest_snapshot(StreamId).
+retrieve_latest_snapshot({_, SnapshotModule}, StreamId) ->
+    SnapshotModule:retrieve_latest_snapshot(StreamId).
 
 -doc """
 Returns the stream identifier of the snapshot.
@@ -458,3 +376,27 @@ Returns the state stored in the snapshot.
 -spec snapshot_state(snapshot()) -> snapshot_data().
 snapshot_state(#snapshot{state = State}) ->
     State.
+
+%% @private
+-spec ensure_started(module()) -> ok | no_return().
+ensure_started(Mod) ->
+    case Mod:start() of
+        ok ->
+            ok;
+        {error, Reason} ->
+            error({init_failed, Mod, Reason});
+        Other ->
+            error({unexpected_start_result, Mod, Other})
+    end.
+
+%% @private
+-spec ensure_stopped(module()) -> ok | no_return().
+ensure_stopped(Mod) ->
+    case Mod:stop() of
+        ok ->
+            ok;
+        {error, Reason} ->
+            error({stop_failed, Mod, Reason});
+        Other ->
+            error({unexpected_stop_result, Mod, Other})
+    end.
