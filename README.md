@@ -28,14 +28,16 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 - **Snapshots** — automatic checkpointing at configurable intervals to avoid replaying entire streams.
 - **Passivation** — idle aggregates are shut down cleanly and will rehydrate from the store on the next command.
 
-### Current backends:
+### Backend roadmap
 
-| Backend | Icon | Highlights | Ideal use cases |
-| --- | --- | --- | --- |
-| [ETS](apps/event_sourcing_core/src/event_sourcing_core_store_ets.erl) | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png">  | In-memory tables backed by the BEAM VM, blazing-fast reads/writes, zero external dependencies. | Local development, benchmarks, ephemeral environments where latency matters more than durability. |
-| [Mnesia](apps/event_sourcing_core/src/event_sourcing_core_store_mnesia.erl) | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png">  | Distributed, transactional, and replicated storage built into Erlang/OTP. | Clusters that need lightweight distribution without introducing an external database. |
+| Backend                                                                     | Status     | Icon                                                                                                                               | Highlights                                                                                     | Ideal use cases                                                                                   |
+| --------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [ETS](apps/event_sourcing_core/src/event_sourcing_core_store_ets.erl)       | ✅ Ready   | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png" alt="ets-logo">     | In-memory tables backed by the BEAM VM, blazing-fast reads/writes, zero external dependencies. | Local development, benchmarks, ephemeral environments where latency matters more than durability. |
+| [Mnesia](apps/event_sourcing_core/src/event_sourcing_core_store_mnesia.erl) | ✅ Ready   | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png" alt="mnesia-logo">     | Distributed, transactional, and replicated storage built into Erlang/OTP.                      | Clusters that need lightweight distribution without introducing an external database.             |
+| [PostgreSQL](https://www.postgresql.org/)                                   | 🛠️ Planned | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/postgresql.png" alt="postgresql-logo"> | Durable SQL store with strong transactional guarantees and easy horizontal scaling.            | Production setups that already rely on Postgres or need rock-solid consistency.                   |
+| [MongoDB](https://www.mongodb.com/)                                         | 🛠️ Planned | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/mongodb.png" alt="mongodb-logo">    | Flexible document database with built-in replication and sharding.                             | Event streams that benefit from schemaless payload storage or multi-region clusters.              |
 
-Both stores implement the same behaviour, so switching backends is just a matter of wiring a different module into the aggregate manager configuration.
+All backends plug into the same behaviour, so switching modules only requires tweaking the aggregate manager configuration.
 
 ## Let's play
 
@@ -226,6 +228,7 @@ Snapshots provide a performance optimization for aggregate rehydration by avoidi
 **How it works:**
 
 1. **On startup**, the aggregate:
+
    - Attempts to load the latest snapshot from the event store
    - If found, initializes state from the snapshot
    - Replays only events that occurred after the snapshot sequence
