@@ -1,5 +1,14 @@
 # erlang-event-sourcing-xp changelog
 
+## [1.1.0](https://github.com/ccamel/erlang-event-sourcing-xp/compare/v1.0.0...v1.1.0) (2025-10-25)
+
+
+### Features
+
+* **core:** add ETS-based snapshot storage ([c0813df](https://github.com/ccamel/erlang-event-sourcing-xp/commit/c0813df48998cd95cb4b300f45d26232a4b44dd0))
+* **core:** add Mnesia-based snapshot storage ([3917490](https://github.com/ccamel/erlang-event-sourcing-xp/commit/3917490ba1da4ef3986638c89f4c4a134c6e2e87))
+* **core:** introduce snapshot mechanism ([cefcfb6](https://github.com/ccamel/erlang-event-sourcing-xp/commit/cefcfb6969d2fa9afd488f1a55ed09a03ccfee98))
+
 ## 1.0.0 (2025-04-02)
 
 
