@@ -118,3 +118,60 @@ jobs:
       - name: Ensure doc is generating
         run: |
           rebar3 ex_doc
+
+  check-readme-updated:
+    runs-on: ubuntu-22.04
+    env:
+      ERL_FLAGS: "-enable-feature all"
+      OTP_VERSION: "27"
+      REBAR3_VERSION: "3.24.0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Setup Erlang/OTP and rebar3
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          rebar3-version: ${{ env.REBAR3_VERSION }}
+
+      - name: Restore _build folder
+        uses: actions/cache@v4
+        with:
+          path: _build
+          key: "_build-cache-for\
+            -otp-${{ env.OTP_VERSION }}\
+            -rebar3-${{ env.REBAR3_VERSION }}\
+            -hash-${{ hashFiles('rebar.lock') }}"
+
+      - name: Restore rebar3's cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/rebar3
+          key: "rebar3-cache-for\
+            -otp-${{ env.OTP_VERSION }}\
+            -rebar3-${{ env.REBAR3_VERSION }}\
+            -hash-${{ hashFiles('rebar.lock') }}"
+
+      - name: Update demo in README.md
+        run: |
+          escript .github/scripts/sync_readme.escript
+
+      - name: Verify changed readme files
+        uses: tj-actions/verify-changed-files@v20
+        id: verify-changed-readme-files
+        with:
+          files: |
+            README.md
+
+      - name: Fail if README.md changed
+        if: steps.verify-changed-readme-files.outputs.files_changed == 'true'
+        run: |
+          echo "❌ README.md has been updated."
+          echo "  Changed files : ${{ steps.verify-changed-readme-files.outputs.changed_files }}"
+          git diff --name-only | grep 'README.md' | while read file; do
+            echo "‣ Changes in $file:"
+            git diff HEAD $file
+          done
+          echo "Please generate readme using \`escript .github/scripts/sync_readme.escript\` then commit this new documentation."
+          exit 1
