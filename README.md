@@ -43,35 +43,61 @@ This project is a work in progress, and I welcome any feedback or contributions.
 
 Start the Erlang [shell](https://www.erlang.org/docs/20/man/shell.html) and run the following commands to play with the example:
 
+<!-- DEMO-START -->
+
 ```erlang
-$ rebar3 shell
-1> % Start the ETS-based event & snapshot store
-.. event_sourcing_core_store:start({event_sourcing_store_ets, event_sourcing_store_ets}).
-ok
-2> % Start the Bank Account aggregate (and get its pid)
-.. {ok, BankMgr} = event_sourcing_core_mgr_aggregate:start_link(
-..     bank_account_aggregate,
-..     {event_sourcing_store_ets, event_sourcing_store_ets},
-..     bank_account_aggregate
-.. ).
-{ok,<0.321.0>}
-3> % Dispatch the Deposit $100 command to the Bank Account aggregate
-.. event_sourcing_core_mgr_aggregate:dispatch(BankMgr, {bank, deposit, <<"bank-account-123">>, 100}).
-=INFO REPORT==== 1-Apr-2025::17:06:41.660921 ===
-Persisting Event: {event,<<"bank-account-123">>,bank_account_aggregate,
-                         deposited,1,[],1743520001661,#{},
-                         #{type => deposited,amount => 100}}
-ok
-4> % Dispatch the Withdraw $10 command to the Bank Account aggregate
-.. event_sourcing_core_mgr_aggregate:dispatch(BankMgr, {bank, withdraw, <<"bank-account-123">>, 10}).
-=INFO REPORT==== 1-Apr-2025::17:07:23.271971 ===
-Persisting Event: {event,<<"bank-account-123">>,bank_account_aggregate,
-                         withdrawn,2,[],1743520043272,#{},
-                         #{type => withdrawn,amount => 10}}
-5> % Dispatch the Withdraw $1000 command to the Bank Account aggregate
-.. event_sourcing_core_mgr_aggregate:dispatch(BankMgr, {bank, withdraw, <<"bank-account-123">>, 1000}).
-{error,insufficient_funds}
+%% Interactive demo showcasing the event sourcing engine.
+%%
+%% The example uses a simple "bank account" aggregate: a single stream
+%% of domain events representing deposits and withdrawals.
+%% Each command sent to the aggregate produces an event persisted
+%% through the in-memory ETS backend (used here for both events
+%% and snapshots).
+
+%% Usage:
+%%     rebar3 shell < examples/demo_bank.script
+
+StoreContext = {event_sourcing_store_ets, event_sourcing_store_ets},
+
+io:format("~n[1] starting in-memory store (ETS)~n", []),
+StartRes = event_sourcing_core_store:start(StoreContext),
+io:format(" -> ~p~n", [StartRes]),
+
+io:format("[2] starting bank account aggregate manager~n", []),
+{ok, BankMgr} =
+    event_sourcing_core_mgr_aggregate:start_link(
+        bank_account_aggregate,
+        StoreContext,
+        bank_account_aggregate
+    ),
+io:format(" -> BankMgr pid: ~p~n", [BankMgr]),
+
+AccountId = <<"bank-account-123">>,
+
+io:format("[3] deposit $100~n", []),
+Res1 = event_sourcing_core_mgr_aggregate:dispatch(
+    BankMgr,
+    {bank, deposit, AccountId, 100}
+),
+io:format(" -> ~p~n", [Res1]),
+
+io:format("[4] withdraw $10~n", []),
+Res2 = event_sourcing_core_mgr_aggregate:dispatch(
+    BankMgr,
+    {bank, withdraw, AccountId, 10}
+),
+io:format(" -> ~p~n", [Res2]),
+
+io:format("[5] withdraw $1000 (should fail)~n", []),
+Res3 = event_sourcing_core_mgr_aggregate:dispatch(
+    BankMgr,
+    {bank, withdraw, AccountId, 1000}
+),
+io:format(" -> ~p~n", [Res3]),
+
+ok.
 ```
+<!-- DEMO-END -->
 
 ## Architecture
 
