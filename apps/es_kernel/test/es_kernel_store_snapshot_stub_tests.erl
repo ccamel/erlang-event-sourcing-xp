@@ -31,11 +31,11 @@ concurrent_start_operations() ->
 
     Results = [
         receive
-            {start_result, Pid, Result} -> Result
+            {start_result, _Pid, Result} -> Result
         after 5000 ->
             timeout
         end
-     || Pid <- Pids
+     || _ <- Pids
     ],
 
     ?assertEqual(NumProcesses, length([ok || ok <- Results])),
@@ -57,11 +57,11 @@ concurrent_stop_operations() ->
 
     Results = [
         receive
-            {stop_result, Pid, Result} -> Result
+            {stop_result, _Pid, Result} -> Result
         after 5000 ->
             timeout
         end
-     || Pid <- Pids
+     || _ <- Pids
     ],
 
     ?assertEqual(NumProcesses, length([ok || ok <- Results])).
@@ -86,11 +86,11 @@ concurrent_start_stop_operations() ->
 
     Results = [
         receive
-            {result, Pid, _Op, Result} -> Result
+            {result, _Pid, _Op, Result} -> Result
         after 5000 ->
             timeout
         end
-     || Pid <- Pids
+     || _ <- Pids
     ],
 
     ?assertEqual(NumProcesses, length([ok || ok <- Results])),
