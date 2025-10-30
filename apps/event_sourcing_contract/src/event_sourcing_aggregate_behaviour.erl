@@ -1,4 +1,4 @@
--module(event_sourcing_core_aggregate_behaviour).
+-module(event_sourcing_aggregate_behaviour).
 -moduledoc """
 Defines the aggregate behaviour for event-sourced domain modules.
 
@@ -15,7 +15,7 @@ Implementers are responsible for:
 - Identifying the event type for a payload (`event_type/1`)
 """.
 
--include_lib("event_sourcing_core.hrl").
+-include("event_sourcing.hrl").
 
 -export_type([aggregate_state/0]).
 

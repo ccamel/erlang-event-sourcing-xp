@@ -3,10 +3,10 @@
 The ETS-based implementation of the event store.
 """.
 
--behaviour(event_sourcing_core_event_store).
--behaviour(event_sourcing_core_snapshot_store).
+-behaviour(event_sourcing_event_store_behaviour).
+-behaviour(event_sourcing_snapshot_store_behaviour).
 
--include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
+-include_lib("event_sourcing_contract/include/event_sourcing.hrl").
 
 -export([
     start/0,
@@ -17,7 +17,9 @@ The ETS-based implementation of the event store.
     retrieve_latest_snapshot/1
 ]).
 
--export_type([event/0, stream_id/0, sequence/0, timestamp/0, snapshot/0, snapshot_data/0]).
+-export_type([
+    event/0, stream_id/0, sequence/0, timestamp/0, snapshot/0, snapshot_data/0, fold_events_opts/0
+]).
 
 -record(event_record, {
     key :: event_id(), stream_id :: stream_id(), sequence :: sequence(), event :: event()
@@ -79,7 +81,7 @@ persist_events(_, Events) ->
 
 -spec retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1 when
     StreamId :: stream_id(),
-    Options :: event_sourcing_core_store:fold_events_opts(),
+    Options :: fold_events_opts(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
     Acc1 :: term(),

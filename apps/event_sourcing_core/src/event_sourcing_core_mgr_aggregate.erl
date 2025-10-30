@@ -10,7 +10,7 @@ monitoring them for crashes.
 
 -behaviour(gen_server).
 
--include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
+-include_lib("event_sourcing_contract/include/event_sourcing.hrl").
 
 -export([
     init/1,

@@ -77,3 +77,11 @@ Fields:
 - `state`: The serialized aggregate state at the snapshot point.
 """.
 -type snapshot() :: #snapshot{}.
+
+%%% Options for folding events
+-type fold_events_opts() ::
+    #{
+        from => non_neg_integer(),
+        to => non_neg_integer() | infinity,
+        limit => pos_integer() | infinity
+    }.

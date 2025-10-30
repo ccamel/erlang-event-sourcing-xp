@@ -1,4 +1,4 @@
--module(event_sourcing_core_event_store).
+-module(event_sourcing_event_store_behaviour).
 -moduledoc """
 Behaviour for **event store backends**.
 
@@ -20,7 +20,7 @@ Implementations must guarantee:
 Typical implementations include in-memory stores (ETS) and relational databases.
 """.
 
--include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
+-include("event_sourcing.hrl").
 
 -doc """
 Starts the event store, performing any necessary initialization.
@@ -77,7 +77,7 @@ Returns `{ok, Acc}` where `Acc` is the result of folding all events.
 """.
 -callback retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1 when
     StreamId :: stream_id(),
-    Options :: event_sourcing_core_store:fold_events_opts(),
+    Options :: fold_events_opts(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
     Acc1 :: term(),

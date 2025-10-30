@@ -1,6 +1,6 @@
 -module(event_sourcing_core_store_snapshot_stub).
 
--include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
+-include_lib("event_sourcing_contract/include/event_sourcing.hrl").
 
 -export([start/0, stop/0, save_snapshot/1, retrieve_latest_snapshot/1]).
 

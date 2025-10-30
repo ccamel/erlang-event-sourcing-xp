@@ -1,4 +1,4 @@
--module(event_sourcing_core_snapshot_store).
+-module(event_sourcing_snapshot_store_behaviour).
 -moduledoc """
 Behaviour for **snapshot store backends**.
 
@@ -20,7 +20,7 @@ Common implementations include key–value stores, databases, or object storage
 systems (e.g., S3).
 """.
 
--include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
+-include("event_sourcing.hrl").
 
 -doc """
 Save a snapshot for a stream.

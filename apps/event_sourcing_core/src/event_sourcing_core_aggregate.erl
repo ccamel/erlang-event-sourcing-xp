@@ -1,6 +1,6 @@
 -module(event_sourcing_core_aggregate).
 
--include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
+-include_lib("event_sourcing_contract/include/event_sourcing.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -behaviour(gen_server).
@@ -28,7 +28,7 @@
 -define(SEQUENCE_ZERO, 0).
 -define(INACTIVITY_TIMEOUT, 5000).
 
--type aggregate_state() :: event_sourcing_core_aggregate_behaviour:aggregate_state().
+-type aggregate_state() :: event_sourcing_aggregate_behaviour:aggregate_state().
 
 -doc """
 Starts an aggregate process with a given timeout.
