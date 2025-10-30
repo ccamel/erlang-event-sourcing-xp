@@ -8,8 +8,13 @@
 start() ->
     case ets:info(?TABLE) of
         undefined ->
-            _ = ets:new(?TABLE, [set, named_table, public]),
-            ok;
+            try
+                _ = ets:new(?TABLE, [set, named_table, public]),
+                ok
+            catch
+                error:badarg ->
+                    ok
+            end;
         _ ->
             ok
     end.
@@ -20,8 +25,13 @@ stop() ->
         undefined ->
             ok;
         _ ->
-            ets:delete(?TABLE),
-            ok
+            try
+                ets:delete(?TABLE),
+                ok
+            catch
+                error:badarg ->
+                    ok
+            end
     end.
 
 -spec store(es_contract_snapshot:t()) -> ok.
