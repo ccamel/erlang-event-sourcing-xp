@@ -340,16 +340,21 @@ The manager can be configured with options such as:
 
 ```plaintext
 apps/
+├── event_sourcing_contract
+│   ├── include/event_sourcing.hrl                  % Shared types and records
+│   └── src                                         % Public behaviours (the contract)
+│       ├── event_sourcing_contract.app.src
+│       ├── event_sourcing_aggregate_behaviour.erl
+│       ├── event_sourcing_event_store_behaviour.erl
+│       └── event_sourcing_snapshot_store_behaviour.erl
 ├── event_sourcing_core
-│   ├── include/event_sourcing_core.hrl             % Shared types and macros
-│   ├── src                                         % Core behaviours + processes
+│   ├── src                                         % Core processes built on the contract
 │   │   ├── event_sourcing_core.app.src
 │   │   ├── event_sourcing_core_aggregate.erl
-│   │   ├── event_sourcing_core_aggregate_behaviour.erl
 │   │   ├── event_sourcing_core_mgr_aggregate.erl
 │   │   ├── event_sourcing_core_mgr_behaviour.erl
 │   │   └── event_sourcing_core_store.erl
-│   └── test                                        % Aggregate + behaviour suites
+│   └── test                                        % Aggregate + store suites
 ├── event_sourcing_store_ets
 │   ├── src/event_sourcing_store_ets.erl            % ETS-backed store implementation
 │   └── test                                        % ETS-focused tests (planned)

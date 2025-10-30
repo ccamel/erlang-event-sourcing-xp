@@ -1,0 +1,14 @@
+{application, event_sourcing_contract, [
+    {description, "Contracts (behaviours and types) for event sourcing components"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib]},
+    {env, []},
+    {modules, [
+        event_sourcing_aggregate_behaviour,
+        event_sourcing_event_store_behaviour,
+        event_sourcing_snapshot_store_behaviour
+    ]},
+    {licenses, ["BSD 3-Clause"]},
+    {links, []}
+]}.

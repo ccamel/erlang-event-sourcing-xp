@@ -12,7 +12,7 @@ A `store_context()` is represented as `{EventStore, SnapshotStore}`.
 Both modules may be the same if one backend implements both roles.
 """.
 
--include_lib("event_sourcing_core/include/event_sourcing_core.hrl").
+-include_lib("event_sourcing_contract/include/event_sourcing.hrl").
 
 -export([
     start/1,
@@ -41,7 +41,6 @@ Both modules may be the same if one backend implements both roles.
 ]).
 
 -export_type([
-    fold_events_opts/0,
     domain/0,
     event/0,
     event_id/0,
@@ -55,6 +54,7 @@ Both modules may be the same if one backend implements both roles.
     snapshot/0,
     snapshot_id/0,
     snapshot_data/0,
+    fold_events_opts/0,
     store_context/0
 ]).
 
@@ -144,13 +144,6 @@ retrieve_events(StoreContext, StreamId, Options) ->
         fun(Event, Acc) -> Acc ++ [Event] end,
         []
     ).
-
--type fold_events_opts() ::
-    #{
-        from => non_neg_integer(),
-        to => non_neg_integer() | infinity,
-        limit => pos_integer() | infinity
-    }.
 
 -doc """
 Creates a new event.
