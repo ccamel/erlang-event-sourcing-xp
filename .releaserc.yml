@@ -62,6 +62,8 @@ plugins:
               numMatches: 1
               numReplacements: 1
   - - "@semantic-release/exec"
+    - prepareCmd: ".github/scripts/generate_release_bom.escript ${nextRelease.version}"
+  - - "@semantic-release/exec"
     - prepareCmd: |
         rebar3 as prod tar
   - - "@semantic-release/github"
@@ -74,4 +76,5 @@ plugins:
         - CHANGELOG.md
         - rebar.config
         - rebar.lock
+        - bom.yml
       message: "chore(release): perform release ${nextRelease.version}"
