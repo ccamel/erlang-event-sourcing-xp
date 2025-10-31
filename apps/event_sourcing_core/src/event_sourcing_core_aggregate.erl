@@ -153,9 +153,9 @@ init({Aggregate, StoreContext, Id, Opts}) ->
         event_sourcing_core_store:fold(
             StoreContext,
             Id,
-            #{from => SequenceFromSnapshot + 1},
             FoldFun,
-            {StateFromSnapshot, SequenceFromSnapshot}
+            {StateFromSnapshot, SequenceFromSnapshot},
+            #{from => SequenceFromSnapshot + 1}
         ),
     Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
     SnapshotInterval = maps:get(snapshot_interval, Opts, 0),

@@ -79,15 +79,15 @@ append(_, Events) ->
             erlang:error(duplicate_event)
     end.
 
--spec fold(StreamId, Options, Fun, Acc0) -> Acc1 when
+-spec fold(StreamId, Fun, Acc0, Options) -> Acc1 when
     StreamId :: stream_id(),
-    Options :: fold_events_opts(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
+    Options :: fold_events_opts(),
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
-fold(StreamId, Options, FoldFun, InitialAcc) when
+fold(StreamId, FoldFun, InitialAcc, Options) when
     is_map(Options), is_function(FoldFun, 2)
 ->
     From = maps:get(from, Options, 0),
