@@ -123,17 +123,17 @@ Folds events from the event store into an accumulator using the specified persis
 This is the core operation for event replay and state reconstruction. The backend
 retrieves events matching the given criteria and applies the fold function in sequence order.
 """.
--spec fold(StoreContext, StreamId, Options, Fun, Acc0) -> Acc1 when
+-spec fold(StoreContext, StreamId, Fun, Acc0, Options) -> Acc1 when
     StoreContext :: store_context(),
     StreamId :: stream_id(),
-    Options :: fold_events_opts(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
+    Options :: fold_events_opts(),
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
-fold({EventModule, _}, StreamId, Options, Fun, InitialResult) ->
-    EventModule:fold(StreamId, Options, Fun, InitialResult).
+fold({EventModule, _}, StreamId, Fun, InitialResult, Options) ->
+    EventModule:fold(StreamId, Fun, InitialResult, Options).
 
 -doc """
 Retrieves events for a given stream using the specified store module and options.
@@ -149,9 +149,9 @@ retrieve_events(StoreContext, StreamId, Options) ->
     fold(
         StoreContext,
         StreamId,
-        Options,
         fun(Event, Acc) -> Acc ++ [Event] end,
-        []
+        [],
+        Options
     ).
 
 -doc """

@@ -68,20 +68,20 @@ event in sequence order, and returns the final accumulator. It’s typically use
 rebuild application state by replaying events.
 
 - StreamId is an atom identifying the event stream (e.g., order-123).
+- FoldFun is a function `fun((Event, AccIn) -> AccOut)` to process each event.
+- InitialAcc is the initial accumulator value (e.g., an empty state).
 - Options is A list of filters:
   - `{from, Sequence}`: Start at this sequence (default: 0).
   - `{to, Sequence | infinity}`: End at this sequence (default: infinity).
   - `{limit, Limit}`: Maximum number of events to retrieve (default: infinity).
-- FoldFun is a function `fun((Event, AccIn) -> AccOut)` to process each event.
-- InitialAcc is the initial accumulator value (e.g., an empty state).
 
 Returns the final accumulator after folding all events.
 """.
--callback fold(StreamId, Options, Fun, Acc0) -> Acc1 when
+-callback fold(StreamId, Fun, Acc0, Options) -> Acc1 when
     StreamId :: stream_id(),
-    Options :: fold_events_opts(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
+    Options :: fold_events_opts(),
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
