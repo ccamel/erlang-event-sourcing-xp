@@ -8,8 +8,8 @@ be replayed for state reconstruction.
 
 Callbacks:
 - `start/0`, `stop/0` — manage the backend's lifecycle
-- `persist_events/2` — append events to a stream, ensuring monotonic sequence numbers
-- `retrieve_and_fold_events/4` — replay events in order and fold them with a user function
+- `append/2` — append events to a stream, ensuring monotonic sequence numbers
+- `fold/4` — replay events in order and fold them with a user function
 
 Implementations must guarantee:
 - **ordering**: events for a given stream are stored and replayed in strictly increasing
@@ -46,7 +46,9 @@ Returns `ok` on success. May throw an exception if cleanup fails
 -doc """
 Append events to an event stream.
 
-This callback appends events to the specified streams.
+This callback appends events to the specified stream, ensuring monotonic ordering
+by sequence number. Each event is durably persisted and becomes part of the immutable
+event log for the stream.
 
 - StreamId is an atom identifying the event stream (e.g., order-123).
 - Events is the list of events to append to the stream. The events provided are unique and all
@@ -55,7 +57,7 @@ belong to the same stream.
 Returns `ok` on success. May throw an exception if persistence fails (e.g., badarg if the
 stream ID is incorrect, duplicate events if the sequence number is not unique).
 """.
--callback persist_events(StreamId, Events) -> ok when
+-callback append(StreamId, Events) -> ok when
     StreamId :: stream_id(),
     Events :: [event()].
 -doc """
@@ -71,11 +73,11 @@ rebuild application state by replaying events.
   - `{to, Sequence | infinity}`: End at this sequence (default: infinity).
   - `{limit, Limit}`: Maximum number of events to retrieve (default: infinity).
 - FoldFun is a function `fun((Event, AccIn) -> AccOut)` to process each event.
-- InitialAcc is The initial accumulator value (e.g., an empty state).
+- InitialAcc is the initial accumulator value (e.g., an empty state).
 
-Returns `{ok, Acc}` where `Acc` is the result of folding all events.
+Returns the final accumulator after folding all events.
 """.
--callback retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1 when
+-callback fold(StreamId, Options, Fun, Acc0) -> Acc1 when
     StreamId :: stream_id(),
     Options :: fold_events_opts(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),

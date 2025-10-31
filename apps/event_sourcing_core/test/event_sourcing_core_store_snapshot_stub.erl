@@ -2,7 +2,7 @@
 
 -include_lib("event_sourcing_contract/include/event_sourcing.hrl").
 
--export([start/0, stop/0, save_snapshot/1, retrieve_latest_snapshot/1]).
+-export([start/0, stop/0, store/1, load_latest/1]).
 
 -define(TABLE, ?MODULE).
 
@@ -26,14 +26,14 @@ stop() ->
             ok
     end.
 
--spec save_snapshot(snapshot()) -> ok.
-save_snapshot(Snapshot) ->
+-spec store(snapshot()) -> ok.
+store(Snapshot) ->
     StreamId = event_sourcing_core_store:snapshot_stream_id(Snapshot),
     ets:insert(?TABLE, {StreamId, Snapshot}),
     ok.
 
--spec retrieve_latest_snapshot(stream_id()) -> {ok, snapshot()} | {error, not_found}.
-retrieve_latest_snapshot(StreamId) ->
+-spec load_latest(stream_id()) -> {ok, snapshot()} | {error, not_found}.
+load_latest(StreamId) ->
     case ets:lookup(?TABLE, StreamId) of
         [{_, Snapshot}] ->
             {ok, Snapshot};

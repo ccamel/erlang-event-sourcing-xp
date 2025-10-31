@@ -120,13 +120,13 @@ The event store is a core component in this experiment, designed as a customizab
 % Shuts down the event store.
 -callback stop() -> {ok} | {error, term()}.
 
-% Persists a list of events for a given stream.
--callback persist_events(StreamId, Events) -> ok | {error, term()}
+% Appends a list of events for a given stream.
+-callback append(StreamId, Events) -> ok | {error, term()}
     when StreamId :: stream_id(),
          Events :: [event()].
 
-% Retrieves events from a stream and folds them using a provided function
--callback retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc) -> {ok, Acc} | {error, term()}
+% Folds events from a stream using a provided function
+-callback fold(StreamId, Options, FoldFun, InitialAcc) -> {ok, Acc} | {error, term()}
     when StreamId :: stream_id(),
          Options :: fold_events_opts(),
          FoldFun :: fold_events_fun(),
@@ -144,11 +144,11 @@ The event store supports snapshotting to optimize aggregate rehydration. Instead
 **Snapshot Callbacks:**
 
 ```erlang
-% Save a snapshot of aggregate state
--callback save_snapshot(Snapshot) -> ok when Snapshot :: snapshot().
+% Store a snapshot of aggregate state
+-callback store(Snapshot) -> ok when Snapshot :: snapshot().
 
-% Retrieve the latest snapshot for a stream
--callback retrieve_latest_snapshot(StreamId) -> {ok, Snapshot} | {error, not_found}.
+% Load the latest snapshot for a stream
+-callback load_latest(StreamId) -> {ok, Snapshot} | {error, not_found}.
 ```
 
 The snapshot record contains all necessary fields (domain, stream_id, sequence, timestamp, state), making the API consistent with event persistence where events are passed as complete records.

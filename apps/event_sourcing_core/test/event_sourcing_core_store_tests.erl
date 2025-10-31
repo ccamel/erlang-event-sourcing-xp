@@ -61,7 +61,7 @@ persist_single_event(Store) ->
             {"John Doe"}
         ),
 
-    ?assertMatch(ok, event_sourcing_core_store:persist_events(Store, stream_A, [Event])),
+    ?assertMatch(ok, event_sourcing_core_store:append(Store, stream_A, [Event])),
     ?assertMatch([Event], event_sourcing_core_store:retrieve_events(Store, stream_A, #{})),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
@@ -92,8 +92,8 @@ persist_2_streams_event(Store) ->
             )
         ],
 
-    ?assertMatch(ok, event_sourcing_core_store:persist_events(Store, stream_A, EventStreamA)),
-    ?assertMatch(ok, event_sourcing_core_store:persist_events(Store, stream_B, EventStreamB)),
+    ?assertMatch(ok, event_sourcing_core_store:append(Store, stream_A, EventStreamA)),
+    ?assertMatch(ok, event_sourcing_core_store:append(Store, stream_B, EventStreamB)),
 
     ?assertMatch(
         EventStreamA,
@@ -129,7 +129,7 @@ fetch_streams_event(Store) ->
             event_sourcing_core_store:new_event(stream_A, user, user_deleted, 3, Timestamp, {})
         ],
 
-    ?assertMatch(ok, event_sourcing_core_store:persist_events(Store, stream_A, Events)),
+    ?assertMatch(ok, event_sourcing_core_store:append(Store, stream_A, Events)),
     ?assertMatch([], event_sourcing_core_store:retrieve_events(Store, stream_X, #{})),
     ?assertMatch(
         [],
@@ -186,7 +186,7 @@ wrong_stream_id(Store) ->
     ?assertException(
         error,
         {badarg, stream_A},
-        event_sourcing_core_store:persist_events(Store, stream_B, [Event])
+        event_sourcing_core_store:append(Store, stream_B, [Event])
     ),
     ?assertMatch([], event_sourcing_core_store:retrieve_events(Store, stream_A, #{})),
     ?assertMatch([], event_sourcing_core_store:retrieve_events(Store, stream_B, #{})),
@@ -205,11 +205,11 @@ duplicate_event(Store) ->
             {"John Doe"}
         ),
 
-    ?assertMatch(ok, event_sourcing_core_store:persist_events(Store, stream_A, [Event])),
+    ?assertMatch(ok, event_sourcing_core_store:append(Store, stream_A, [Event])),
     ?assertException(
         error,
         duplicate_event,
-        event_sourcing_core_store:persist_events(Store, stream_A, [Event])
+        event_sourcing_core_store:append(Store, stream_A, [Event])
     ),
     ?assertMatch([Event], event_sourcing_core_store:retrieve_events(Store, stream_A, #{})),
     Events =
@@ -243,7 +243,7 @@ duplicate_event(Store) ->
     ?assertException(
         error,
         duplicate_event,
-        event_sourcing_core_store:persist_events(Store, stream_B, Events)
+        event_sourcing_core_store:append(Store, stream_B, Events)
     ),
     ?assertMatch([], event_sourcing_core_store:retrieve_events(Store, stream_B, #{})),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
@@ -252,7 +252,7 @@ snapshot_not_found(Store) ->
     ?assertMatch(ok, event_sourcing_core_store:start(Store)),
     ?assertMatch(
         {error, not_found},
-        event_sourcing_core_store:retrieve_latest_snapshot(Store, stream_A)
+        event_sourcing_core_store:load_latest(Store, stream_A)
     ),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
@@ -264,9 +264,9 @@ save_and_retrieve_snapshot(Store) ->
     Domain = user,
 
     Snapshot = event_sourcing_core_store:new_snapshot(Domain, stream_A, Sequence, Timestamp, State),
-    ?assertMatch(ok, event_sourcing_core_store:save_snapshot(Store, Snapshot)),
+    ?assertMatch(ok, event_sourcing_core_store:store(Store, Snapshot)),
 
-    {ok, RetrievedSnapshot} = event_sourcing_core_store:retrieve_latest_snapshot(Store, stream_A),
+    {ok, RetrievedSnapshot} = event_sourcing_core_store:load_latest(Store, stream_A),
     ?assertEqual(stream_A, event_sourcing_core_store:snapshot_stream_id(RetrievedSnapshot)),
     ?assertEqual(Domain, event_sourcing_core_store:snapshot_domain(RetrievedSnapshot)),
     ?assertEqual(Sequence, event_sourcing_core_store:snapshot_sequence(RetrievedSnapshot)),
@@ -285,7 +285,7 @@ overwrite_snapshot(Store) ->
     Snapshot1 = event_sourcing_core_store:new_snapshot(
         Domain, stream_A, Sequence1, Timestamp1, State1
     ),
-    ?assertMatch(ok, event_sourcing_core_store:save_snapshot(Store, Snapshot1)),
+    ?assertMatch(ok, event_sourcing_core_store:store(Store, Snapshot1)),
 
     %% Save a new snapshot for the same stream
     Timestamp2 = erlang:system_time(),
@@ -295,10 +295,10 @@ overwrite_snapshot(Store) ->
     Snapshot2 = event_sourcing_core_store:new_snapshot(
         Domain, stream_A, Sequence2, Timestamp2, State2
     ),
-    ?assertMatch(ok, event_sourcing_core_store:save_snapshot(Store, Snapshot2)),
+    ?assertMatch(ok, event_sourcing_core_store:store(Store, Snapshot2)),
 
     %% Should retrieve the latest snapshot
-    {ok, RetrievedSnapshot} = event_sourcing_core_store:retrieve_latest_snapshot(Store, stream_A),
+    {ok, RetrievedSnapshot} = event_sourcing_core_store:load_latest(Store, stream_A),
     ?assertEqual(Sequence2, event_sourcing_core_store:snapshot_sequence(RetrievedSnapshot)),
     ?assertEqual(State2, event_sourcing_core_store:snapshot_state(RetrievedSnapshot)),
 
@@ -318,14 +318,14 @@ composite_store_supports_mixed_backends() ->
             Timestamp,
             {"John Doe"}
         ),
-    ?assertMatch(ok, event_sourcing_core_store:persist_events(Store, stream_A, [Event])),
+    ?assertMatch(ok, event_sourcing_core_store:append(Store, stream_A, [Event])),
     ?assertMatch([Event], event_sourcing_core_store:retrieve_events(Store, stream_A, #{})),
 
     Snapshot = event_sourcing_core_store:new_snapshot(user, stream_A, 1, Timestamp, #{
         balance => 100
     }),
-    ?assertMatch(ok, event_sourcing_core_store:save_snapshot(Store, Snapshot)),
-    {ok, RetrievedSnapshot} = event_sourcing_core_store:retrieve_latest_snapshot(Store, stream_A),
+    ?assertMatch(ok, event_sourcing_core_store:store(Store, Snapshot)),
+    {ok, RetrievedSnapshot} = event_sourcing_core_store:load_latest(Store, stream_A),
     ?assertEqual(1, event_sourcing_core_store:snapshot_sequence(RetrievedSnapshot)),
     ?assertEqual(#{balance => 100}, event_sourcing_core_store:snapshot_state(RetrievedSnapshot)),
 
@@ -342,7 +342,7 @@ snapshot_save_error(?ETS_STORE_CONTEXT = Store) ->
     Domain = user,
 
     Snapshot = event_sourcing_core_store:new_snapshot(Domain, stream_A, Sequence, Timestamp, State),
-    Result = event_sourcing_core_store:save_snapshot(Store, Snapshot),
+    Result = event_sourcing_core_store:store(Store, Snapshot),
 
     %% Should return a warning tuple, not throw an exception
     ?assertMatch({warning, _}, Result);
@@ -360,7 +360,7 @@ snapshot_save_error(?MNESIA_STORE_CONTEXT = Store) ->
     Snapshot = event_sourcing_core_store:new_snapshot(Domain, stream_A, Sequence, Timestamp, State),
 
     %% Normal save should still return ok
-    ?assertMatch(ok, event_sourcing_core_store:save_snapshot(Store, Snapshot)),
+    ?assertMatch(ok, event_sourcing_core_store:store(Store, Snapshot)),
 
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 

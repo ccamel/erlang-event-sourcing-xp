@@ -11,10 +11,10 @@ The ETS-based implementation of the event store.
 -export([
     start/0,
     stop/0,
-    retrieve_and_fold_events/4,
-    persist_events/2,
-    save_snapshot/1,
-    retrieve_latest_snapshot/1
+    fold/4,
+    append/2,
+    store/1,
+    load_latest/1
 ]).
 
 -export_type([
@@ -67,10 +67,10 @@ stop() ->
     ets:delete(?SNAPSHOT_TABLE_NAME),
     ok.
 
--spec persist_events(StreamId, Events) -> ok when
+-spec append(StreamId, Events) -> ok when
     StreamId :: stream_id(),
     Events :: [event()].
-persist_events(_, Events) ->
+append(_, Events) ->
     Records = lists:map(fun event_to_record/1, Events),
     case ets:insert_new(?EVENT_TABLE_NAME, Records) of
         true ->
@@ -79,7 +79,7 @@ persist_events(_, Events) ->
             erlang:error(duplicate_event)
     end.
 
--spec retrieve_and_fold_events(StreamId, Options, Fun, Acc0) -> Acc1 when
+-spec fold(StreamId, Options, Fun, Acc0) -> Acc1 when
     StreamId :: stream_id(),
     Options :: fold_events_opts(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
@@ -87,7 +87,7 @@ persist_events(_, Events) ->
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
-retrieve_and_fold_events(StreamId, Options, FoldFun, InitialAcc) when
+fold(StreamId, Options, FoldFun, InitialAcc) when
     is_map(Options), is_function(FoldFun, 2)
 ->
     From = maps:get(from, Options, 0),
@@ -120,10 +120,10 @@ event_to_record(Event) ->
         event = Event
     }.
 
--spec save_snapshot(Snapshot) -> ok | {warning, Reason} when
+-spec store(Snapshot) -> ok | {warning, Reason} when
     Snapshot :: snapshot(),
     Reason :: term().
-save_snapshot(Snapshot) ->
+store(Snapshot) ->
     try
         Record = #snapshot_record{
             stream_id = event_sourcing_core_store:snapshot_stream_id(Snapshot),
@@ -138,10 +138,10 @@ save_snapshot(Snapshot) ->
             {warning, {Class, Reason}}
     end.
 
--spec retrieve_latest_snapshot(StreamId) -> {ok, Snapshot} | {error, not_found} when
+-spec load_latest(StreamId) -> {ok, Snapshot} | {error, not_found} when
     StreamId :: stream_id(),
     Snapshot :: snapshot().
-retrieve_latest_snapshot(StreamId) ->
+load_latest(StreamId) ->
     case ets:lookup(?SNAPSHOT_TABLE_NAME, StreamId) of
         [#snapshot_record{snapshot = Snapshot}] ->
             {ok, Snapshot};

@@ -130,7 +130,7 @@ init({Aggregate, StoreContext, Id, Opts}) ->
 
     %% Try to load the latest snapshot
     {StateFromSnapshot, SequenceFromSnapshot} =
-        case event_sourcing_core_store:retrieve_latest_snapshot(StoreContext, Id) of
+        case event_sourcing_core_store:load_latest(StoreContext, Id) of
             {ok, Snapshot} ->
                 SnapshotState = event_sourcing_core_store:snapshot_state(Snapshot),
                 SnapshotSeq = event_sourcing_core_store:snapshot_sequence(Snapshot),
@@ -150,7 +150,7 @@ init({Aggregate, StoreContext, Id, Opts}) ->
             }
         end,
     {State1, Sequence1} =
-        event_sourcing_core_store:retrieve_and_fold_events(
+        event_sourcing_core_store:fold(
             StoreContext,
             Id,
             #{from => SequenceFromSnapshot + 1},
@@ -354,7 +354,7 @@ persist_events(PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, SequenceN
         end,
         Events
     ),
-    event_sourcing_core_store:persist_events(StoreContext, Id, Events).
+    event_sourcing_core_store:append(StoreContext, Id, Events).
 
 -doc """
 Saves a snapshot if the snapshot interval is configured and the current
@@ -379,7 +379,7 @@ maybe_save_snapshot(
     Timestamp = NowFun(),
     logger:info("Saving snapshot for ~p at sequence ~p", [Id, Sequence]),
     Snapshot = event_sourcing_core_store:new_snapshot(Aggregate, Id, Sequence, Timestamp, AggState),
-    case event_sourcing_core_store:save_snapshot(StoreContext, Snapshot) of
+    case event_sourcing_core_store:store(StoreContext, Snapshot) of
         ok ->
             ok;
         {warning, Reason} ->

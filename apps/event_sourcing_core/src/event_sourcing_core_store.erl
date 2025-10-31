@@ -17,11 +17,11 @@ Both modules may be the same if one backend implements both roles.
 -export([
     start/1,
     stop/1,
-    persist_events/3,
-    retrieve_and_fold_events/5,
+    append/3,
+    fold/5,
     retrieve_events/3,
-    save_snapshot/2,
-    retrieve_latest_snapshot/2,
+    store/2,
+    load_latest/2,
     new_snapshot/5,
     snapshot_stream_id/1,
     snapshot_domain/1,
@@ -82,13 +82,17 @@ stop({EventModule, SnapshotModule}) ->
     end.
 
 -doc """
-Persists a list of events to the event store using the specified store module.
+Appends a list of events to the event store using the specified store module.
+
+This is the primary mechanism for persisting domain events. All events in the list
+must target the same stream and have unique identifiers. The store backend ensures
+atomic persistence and maintains sequence ordering.
 """.
--spec persist_events(StoreContext, StreamId, Events) -> ok when
+-spec append(StoreContext, StreamId, Events) -> ok when
     StoreContext :: store_context(),
     StreamId :: stream_id(),
     Events :: [event()].
-persist_events({EventModule, _}, StreamId, Events) when is_list(Events) ->
+append({EventModule, _}, StreamId, Events) when is_list(Events) ->
     %% Validate that all events target the same StreamId
     ok = lists:foreach(
         fun(Event) ->
@@ -111,12 +115,15 @@ persist_events({EventModule, _}, StreamId, Events) when is_list(Events) ->
             erlang:error(duplicate_event)
     end,
 
-    EventModule:persist_events(StreamId, Events).
+    EventModule:append(StreamId, Events).
 
 -doc """
-Retrieves and folds events from the event store using the specified persistence module.
+Folds events from the event store into an accumulator using the specified persistence module.
+
+This is the core operation for event replay and state reconstruction. The backend
+retrieves events matching the given criteria and applies the fold function in sequence order.
 """.
--spec retrieve_and_fold_events(StoreContext, StreamId, Options, Fun, Acc0) -> Acc1 when
+-spec fold(StoreContext, StreamId, Options, Fun, Acc0) -> Acc1 when
     StoreContext :: store_context(),
     StreamId :: stream_id(),
     Options :: fold_events_opts(),
@@ -125,11 +132,13 @@ Retrieves and folds events from the event store using the specified persistence 
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
-retrieve_and_fold_events({EventModule, _}, StreamId, Options, Fun, InitialResult) ->
-    EventModule:retrieve_and_fold_events(StreamId, Options, Fun, InitialResult).
+fold({EventModule, _}, StreamId, Options, Fun, InitialResult) ->
+    EventModule:fold(StreamId, Options, Fun, InitialResult).
 
 -doc """
 Retrieves events for a given stream using the specified store module and options.
+
+This is a convenience wrapper around fold/5 that collects all events into a list.
 """.
 -spec retrieve_events(StoreContext, StreamId, Options) -> Result when
     StoreContext :: store_context(),
@@ -137,7 +146,7 @@ Retrieves events for a given stream using the specified store module and options
     Options :: fold_events_opts(),
     Result :: [event()].
 retrieve_events(StoreContext, StreamId, Options) ->
-    retrieve_and_fold_events(
+    fold(
         StoreContext,
         StreamId,
         Options,
@@ -304,36 +313,39 @@ new_snapshot(Domain, StreamId, Sequence, Timestamp, State) ->
     }.
 
 -doc """
-Saves a snapshot using the specified store module.
+Stores a snapshot using the specified store module.
 
-This function delegates snapshot saving to the store module implementation.
-The snapshot captures the aggregate state at a specific point in time, allowing
-for faster aggregate rehydration by avoiding full event replay.
+This function delegates snapshot storage to the backend implementation. The snapshot
+captures aggregate state at a specific sequence number, enabling faster rehydration
+by avoiding full event replay from the stream's beginning.
 
 The snapshot record contains all necessary fields (domain, stream_id, sequence,
-timestamp, state), making the API consistent with event persistence where events
-are passed as complete records.
+timestamp, state), consistent with event persistence where complete records are
+passed rather than individual fields.
 
-Returns `ok` on success, or `{warning, Reason}` if persistence fails.
+Returns `ok` on success, or `{warning, Reason}` if persistence fails. Warnings are
+preferred over exceptions since snapshots are optimizations, not requirements.
 """.
--spec save_snapshot(StoreContext, Snapshot) -> ok | {warning, Reason} when
+-spec store(StoreContext, Snapshot) -> ok | {warning, Reason} when
     StoreContext :: store_context(),
     Snapshot :: snapshot(),
     Reason :: term().
-save_snapshot({_, SnapshotModule}, Snapshot) ->
-    SnapshotModule:save_snapshot(Snapshot).
+store({_, SnapshotModule}, Snapshot) ->
+    SnapshotModule:store(Snapshot).
 
 -doc """
-Retrieves the latest snapshot for a stream using the specified store module.
+Loads the latest snapshot for a stream using the specified store module.
 
-Returns `{ok, Snapshot}` if found, `{error, not_found}` otherwise.
+Returns `{ok, Snapshot}` if found, `{error, not_found}` otherwise. This enables
+fast aggregate rehydration by restoring state from the snapshot and replaying only
+events that occurred after the snapshot's sequence number.
 """.
--spec retrieve_latest_snapshot(StoreContext, StreamId) -> {ok, Snapshot} | {error, not_found} when
+-spec load_latest(StoreContext, StreamId) -> {ok, Snapshot} | {error, not_found} when
     StoreContext :: store_context(),
     StreamId :: stream_id(),
     Snapshot :: snapshot().
-retrieve_latest_snapshot({_, SnapshotModule}, StreamId) ->
-    SnapshotModule:retrieve_latest_snapshot(StreamId).
+load_latest({_, SnapshotModule}, StreamId) ->
+    SnapshotModule:load_latest(StreamId).
 
 -doc """
 Returns the stream identifier of the snapshot.
