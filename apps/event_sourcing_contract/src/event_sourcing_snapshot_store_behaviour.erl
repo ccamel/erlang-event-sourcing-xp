@@ -7,8 +7,8 @@ representations of the state after applying a set of events.
 
 Callbacks:
 - `start/0`, `stop/0` — manage backend initialization and shutdown
-- `save_snapshot/1` — persist a snapshot of the aggregate state
-- `retrieve_latest_snapshot/1` — fetch the most recent snapshot for a given stream
+- `store/1` — persist a snapshot of the aggregate state
+- `load_latest/1` — fetch the most recent snapshot for a given stream
 
 Design principles:
 - Snapshots are **optional optimizations**; events remain the source of truth.
@@ -23,37 +23,38 @@ systems (e.g., S3).
 -include("event_sourcing.hrl").
 
 -doc """
-Save a snapshot for a stream.
+Store a snapshot for a stream.
 
-This callback saves a snapshot of the aggregate state at a specific point in time.
-The snapshot represents the aggregate state after all events up to and including
-the given sequence number have been applied.
+This callback persists a snapshot of the aggregate state at a specific point in time,
+representing the state after applying all events up to and including the recorded
+sequence number. Snapshots are optimization aids; events remain the source of truth.
 
-The snapshot record already contains all necessary information including domain,
-stream_id, sequence, timestamp, and state. This is consistent with how events
-are handled - they are passed as complete records rather than decomposed fields.
+The snapshot record contains all necessary information: domain, stream_id, sequence,
+timestamp, and state. This design is consistent with event persistence, where complete
+records are passed rather than decomposed fields.
 
 - Snapshot is the complete snapshot record to persist.
 
 Returns `ok` on success, or `{warning, Reason}` if persistence fails. Returning a
 warning is preferred over throwing an exception, as snapshot failures should not
-crash aggregates (events are the source of truth).
+crash aggregates.
 """.
--callback save_snapshot(Snapshot) -> ok | {warning, Reason} when
+-callback store(Snapshot) -> ok | {warning, Reason} when
     Snapshot :: snapshot(),
     Reason :: term().
 
 -doc """
-Retrieve the latest snapshot for a stream.
+Load the latest snapshot for a stream.
 
 This callback retrieves the most recent snapshot for the given stream, if one exists.
-The snapshot can be used to restore aggregate state without replaying all events.
+The snapshot enables fast state reconstruction by avoiding full event replay from
+the beginning of the stream.
 
 - StreamId is the unique identifier for the stream.
 
 Returns `{ok, Snapshot}` if a snapshot exists, or `{error, not_found}` if no snapshot
 has been saved for this stream.
 """.
--callback retrieve_latest_snapshot(StreamId) -> {ok, Snapshot} | {error, not_found} when
+-callback load_latest(StreamId) -> {ok, Snapshot} | {error, not_found} when
     StreamId :: stream_id(),
     Snapshot :: snapshot().

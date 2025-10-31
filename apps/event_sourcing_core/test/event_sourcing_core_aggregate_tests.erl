@@ -116,7 +116,7 @@ aggregate_snapshot_creation() ->
     ?assertState(Pid, Id, #{balance := 125}, 3),
 
     %% Snapshot should be saved at sequence 3 (3 % 3 == 0)
-    {ok, Snapshot} = event_sourcing_core_store:retrieve_latest_snapshot(
+    {ok, Snapshot} = event_sourcing_core_store:load_latest(
         ?ETS_STORE_CONTEXT,
         Id
     ),
@@ -130,7 +130,7 @@ aggregate_snapshot_creation() ->
     ?assertState(Pid, Id, #{balance := 250}, 6),
 
     %% Snapshot should now be at sequence 6 (6 % 3 == 0)
-    {ok, Snapshot2} = event_sourcing_core_store:retrieve_latest_snapshot(
+    {ok, Snapshot2} = event_sourcing_core_store:load_latest(
         ?ETS_STORE_CONTEXT,
         Id
     ),
@@ -156,7 +156,7 @@ aggregate_snapshot_rehydration() ->
     ?assertState(Pid1, Id, #{balance := 300}, 2),
 
     %% Snapshot should exist at sequence 2
-    {ok, _Snapshot} = event_sourcing_core_store:retrieve_latest_snapshot(
+    {ok, _Snapshot} = event_sourcing_core_store:load_latest(
         ?ETS_STORE_CONTEXT,
         Id
     ),
