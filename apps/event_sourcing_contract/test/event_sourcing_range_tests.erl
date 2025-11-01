@@ -13,6 +13,7 @@ suite_test_() ->
         {"overlap_check", fun overlap_check/0},
         {"intersection_check", fun intersection_check/0},
         {"lt_check", fun lt_check/0},
+        {"difference_check", fun difference_check/0},
         {"advance_range", fun advance_range/0},
         {"lower_bound_access", fun lower_bound_access/0},
         {"upper_bound_access", fun upper_bound_access/0},
@@ -291,6 +292,60 @@ lt_check() ->
     Range13 = event_sourcing_range:new(0, 5),
     ?assertEqual(false, event_sourcing_range:lt(Range13, Empty1)),
     ?assertEqual(false, event_sourcing_range:lt(Empty1, Range13)).
+
+difference_check() ->
+    % Test empty RangeA
+    EmptyA = event_sourcing_range:new(5, 5),
+    Range1 = event_sourcing_range:new(0, 10),
+    ?assertEqual([], event_sourcing_range:difference(EmptyA, Range1)),
+
+    % Test empty RangeB
+    ?assertEqual([Range1], event_sourcing_range:difference(Range1, EmptyA)),
+
+    % Test no overlap
+    Range2 = event_sourcing_range:new(10, 20),
+    ?assertEqual([Range1], event_sourcing_range:difference(Range1, Range2)),
+
+    % Test RangeB fully covers RangeA
+    Range3 = event_sourcing_range:new(0, 10),
+    ?assertEqual([], event_sourcing_range:difference(Range1, Range3)),
+
+    % Test RangeB overlaps start of RangeA
+    Range4 = event_sourcing_range:new(5, 15),
+    Diff1 = event_sourcing_range:difference(Range1, Range4),
+    ?assertEqual(1, length(Diff1)),
+    [D1] = Diff1,
+    ?assertEqual(0, event_sourcing_range:lower_bound(D1)),
+    ?assertEqual(5, event_sourcing_range:upper_bound(D1)),
+
+    % Test RangeB overlaps end of RangeA
+    Range5 = event_sourcing_range:new(0, 5),
+    Diff2 = event_sourcing_range:difference(Range1, Range5),
+    ?assertEqual(1, length(Diff2)),
+    [D2] = Diff2,
+    ?assertEqual(5, event_sourcing_range:lower_bound(D2)),
+    ?assertEqual(10, event_sourcing_range:upper_bound(D2)),
+
+    % Test RangeB in middle of RangeA
+    Range6 = event_sourcing_range:new(3, 7),
+    Diff3 = event_sourcing_range:difference(Range1, Range6),
+    ?assertEqual(2, length(Diff3)),
+    [D3a, D3b] = Diff3,
+    ?assertEqual(0, event_sourcing_range:lower_bound(D3a)),
+    ?assertEqual(3, event_sourcing_range:upper_bound(D3a)),
+    ?assertEqual(7, event_sourcing_range:lower_bound(D3b)),
+    ?assertEqual(10, event_sourcing_range:upper_bound(D3b)),
+
+    % Test with unbounded ranges
+    UnboundedA = event_sourcing_range:new(0, infinity),
+    Range7 = event_sourcing_range:new(5, 10),
+    Diff4 = event_sourcing_range:difference(UnboundedA, Range7),
+    ?assertEqual(2, length(Diff4)),
+    [D4a, D4b] = Diff4,
+    ?assertEqual(0, event_sourcing_range:lower_bound(D4a)),
+    ?assertEqual(5, event_sourcing_range:upper_bound(D4a)),
+    ?assertEqual(10, event_sourcing_range:lower_bound(D4b)),
+    ?assertEqual(infinity, event_sourcing_range:upper_bound(D4b)).
 
 advance_range() ->
     % Test advancing bounded ranges
