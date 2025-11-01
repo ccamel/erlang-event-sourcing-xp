@@ -12,6 +12,7 @@ Ranges are half-open: they include the lower bound but exclude the upper bound.
     equal/2,
     contain/2,
     overlap/2,
+    intersection/2,
     advance/2,
     lower_bound/1,
     upper_bound/1
@@ -105,6 +106,25 @@ overlap(RangeA, RangeB) ->
     not (is_empty(RangeA) orelse is_empty(RangeB)) andalso
         (FromA < ToB orelse ToB =:= infinity) andalso
         (FromB < ToA orelse ToA =:= infinity).
+
+-doc """
+Compute the intersection of two ranges.
+Returns the overlapping range if they overlap, otherwise an empty range.
+""".
+-spec intersection(range(), range()) -> range().
+intersection({FromA, ToA}, {FromB, ToB}) ->
+    Lower = max(FromA, FromB),
+    Upper =
+        case {ToA, ToB} of
+            {infinity, infinity} -> infinity;
+            {infinity, _} -> ToB;
+            {_, infinity} -> ToA;
+            _ -> min(ToA, ToB)
+        end,
+    case Lower < Upper orelse Upper =:= infinity of
+        true -> {Lower, Upper};
+        false -> {Upper, Upper}
+    end.
 
 -doc """
 Advance the range by moving the lower bound forward by the given amount.
