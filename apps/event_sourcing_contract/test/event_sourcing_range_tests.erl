@@ -9,6 +9,7 @@ suite_test_() ->
         {"new_range_creation", fun new_range_creation/0},
         {"is_empty_check", fun is_empty_check/0},
         {"equal_check", fun equal_check/0},
+        {"contain_check", fun contain_check/0},
         {"advance_range", fun advance_range/0},
         {"lower_bound_access", fun lower_bound_access/0},
         {"upper_bound_access", fun upper_bound_access/0},
@@ -80,7 +81,7 @@ is_empty_check() ->
     % Unbounded ranges are never empty
     Range7 = event_sourcing_range:new(0, infinity),
     ?assertEqual(false, event_sourcing_range:is_empty(Range7)),
-    Range8 = event_sourcing_range:new(100, infinity),
+   Range8 = event_sourcing_range:new(100, infinity),
     ?assertEqual(false, event_sourcing_range:is_empty(Range8)).
 
 equal_check() ->
@@ -111,6 +112,39 @@ equal_check() ->
     Range9 = event_sourcing_range:new(3, 3),
     Range10 = event_sourcing_range:new(3, 4),
     ?assertEqual(false, event_sourcing_range:equal(Range9, Range10)).
+
+contain_check() ->
+    Outer1 = event_sourcing_range:new(2, 10),
+    Inner1 = event_sourcing_range:new(4, 8),
+    ?assertEqual(true, event_sourcing_range:contain(Outer1, Inner1)),
+
+    % Exact match
+    ?assertEqual(true, event_sourcing_range:contain(Outer1, Outer1)),
+
+    % Lower bound outside
+    Inner2 = event_sourcing_range:new(1, 5),
+    ?assertEqual(false, event_sourcing_range:contain(Outer1, Inner2)),
+
+    % Upper bound outside
+    Inner3 = event_sourcing_range:new(5, 12),
+    ?assertEqual(false, event_sourcing_range:contain(Outer1, Inner3)),
+
+    % Empty inner range always contained
+    InnerEmpty = event_sourcing_range:new(5, 3),
+    ?assertEqual(true, event_sourcing_range:contain(Outer1, InnerEmpty)),
+
+    % Empty outer cannot contain non-empty range
+    OuterEmpty = event_sourcing_range:new(7, 4),
+    ?assertEqual(false, event_sourcing_range:contain(OuterEmpty, Inner1)),
+
+    % Unbounded outer
+    OuterUnbounded = event_sourcing_range:new(0, infinity),
+    InnerUnbounded = event_sourcing_range:new(5, infinity),
+    ?assertEqual(true, event_sourcing_range:contain(OuterUnbounded, InnerUnbounded)),
+
+    % Unbounded inner requires unbounded outer
+    InnerUnbounded2 = event_sourcing_range:new(5, infinity),
+    ?assertEqual(false, event_sourcing_range:contain(Outer1, InnerUnbounded2)).
 
 advance_range() ->
     % Test advancing bounded ranges
