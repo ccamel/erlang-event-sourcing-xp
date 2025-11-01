@@ -9,6 +9,7 @@ Ranges are half-open: they include the lower bound but exclude the upper bound.
 -export([
     new/2,
     is_empty/1,
+    equal/2,
     advance/2,
     lower_bound/1,
     upper_bound/1
@@ -32,7 +33,7 @@ new(infinity, _) ->
     error({invalid_interval, infinity_lower_bound});
 new(From, To) when is_integer(From), is_integer(To), From >= 0, To >= 0 ->
     case From =< To of
-        true  -> {From, To};
+        true -> {From, To};
         false -> {To, To}
     end.
 
@@ -46,6 +47,20 @@ is_empty({From, infinity}) when From >= 0 ->
     false;
 is_empty({From, To}) when is_integer(From), is_integer(To) ->
     From >= To.
+
+-doc """
+Check whether two ranges are equal.
+Ranges are equal when both their lower and upper bounds match.
+Empty ranges compare equal regardless of their normalized bounds.
+""".
+-spec equal(range(), range()) -> boolean().
+equal({FromA, ToA}, {FromB, ToB}) ->
+    case {FromA =:= FromB, ToA =:= ToB} of
+        {true, true} ->
+            true;
+        _ ->
+            is_empty({FromA, ToA}) andalso is_empty({FromB, ToB})
+    end.
 
 -doc """
 Advance the range by moving the lower bound forward by the given amount.
