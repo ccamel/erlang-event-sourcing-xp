@@ -13,6 +13,7 @@ Ranges are half-open: they include the lower bound but exclude the upper bound.
     contain/2,
     overlap/2,
     intersection/2,
+    lt/2,
     advance/2,
     lower_bound/1,
     upper_bound/1
@@ -123,7 +124,26 @@ intersection({FromA, ToA}, {FromB, ToB}) ->
         end,
     case Lower < Upper orelse Upper =:= infinity of
         true -> {Lower, Upper};
+        % empty
         false -> {Upper, Upper}
+    end.
+
+-doc """
+Check whether `RangeA` is strictly less than `RangeB`.
+This holds when the lower bound of `RangeA` is less than the lower bound of `RangeB`.
+""".
+-spec lt(range(), range()) -> boolean().
+lt(A, B) ->
+    case {is_empty(A), is_empty(B)} of
+        % un vide n'est jamais "plus petit"
+        {true, _} ->
+            false;
+        {_, true} ->
+            false;
+        _ ->
+            {FromA, _} = A,
+            {FromB, _} = B,
+            FromA < FromB
     end.
 
 -doc """
