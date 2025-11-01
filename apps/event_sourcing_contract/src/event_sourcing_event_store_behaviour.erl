@@ -63,25 +63,25 @@ stream ID is incorrect, duplicate events if the sequence number is not unique).
 -doc """
 Retrieves events from a stream and folds them into an accumulator.
 
-This callback fetches events for the given `StreamId` within the specified `Interval`,
+This callback fetches events for the given `StreamId` within the specified `Range`,
 applies the `FoldFun` to each event in sequence order, and returns the final accumulator.
 It's typically used to rebuild application state by replaying events.
 
 - StreamId is an atom identifying the event stream (e.g., order-123).
 - FoldFun is a function `fun((Event, AccIn) -> AccOut)` to process each event.
 - InitialAcc is the initial accumulator value (e.g., an empty state).
-- Interval is a sequence interval defining which events to retrieve:
-  - Use `event_sourcing_interval:new(0, infinity)` to replay all events.
-  - Use `event_sourcing_interval:new(N, infinity)` to replay from checkpoint N.
-  - Use `event_sourcing_interval:new(M, N)` to replay a specific bounded range.
+- Range is a sequence range defining which events to retrieve:
+  - Use `event_sourcing_range:new(0, infinity)` to replay all events.
+  - Use `event_sourcing_range:new(N, infinity)` to replay from checkpoint N.
+  - Use `event_sourcing_range:new(M, N)` to replay a specific bounded range.
 
-Returns the final accumulator after folding all events in the interval.
+Returns the final accumulator after folding all events in the range.
 """.
--callback fold(StreamId, Fun, Acc0, Interval) -> Acc1 when
+-callback fold(StreamId, Fun, Acc0, Range) -> Acc1 when
     StreamId :: stream_id(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
-    Interval :: event_sourcing_interval:interval(),
+    Range :: event_sourcing_range:range(),
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().

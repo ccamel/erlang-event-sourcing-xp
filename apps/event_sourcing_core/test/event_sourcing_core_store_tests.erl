@@ -65,7 +65,7 @@ persist_single_event(Store) ->
     ?assertMatch(
         [Event],
         event_sourcing_core_store:retrieve_events(
-            Store, stream_A, event_sourcing_interval:new(0, infinity)
+            Store, stream_A, event_sourcing_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
@@ -103,13 +103,13 @@ persist_2_streams_event(Store) ->
     ?assertMatch(
         EventStreamA,
         event_sourcing_core_store:retrieve_events(
-            Store, stream_A, event_sourcing_interval:new(0, infinity)
+            Store, stream_A, event_sourcing_range:new(0, infinity)
         )
     ),
     ?assertMatch(
         EventStreamB,
         event_sourcing_core_store:retrieve_events(
-            Store, stream_B, event_sourcing_interval:new(0, infinity)
+            Store, stream_B, event_sourcing_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
@@ -142,19 +142,19 @@ fetch_streams_event(Store) ->
     ?assertMatch(
         [],
         event_sourcing_core_store:retrieve_events(
-            Store, stream_X, event_sourcing_interval:new(0, infinity)
+            Store, stream_X, event_sourcing_range:new(0, infinity)
         )
     ),
     ?assertMatch(
         [],
         event_sourcing_core_store:retrieve_events(
-            Store, stream_A, event_sourcing_interval:new(0, 1)
+            Store, stream_A, event_sourcing_range:new(0, 1)
         )
     ),
     ?assertMatch(
         [],
         event_sourcing_core_store:retrieve_events(
-            Store, stream_A, event_sourcing_interval:new(1, 1)
+            Store, stream_A, event_sourcing_range:new(1, 1)
         )
     ),
 
@@ -164,31 +164,31 @@ fetch_streams_event(Store) ->
     ?assertMatch(
         [Event1],
         event_sourcing_core_store:retrieve_events(
-            Store, stream_A, event_sourcing_interval:new(1, 2)
+            Store, stream_A, event_sourcing_range:new(1, 2)
         )
     ),
     ?assertMatch(
         [Event2],
         event_sourcing_core_store:retrieve_events(
-            Store, stream_A, event_sourcing_interval:new(2, 3)
+            Store, stream_A, event_sourcing_range:new(2, 3)
         )
     ),
     ?assertMatch(
         [Event2, Event3],
         event_sourcing_core_store:retrieve_events(
-            Store, stream_A, event_sourcing_interval:new(2, 4)
+            Store, stream_A, event_sourcing_range:new(2, 4)
         )
     ),
     ?assertMatch(
         [Event2],
         event_sourcing_core_store:retrieve_events(
-            Store, stream_A, event_sourcing_interval:new(2, 3)
+            Store, stream_A, event_sourcing_range:new(2, 3)
         )
     ),
     ?assertMatch(
         Events,
         event_sourcing_core_store:retrieve_events(
-            Store, stream_A, event_sourcing_interval:new(0, infinity)
+            Store, stream_A, event_sourcing_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
@@ -214,13 +214,13 @@ wrong_stream_id(Store) ->
     ?assertMatch(
         [],
         event_sourcing_core_store:retrieve_events(
-            Store, stream_A, event_sourcing_interval:new(0, infinity)
+            Store, stream_A, event_sourcing_range:new(0, infinity)
         )
     ),
     ?assertMatch(
         [],
         event_sourcing_core_store:retrieve_events(
-            Store, stream_B, event_sourcing_interval:new(0, infinity)
+            Store, stream_B, event_sourcing_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
@@ -247,7 +247,7 @@ duplicate_event(Store) ->
     ?assertMatch(
         [Event],
         event_sourcing_core_store:retrieve_events(
-            Store, stream_A, event_sourcing_interval:new(0, infinity)
+            Store, stream_A, event_sourcing_range:new(0, infinity)
         )
     ),
     Events =
@@ -286,7 +286,7 @@ duplicate_event(Store) ->
     ?assertMatch(
         [],
         event_sourcing_core_store:retrieve_events(
-            Store, stream_B, event_sourcing_interval:new(0, infinity)
+            Store, stream_B, event_sourcing_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
@@ -365,7 +365,7 @@ composite_store_supports_mixed_backends() ->
     ?assertMatch(
         [Event],
         event_sourcing_core_store:retrieve_events(
-            Store, stream_A, event_sourcing_interval:new(0, infinity)
+            Store, stream_A, event_sourcing_range:new(0, infinity)
         )
     ),
 

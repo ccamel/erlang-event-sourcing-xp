@@ -79,19 +79,19 @@ append(_, Events) ->
             erlang:error(duplicate_event)
     end.
 
--spec fold(StreamId, Fun, Acc0, Interval) -> Acc1 when
+-spec fold(StreamId, Fun, Acc0, Range) -> Acc1 when
     StreamId :: stream_id(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
-    Interval :: event_sourcing_interval:interval(),
+    Range :: event_sourcing_range:range(),
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
-fold(StreamId, FoldFun, InitialAcc, Interval) when
+fold(StreamId, FoldFun, InitialAcc, Range) when
     is_function(FoldFun, 2)
 ->
-    From = event_sourcing_interval:lower_bound(Interval),
-    To = event_sourcing_interval:upper_bound(Interval),
+    From = event_sourcing_range:lower_bound(Range),
+    To = event_sourcing_range:upper_bound(Range),
 
     Pattern = {event_record, '_', StreamId, '$1', '$2'},
     Guard = [{'>=', '$1', From}, {'<', '$1', To}],
