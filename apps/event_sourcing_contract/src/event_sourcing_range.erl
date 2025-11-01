@@ -59,12 +59,12 @@ Ranges are equal when both their lower and upper bounds match.
 Empty ranges compare equal regardless of their normalized bounds.
 """.
 -spec equal(range(), range()) -> boolean().
-equal({FromA, ToA}, {FromB, ToB}) ->
+equal({FromA, ToA} = RangeA, {FromB, ToB} = RangeB) ->
     case {FromA =:= FromB, ToA =:= ToB} of
         {true, true} ->
             true;
         _ ->
-            is_empty({FromA, ToA}) andalso is_empty({FromB, ToB})
+            is_empty(RangeA) andalso is_empty(RangeB)
     end.
 
 -doc """
