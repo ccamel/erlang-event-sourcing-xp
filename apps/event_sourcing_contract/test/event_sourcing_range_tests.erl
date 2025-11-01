@@ -10,6 +10,7 @@ suite_test_() ->
         {"is_empty_check", fun is_empty_check/0},
         {"equal_check", fun equal_check/0},
         {"contain_check", fun contain_check/0},
+        {"overlap_check", fun overlap_check/0},
         {"advance_range", fun advance_range/0},
         {"lower_bound_access", fun lower_bound_access/0},
         {"upper_bound_access", fun upper_bound_access/0},
@@ -81,7 +82,7 @@ is_empty_check() ->
     % Unbounded ranges are never empty
     Range7 = event_sourcing_range:new(0, infinity),
     ?assertEqual(false, event_sourcing_range:is_empty(Range7)),
-   Range8 = event_sourcing_range:new(100, infinity),
+    Range8 = event_sourcing_range:new(100, infinity),
     ?assertEqual(false, event_sourcing_range:is_empty(Range8)).
 
 equal_check() ->
@@ -145,6 +146,56 @@ contain_check() ->
     % Unbounded inner requires unbounded outer
     InnerUnbounded2 = event_sourcing_range:new(5, infinity),
     ?assertEqual(false, event_sourcing_range:contain(Outer1, InnerUnbounded2)).
+
+overlap_check() ->
+    % Test overlapping bounded ranges
+    Range1 = event_sourcing_range:new(0, 10),
+    Range2 = event_sourcing_range:new(5, 15),
+    ?assertEqual(true, event_sourcing_range:overlap(Range1, Range2)),
+
+    % Test non-overlapping bounded ranges
+    Range3 = event_sourcing_range:new(0, 5),
+    Range4 = event_sourcing_range:new(5, 10),
+    ?assertEqual(false, event_sourcing_range:overlap(Range3, Range4)),
+
+    % Test one contains the other
+    Range5 = event_sourcing_range:new(0, 10),
+    Range6 = event_sourcing_range:new(2, 8),
+    ?assertEqual(true, event_sourcing_range:overlap(Range5, Range6)),
+
+    % Test adjacent ranges (touching but not overlapping)
+    Range7 = event_sourcing_range:new(0, 5),
+    Range8 = event_sourcing_range:new(5, 10),
+    ?assertEqual(false, event_sourcing_range:overlap(Range7, Range8)),
+
+    % Test empty ranges
+    Empty1 = event_sourcing_range:new(5, 3),
+    Range9 = event_sourcing_range:new(0, 10),
+    ?assertEqual(false, event_sourcing_range:overlap(Empty1, Range9)),
+    ?assertEqual(false, event_sourcing_range:overlap(Range9, Empty1)),
+
+    % Test unbounded ranges
+    Unbounded1 = event_sourcing_range:new(0, infinity),
+    Range10 = event_sourcing_range:new(5, 10),
+    ?assertEqual(true, event_sourcing_range:overlap(Unbounded1, Range10)),
+
+    Unbounded2 = event_sourcing_range:new(10, infinity),
+    Range11 = event_sourcing_range:new(0, 5),
+    ?assertEqual(false, event_sourcing_range:overlap(Unbounded2, Range11)),
+
+    Unbounded3 = event_sourcing_range:new(5, infinity),
+    ?assertEqual(true, event_sourcing_range:overlap(Unbounded1, Unbounded3)),
+
+    % Test bounded with unbounded
+    Range12 = event_sourcing_range:new(0, 10),
+    Unbounded4 = event_sourcing_range:new(5, infinity),
+    ?assertEqual(true, event_sourcing_range:overlap(Range12, Unbounded4)),
+
+    Range13 = event_sourcing_range:new(10, 15),
+    ?assertEqual(true, event_sourcing_range:overlap(Range13, Unbounded4)),
+
+    % Test identical ranges
+    ?assertEqual(true, event_sourcing_range:overlap(Range1, Range1)).
 
 advance_range() ->
     % Test advancing bounded ranges
