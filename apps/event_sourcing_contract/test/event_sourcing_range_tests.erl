@@ -11,6 +11,7 @@ suite_test_() ->
         {"equal_check", fun equal_check/0},
         {"contain_check", fun contain_check/0},
         {"overlap_check", fun overlap_check/0},
+        {"intersection_check", fun intersection_check/0},
         {"advance_range", fun advance_range/0},
         {"lower_bound_access", fun lower_bound_access/0},
         {"upper_bound_access", fun upper_bound_access/0},
@@ -196,6 +197,55 @@ overlap_check() ->
 
     % Test identical ranges
     ?assertEqual(true, event_sourcing_range:overlap(Range1, Range1)).
+
+intersection_check() ->
+    % Test overlapping bounded ranges
+    Range1 = event_sourcing_range:new(0, 10),
+    Range2 = event_sourcing_range:new(5, 15),
+    Intersection1 = event_sourcing_range:intersection(Range1, Range2),
+    ?assertEqual(5, event_sourcing_range:lower_bound(Intersection1)),
+    ?assertEqual(10, event_sourcing_range:upper_bound(Intersection1)),
+
+    % Test non-overlapping bounded ranges
+    Range3 = event_sourcing_range:new(0, 5),
+    Range4 = event_sourcing_range:new(5, 10),
+    Intersection2 = event_sourcing_range:intersection(Range3, Range4),
+    ?assertEqual(true, event_sourcing_range:is_empty(Intersection2)),
+
+    % Test one contains the other
+    Range5 = event_sourcing_range:new(0, 10),
+    Range6 = event_sourcing_range:new(2, 8),
+    Intersection3 = event_sourcing_range:intersection(Range5, Range6),
+    ?assertEqual(2, event_sourcing_range:lower_bound(Intersection3)),
+    ?assertEqual(8, event_sourcing_range:upper_bound(Intersection3)),
+
+    % Test empty ranges
+    Empty1 = event_sourcing_range:new(5, 3),
+    Range9 = event_sourcing_range:new(0, 10),
+    Intersection4 = event_sourcing_range:intersection(Empty1, Range9),
+    ?assertEqual(true, event_sourcing_range:is_empty(Intersection4)),
+
+    % Test unbounded ranges
+    Unbounded1 = event_sourcing_range:new(0, infinity),
+    Range10 = event_sourcing_range:new(5, 10),
+    Intersection5 = event_sourcing_range:intersection(Unbounded1, Range10),
+    ?assertEqual(5, event_sourcing_range:lower_bound(Intersection5)),
+    ?assertEqual(10, event_sourcing_range:upper_bound(Intersection5)),
+
+    Unbounded2 = event_sourcing_range:new(10, infinity),
+    Range11 = event_sourcing_range:new(0, 5),
+    Intersection6 = event_sourcing_range:intersection(Unbounded2, Range11),
+    ?assertEqual(true, event_sourcing_range:is_empty(Intersection6)),
+
+    Unbounded3 = event_sourcing_range:new(5, infinity),
+    Intersection7 = event_sourcing_range:intersection(Unbounded1, Unbounded3),
+    ?assertEqual(5, event_sourcing_range:lower_bound(Intersection7)),
+    ?assertEqual(infinity, event_sourcing_range:upper_bound(Intersection7)),
+
+    % Test identical ranges
+    Intersection8 = event_sourcing_range:intersection(Range1, Range1),
+    ?assertEqual(0, event_sourcing_range:lower_bound(Intersection8)),
+    ?assertEqual(10, event_sourcing_range:upper_bound(Intersection8)).
 
 advance_range() ->
     % Test advancing bounded ranges
