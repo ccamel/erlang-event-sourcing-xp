@@ -12,6 +12,7 @@ suite_test_() ->
         {"contain_check", fun contain_check/0},
         {"overlap_check", fun overlap_check/0},
         {"intersection_check", fun intersection_check/0},
+        {"lt_check", fun lt_check/0},
         {"advance_range", fun advance_range/0},
         {"lower_bound_access", fun lower_bound_access/0},
         {"upper_bound_access", fun upper_bound_access/0},
@@ -246,6 +247,50 @@ intersection_check() ->
     Intersection8 = event_sourcing_range:intersection(Range1, Range1),
     ?assertEqual(0, event_sourcing_range:lower_bound(Intersection8)),
     ?assertEqual(10, event_sourcing_range:upper_bound(Intersection8)).
+
+lt_check() ->
+    % Test lower bound comparison
+    Range1 = event_sourcing_range:new(0, 10),
+    Range2 = event_sourcing_range:new(5, 10),
+    ?assertEqual(true, event_sourcing_range:lt(Range1, Range2)),
+    ?assertEqual(false, event_sourcing_range:lt(Range2, Range1)),
+
+    % Test upper bound comparison when lower bounds equal
+    Range3 = event_sourcing_range:new(5, 10),
+    Range4 = event_sourcing_range:new(5, 15),
+    ?assertEqual(false, event_sourcing_range:lt(Range3, Range4)),
+    ?assertEqual(false, event_sourcing_range:lt(Range4, Range3)),
+
+    % Test equal ranges
+    Range5 = event_sourcing_range:new(5, 10),
+    Range6 = event_sourcing_range:new(5, 10),
+    ?assertEqual(false, event_sourcing_range:lt(Range5, Range6)),
+    ?assertEqual(false, event_sourcing_range:lt(Range6, Range5)),
+
+    % Test with infinity
+    Range7 = event_sourcing_range:new(5, 10),
+    Range8 = event_sourcing_range:new(5, infinity),
+    ?assertEqual(false, event_sourcing_range:lt(Range7, Range8)),
+    ?assertEqual(false, event_sourcing_range:lt(Range8, Range7)),
+
+    Range9 = event_sourcing_range:new(5, infinity),
+    Range10 = event_sourcing_range:new(5, infinity),
+    ?assertEqual(false, event_sourcing_range:lt(Range9, Range10)),
+
+    % Test different lower bounds with infinity
+    Range11 = event_sourcing_range:new(0, infinity),
+    Range12 = event_sourcing_range:new(5, infinity),
+    ?assertEqual(true, event_sourcing_range:lt(Range11, Range12)),
+    ?assertEqual(false, event_sourcing_range:lt(Range12, Range11)),
+
+    % Test empty ranges
+    Empty1 = event_sourcing_range:new(5, 5),
+    Empty2 = event_sourcing_range:new(5, 5),
+    ?assertEqual(false, event_sourcing_range:lt(Empty1, Empty2)),
+
+    Range13 = event_sourcing_range:new(0, 5),
+    ?assertEqual(false, event_sourcing_range:lt(Range13, Empty1)),
+    ?assertEqual(false, event_sourcing_range:lt(Empty1, Range13)).
 
 advance_range() ->
     % Test advancing bounded ranges
