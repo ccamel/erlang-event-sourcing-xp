@@ -203,7 +203,7 @@ aggregate_custom_now_fun() ->
 
     %% Retrieve persisted events and assert the timestamp matches the injected Now
     Events = event_sourcing_core_store:retrieve_events(
-        ?ETS_STORE_CONTEXT, Id, event_sourcing_interval:new(0, infinity)
+        ?ETS_STORE_CONTEXT, Id, event_sourcing_range:new(0, infinity)
     ),
     ?assertEqual(1, length(Events)),
     [Event] = Events,

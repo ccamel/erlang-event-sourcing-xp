@@ -120,37 +120,37 @@ append({EventModule, _}, StreamId, Events) when is_list(Events) ->
 Folds events from the event store into an accumulator using the specified persistence module.
 
 This is the core operation for event replay and state reconstruction. The backend
-retrieves events within the specified interval and applies the fold function in sequence order.
+retrieves events within the specified range and applies the fold function in sequence order.
 """.
--spec fold(StoreContext, StreamId, Fun, Acc0, Interval) -> Acc1 when
+-spec fold(StoreContext, StreamId, Fun, Acc0, Range) -> Acc1 when
     StoreContext :: store_context(),
     StreamId :: stream_id(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
-    Interval :: event_sourcing_interval:interval(),
+    Range :: event_sourcing_range:range(),
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
-fold({EventModule, _}, StreamId, Fun, InitialResult, Interval) ->
-    EventModule:fold(StreamId, Fun, InitialResult, Interval).
+fold({EventModule, _}, StreamId, Fun, InitialResult, Range) ->
+    EventModule:fold(StreamId, Fun, InitialResult, Range).
 
 -doc """
-Retrieves events for a given stream using the specified store module and interval.
+Retrieves events for a given stream using the specified store module and range.
 
 This is a convenience wrapper around fold/5 that collects all events into a list.
 """.
--spec retrieve_events(StoreContext, StreamId, Interval) -> Result when
+-spec retrieve_events(StoreContext, StreamId, Range) -> Result when
     StoreContext :: store_context(),
     StreamId :: stream_id(),
-    Interval :: event_sourcing_interval:interval(),
+    Range :: event_sourcing_range:range(),
     Result :: [event()].
-retrieve_events(StoreContext, StreamId, Interval) ->
+retrieve_events(StoreContext, StreamId, Range) ->
     fold(
         StoreContext,
         StreamId,
         fun(Event, Acc) -> Acc ++ [Event] end,
         [],
-        Interval
+        Range
     ).
 
 -doc """

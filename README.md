@@ -126,11 +126,11 @@ The event store is a core component in this experiment, designed as a customizab
          Events :: [event()].
 
 % Folds events from a stream using a provided function
--callback fold(StreamId, FoldFun, InitialAcc, Interval) -> Acc1
+-callback fold(StreamId, FoldFun, InitialAcc, Range) -> Acc1
     when StreamId :: stream_id(),
          FoldFun :: fun((Event :: event(), AccIn) -> AccOut),
          InitialAcc :: term(),
-         Interval :: event_sourcing_interval:interval(),
+         Range :: event_sourcing_range:range(),
          Acc1 :: term(),
          AccIn :: term(),
          AccOut :: term().
