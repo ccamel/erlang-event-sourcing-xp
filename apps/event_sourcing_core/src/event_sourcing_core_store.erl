@@ -54,7 +54,6 @@ Both modules may be the same if one backend implements both roles.
     snapshot/0,
     snapshot_id/0,
     snapshot_data/0,
-    fold_events_opts/0,
     store_context/0
 ]).
 
@@ -121,37 +120,37 @@ append({EventModule, _}, StreamId, Events) when is_list(Events) ->
 Folds events from the event store into an accumulator using the specified persistence module.
 
 This is the core operation for event replay and state reconstruction. The backend
-retrieves events matching the given criteria and applies the fold function in sequence order.
+retrieves events within the specified interval and applies the fold function in sequence order.
 """.
--spec fold(StoreContext, StreamId, Fun, Acc0, Options) -> Acc1 when
+-spec fold(StoreContext, StreamId, Fun, Acc0, Interval) -> Acc1 when
     StoreContext :: store_context(),
     StreamId :: stream_id(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
-    Options :: fold_events_opts(),
+    Interval :: event_sourcing_interval:interval(),
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
-fold({EventModule, _}, StreamId, Fun, InitialResult, Options) ->
-    EventModule:fold(StreamId, Fun, InitialResult, Options).
+fold({EventModule, _}, StreamId, Fun, InitialResult, Interval) ->
+    EventModule:fold(StreamId, Fun, InitialResult, Interval).
 
 -doc """
-Retrieves events for a given stream using the specified store module and options.
+Retrieves events for a given stream using the specified store module and interval.
 
 This is a convenience wrapper around fold/5 that collects all events into a list.
 """.
--spec retrieve_events(StoreContext, StreamId, Options) -> Result when
+-spec retrieve_events(StoreContext, StreamId, Interval) -> Result when
     StoreContext :: store_context(),
     StreamId :: stream_id(),
-    Options :: fold_events_opts(),
+    Interval :: event_sourcing_interval:interval(),
     Result :: [event()].
-retrieve_events(StoreContext, StreamId, Options) ->
+retrieve_events(StoreContext, StreamId, Interval) ->
     fold(
         StoreContext,
         StreamId,
         fun(Event, Acc) -> Acc ++ [Event] end,
         [],
-        Options
+        Interval
     ).
 
 -doc """

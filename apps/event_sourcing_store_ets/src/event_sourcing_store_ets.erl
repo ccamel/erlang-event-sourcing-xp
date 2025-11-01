@@ -18,7 +18,7 @@ The ETS-based implementation of the event store.
 ]).
 
 -export_type([
-    event/0, stream_id/0, sequence/0, timestamp/0, snapshot/0, snapshot_data/0, fold_events_opts/0
+    event/0, stream_id/0, sequence/0, timestamp/0, snapshot/0, snapshot_data/0
 ]).
 
 -record(event_record, {
@@ -79,37 +79,24 @@ append(_, Events) ->
             erlang:error(duplicate_event)
     end.
 
--spec fold(StreamId, Fun, Acc0, Options) -> Acc1 when
+-spec fold(StreamId, Fun, Acc0, Interval) -> Acc1 when
     StreamId :: stream_id(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
-    Options :: fold_events_opts(),
+    Interval :: event_sourcing_interval:interval(),
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
-fold(StreamId, FoldFun, InitialAcc, Options) when
-    is_map(Options), is_function(FoldFun, 2)
+fold(StreamId, FoldFun, InitialAcc, Interval) when
+    is_function(FoldFun, 2)
 ->
-    From = maps:get(from, Options, 0),
-    To = maps:get(to, Options, infinity),
-    Limit = maps:get(limit, Options, infinity),
+    From = event_sourcing_interval:lower_bound(Interval),
+    To = event_sourcing_interval:upper_bound(Interval),
 
     Pattern = {event_record, '_', StreamId, '$1', '$2'},
     Guard = [{'>=', '$1', From}, {'<', '$1', To}],
     MatchSpec = [{Pattern, Guard, ['$2']}],
-    ResultEvents =
-        case Limit of
-            infinity ->
-                ets:select(?EVENT_TABLE_NAME, MatchSpec);
-            _ ->
-                Events = ets:select(?EVENT_TABLE_NAME, MatchSpec, Limit),
-                case Events of
-                    {EventList, _Continuation} ->
-                        EventList;
-                    '$end_of_table' ->
-                        []
-                end
-        end,
+    ResultEvents = ets:select(?EVENT_TABLE_NAME, MatchSpec),
     lists:foldl(FoldFun, InitialAcc, ResultEvents).
 
 event_to_record(Event) ->

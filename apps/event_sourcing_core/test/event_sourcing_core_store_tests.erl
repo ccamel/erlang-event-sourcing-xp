@@ -62,7 +62,12 @@ persist_single_event(Store) ->
         ),
 
     ?assertMatch(ok, event_sourcing_core_store:append(Store, stream_A, [Event])),
-    ?assertMatch([Event], event_sourcing_core_store:retrieve_events(Store, stream_A, #{})),
+    ?assertMatch(
+        [Event],
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_A, event_sourcing_interval:new(0, infinity)
+        )
+    ),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
 persist_2_streams_event(Store) ->
@@ -97,11 +102,15 @@ persist_2_streams_event(Store) ->
 
     ?assertMatch(
         EventStreamA,
-        event_sourcing_core_store:retrieve_events(Store, stream_A, #{})
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_A, event_sourcing_interval:new(0, infinity)
+        )
     ),
     ?assertMatch(
         EventStreamB,
-        event_sourcing_core_store:retrieve_events(Store, stream_B, #{})
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_B, event_sourcing_interval:new(0, infinity)
+        )
     ),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
@@ -130,14 +139,23 @@ fetch_streams_event(Store) ->
         ],
 
     ?assertMatch(ok, event_sourcing_core_store:append(Store, stream_A, Events)),
-    ?assertMatch([], event_sourcing_core_store:retrieve_events(Store, stream_X, #{})),
     ?assertMatch(
         [],
-        event_sourcing_core_store:retrieve_events(Store, stream_A, #{from => 0, to => 1})
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_X, event_sourcing_interval:new(0, infinity)
+        )
     ),
     ?assertMatch(
         [],
-        event_sourcing_core_store:retrieve_events(Store, stream_A, #{from => 1, to => 1})
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_A, event_sourcing_interval:new(0, 1)
+        )
+    ),
+    ?assertMatch(
+        [],
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_A, event_sourcing_interval:new(1, 1)
+        )
     ),
 
     Event1 = lists:nth(1, Events),
@@ -145,29 +163,34 @@ fetch_streams_event(Store) ->
     Event3 = lists:nth(3, Events),
     ?assertMatch(
         [Event1],
-        event_sourcing_core_store:retrieve_events(Store, stream_A, #{from => 1, to => 2})
-    ),
-    ?assertMatch(
-        [Event2],
-        event_sourcing_core_store:retrieve_events(Store, stream_A, #{from => 2, to => 3})
-    ),
-    ?assertMatch(
-        [Event2, Event3],
-        event_sourcing_core_store:retrieve_events(Store, stream_A, #{from => 2, to => 4})
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_A, event_sourcing_interval:new(1, 2)
+        )
     ),
     ?assertMatch(
         [Event2],
         event_sourcing_core_store:retrieve_events(
-            Store,
-            stream_A,
-            #{
-                from => 2,
-                to => 4,
-                limit => 1
-            }
+            Store, stream_A, event_sourcing_interval:new(2, 3)
         )
     ),
-    ?assertMatch(Events, event_sourcing_core_store:retrieve_events(Store, stream_A, #{})),
+    ?assertMatch(
+        [Event2, Event3],
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_A, event_sourcing_interval:new(2, 4)
+        )
+    ),
+    ?assertMatch(
+        [Event2],
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_A, event_sourcing_interval:new(2, 3)
+        )
+    ),
+    ?assertMatch(
+        Events,
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_A, event_sourcing_interval:new(0, infinity)
+        )
+    ),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
 wrong_stream_id(Store) ->
@@ -188,8 +211,18 @@ wrong_stream_id(Store) ->
         {badarg, stream_A},
         event_sourcing_core_store:append(Store, stream_B, [Event])
     ),
-    ?assertMatch([], event_sourcing_core_store:retrieve_events(Store, stream_A, #{})),
-    ?assertMatch([], event_sourcing_core_store:retrieve_events(Store, stream_B, #{})),
+    ?assertMatch(
+        [],
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_A, event_sourcing_interval:new(0, infinity)
+        )
+    ),
+    ?assertMatch(
+        [],
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_B, event_sourcing_interval:new(0, infinity)
+        )
+    ),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
 duplicate_event(Store) ->
@@ -211,7 +244,12 @@ duplicate_event(Store) ->
         duplicate_event,
         event_sourcing_core_store:append(Store, stream_A, [Event])
     ),
-    ?assertMatch([Event], event_sourcing_core_store:retrieve_events(Store, stream_A, #{})),
+    ?assertMatch(
+        [Event],
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_A, event_sourcing_interval:new(0, infinity)
+        )
+    ),
     Events =
         [
             event_sourcing_core_store:new_event(
@@ -245,7 +283,12 @@ duplicate_event(Store) ->
         duplicate_event,
         event_sourcing_core_store:append(Store, stream_B, Events)
     ),
-    ?assertMatch([], event_sourcing_core_store:retrieve_events(Store, stream_B, #{})),
+    ?assertMatch(
+        [],
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_B, event_sourcing_interval:new(0, infinity)
+        )
+    ),
     ?assertEqual(ok, event_sourcing_core_store:stop(Store)).
 
 snapshot_not_found(Store) ->
@@ -319,7 +362,12 @@ composite_store_supports_mixed_backends() ->
             {"John Doe"}
         ),
     ?assertMatch(ok, event_sourcing_core_store:append(Store, stream_A, [Event])),
-    ?assertMatch([Event], event_sourcing_core_store:retrieve_events(Store, stream_A, #{})),
+    ?assertMatch(
+        [Event],
+        event_sourcing_core_store:retrieve_events(
+            Store, stream_A, event_sourcing_interval:new(0, infinity)
+        )
+    ),
 
     Snapshot = event_sourcing_core_store:new_snapshot(user, stream_A, 1, Timestamp, #{
         balance => 100
