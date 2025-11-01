@@ -155,7 +155,7 @@ init({Aggregate, StoreContext, Id, Opts}) ->
             Id,
             FoldFun,
             {StateFromSnapshot, SequenceFromSnapshot},
-            #{from => SequenceFromSnapshot + 1}
+            event_sourcing_interval:new(SequenceFromSnapshot + 1, infinity)
         ),
     Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
     SnapshotInterval = maps:get(snapshot_interval, Opts, 0),

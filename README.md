@@ -126,11 +126,14 @@ The event store is a core component in this experiment, designed as a customizab
          Events :: [event()].
 
 % Folds events from a stream using a provided function
--callback fold(StreamId, FoldFun, InitialAcc, Options) -> {ok, Acc} | {error, term()}
+-callback fold(StreamId, FoldFun, InitialAcc, Interval) -> Acc1
     when StreamId :: stream_id(),
-         FoldFun :: fold_events_fun(),
-         InitialAcc :: Acc,
-         Options :: fold_events_opts().
+         FoldFun :: fun((Event :: event(), AccIn) -> AccOut),
+         InitialAcc :: term(),
+         Interval :: event_sourcing_interval:interval(),
+         Acc1 :: term(),
+         AccIn :: term(),
+         AccOut :: term().
 ```
 
 #### Snapshot Support
@@ -298,7 +301,7 @@ The manager is responsible for:
 The aggregate manager maintains a mapping of stream IDs to aggregate process PIDs. When a command is received:
 
 1. The `Router` module extracts the target aggregate type and stream ID from the command.
-2. If the aggregate type matches the manager’s configured `Aggregate` module:
+2. If the aggregate type matches the manager's configured `Aggregate` module:
    - The manager checks its internal `pids` map for an existing process for the stream ID.
    - If none exists, it spawns a new `event_sourcing_core_aggregate` process using the provided Aggregate, Store, and stream ID, then monitors it.
    - The command is forwarded to the aggregate process via `event_sourcing_core_aggregate:dispatch/2`.

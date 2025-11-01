@@ -19,7 +19,7 @@ The Mnesia-based implementation of the event store.
 ]).
 
 -export_type([
-    event/0, stream_id/0, sequence/0, timestamp/0, snapshot/0, snapshot_data/0, fold_events_opts/0
+    event/0, stream_id/0, sequence/0, timestamp/0, snapshot/0, snapshot_data/0
 ]).
 
 -record(event_record, {
@@ -119,43 +119,33 @@ persist_events_in_tx(StreamId, [Event | Rest]) ->
             persist_events_in_tx(StreamId, Rest)
     end.
 
--spec fold(StreamId, Fun, Acc0, Options) -> Acc1 when
+-spec fold(StreamId, Fun, Acc0, Interval) -> Acc1 when
     StreamId :: stream_id(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
-    Options :: fold_events_opts(),
+    Interval :: event_sourcing_interval:interval(),
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
-fold(StreamId, FoldFun, InitialAcc, Options) when
-    is_map(Options), is_function(FoldFun, 2)
+fold(StreamId, FoldFun, InitialAcc, Interval) when
+    is_function(FoldFun, 2)
 ->
-    From = maps:get(from, Options, 0),
-    To = maps:get(to, Options, infinity),
-    Limit = maps:get(limit, Options, infinity),
+    From = event_sourcing_interval:lower_bound(Interval),
+    To = event_sourcing_interval:upper_bound(Interval),
     FunQuery =
         fun() ->
-            Q = qlc:q(
-                [
-                    E#event_record.event
-                 || E <- mnesia:table(?EVENT_TABLE_NAME),
-                    E#event_record.stream_id =:= StreamId,
-                    E#event_record.sequence >= From,
-                    E#event_record.sequence < To
-                ],
-                []
-            ),
-            case Limit of
-                infinity ->
-                    qlc:e(Q);
-                N when is_integer(N), N > 0 ->
-                    Cursor = qlc:cursor(Q),
-                    Events = qlc:next_answers(Cursor, N),
-                    qlc:delete_cursor(Cursor),
-                    Events;
-                _ ->
-                    qlc:e(Q)
-            end
+            qlc:e(
+                qlc:q(
+                    [
+                        E#event_record.event
+                     || E <- mnesia:table(?EVENT_TABLE_NAME),
+                        E#event_record.stream_id =:= StreamId,
+                        E#event_record.sequence >= From,
+                        E#event_record.sequence < To
+                    ],
+                    []
+                )
+            )
         end,
     case mnesia:transaction(FunQuery) of
         {atomic, Events} ->
