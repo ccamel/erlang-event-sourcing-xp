@@ -10,6 +10,7 @@ Ranges are half-open: they include the lower bound but exclude the upper bound.
     new/2,
     is_empty/1,
     equal/2,
+    contain/2,
     advance/2,
     lower_bound/1,
     upper_bound/1
@@ -60,6 +61,31 @@ equal({FromA, ToA}, {FromB, ToB}) ->
             true;
         _ ->
             is_empty({FromA, ToA}) andalso is_empty({FromB, ToB})
+    end.
+
+-doc """
+Check whether `Outer` fully contain `Inner`.
+Empty ranges are contained by any range.
+""".
+-spec contain(range(), range()) -> boolean().
+contain(Outer, Inner) ->
+    case is_empty(Inner) of
+        true ->
+            true;
+        false ->
+            {FromOuter, ToOuter} = Outer,
+            {FromInner, ToInner} = Inner,
+            LowerOk = FromOuter =< FromInner,
+            UpperOk =
+                case {ToOuter, ToInner} of
+                    {infinity, _} ->
+                        true;
+                    {_, infinity} ->
+                        false;
+                    _ ->
+                        ToOuter >= ToInner
+                end,
+            LowerOk andalso UpperOk
     end.
 
 -doc """
