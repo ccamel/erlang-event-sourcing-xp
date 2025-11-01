@@ -14,6 +14,7 @@ Ranges are half-open: they include the lower bound but exclude the upper bound.
     overlap/2,
     intersection/2,
     lt/2,
+    difference/2,
     advance/2,
     lower_bound/1,
     upper_bound/1
@@ -64,6 +65,24 @@ equal({FromA, ToA}, {FromB, ToB}) ->
             true;
         _ ->
             is_empty({FromA, ToA}) andalso is_empty({FromB, ToB})
+    end.
+
+-doc """
+Check whether `RangeA` is strictly less than `RangeB`.
+This holds when the lower bound of `RangeA` is less than the lower bound of `RangeB`.
+""".
+-spec lt(range(), range()) -> boolean().
+lt(A, B) ->
+    case {is_empty(A), is_empty(B)} of
+        % un vide n'est jamais "plus petit"
+        {true, _} ->
+            false;
+        {_, true} ->
+            false;
+        _ ->
+            {FromA, _} = A,
+            {FromB, _} = B,
+            FromA < FromB
     end.
 
 -doc """
@@ -129,21 +148,46 @@ intersection({FromA, ToA}, {FromB, ToB}) ->
     end.
 
 -doc """
-Check whether `RangeA` is strictly less than `RangeB`.
-This holds when the lower bound of `RangeA` is less than the lower bound of `RangeB`.
+Compute the difference between two ranges: `RangeA - RangeB`.
+Returns a list of ranges representing the parts of `RangeA` that are not covered by `RangeB`.
+If `RangeB` fully covers `RangeA`, the result is an empty list.
 """.
--spec lt(range(), range()) -> boolean().
-lt(A, B) ->
-    case {is_empty(A), is_empty(B)} of
-        % un vide n'est jamais "plus petit"
+-spec difference(range(), range()) -> [range()].
+difference(RangeA, RangeB) ->
+    case {is_empty(RangeA), is_empty(RangeB)} of
         {true, _} ->
-            false;
+            [];
         {_, true} ->
-            false;
+            [RangeA];
         _ ->
-            {FromA, _} = A,
-            {FromB, _} = B,
-            FromA < FromB
+            difference_non_empty(RangeA, RangeB)
+    end.
+
+difference_non_empty(RangeA, RangeB) ->
+    case overlap(RangeA, RangeB) of
+        false ->
+            [RangeA];
+        true ->
+            case contain(RangeB, RangeA) of
+                true ->
+                    [];
+                false ->
+                    difference_partial(RangeA, RangeB)
+            end
+    end.
+
+difference_partial({AF, AT}, {BF, BT}) ->
+    case BF =< AF of
+        true ->
+            Tail = {BT, AT},
+            case is_empty(Tail) of
+                true -> [];
+                false -> [Tail]
+            end;
+        false ->
+            Head = {AF, BF},
+            Tail = {BT, AT},
+            lists:filter(fun(R) -> not is_empty(R) end, [Head, Tail])
     end.
 
 -doc """
