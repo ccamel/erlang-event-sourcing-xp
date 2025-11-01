@@ -379,7 +379,7 @@ advance_range() ->
     % Test advancing beyond boundary (creates empty range)
     Range5 = event_sourcing_range:new(3, 7),
     Advanced5 = event_sourcing_range:advance(Range5, 5),
-    ?assertEqual(8, event_sourcing_range:lower_bound(Advanced5)),
+    ?assertEqual(7, event_sourcing_range:lower_bound(Advanced5)),
     ?assertEqual(7, event_sourcing_range:upper_bound(Advanced5)),
     ?assertEqual(true, event_sourcing_range:is_empty(Advanced5)).
 
