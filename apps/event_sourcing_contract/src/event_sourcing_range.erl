@@ -19,17 +19,22 @@ Ranges are half-open: they include the lower bound but exclude the upper bound.
 -type range() :: {non_neg_integer(), non_neg_integer() | infinity}.
 
 -doc """
-Create a new range with the given lower and upper bounds.
-Upper bound can be `infinity` for unbounded ranges.
+Create a new half-open range `[From, To)`.
 
-The range is half-open: [From, To) includes From but excludes To.
+If `To = infinity`, the range is unbounded above.
+If `From > To` (when `To` is finite), the range is normalized to an empty range `{To, To}`.
+`From` must be finite — `new(infinity, _)` is invalid.
 """.
 -spec new(non_neg_integer(), non_neg_integer() | infinity) -> range().
-new(From, To) when
-    From >= 0,
-    (is_integer(To) andalso To >= From) orelse To =:= infinity
-->
-    {From, To}.
+new(From, infinity) when is_integer(From), From >= 0 ->
+    {From, infinity};
+new(infinity, _) ->
+    error({invalid_interval, infinity_lower_bound});
+new(From, To) when is_integer(From), is_integer(To), From >= 0, To >= 0 ->
+    case From =< To of
+        true  -> {From, To};
+        false -> {To, To}
+    end.
 
 -doc """
 Check if a range is empty.

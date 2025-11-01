@@ -7,7 +7,6 @@
 suite_test_() ->
     {foreach, fun setup/0, fun teardown/1, [
         {"new_range_creation", fun new_range_creation/0},
-        {"new_range_validation", fun new_range_validation/0},
         {"is_empty_check", fun is_empty_check/0},
         {"advance_range", fun advance_range/0},
         {"lower_bound_access", fun lower_bound_access/0},
@@ -26,27 +25,19 @@ teardown(_) ->
 
 new_range_creation() ->
     % Test basic range creation [0, 10)
-    Range1 = event_sourcing_range:new(0, 10),
-    ?assertEqual({0, 10}, Range1),
+    ?assertEqual({0, 10}, event_sourcing_range:new(0, 10)),
 
     % Test unbounded range [5, +∞)
-    Range2 = event_sourcing_range:new(5, infinity),
-    ?assertEqual({5, infinity}, Range2),
+    ?assertEqual({5, infinity}, event_sourcing_range:new(5, infinity)),
 
     % Test non-empty single-element range [7, 8)
-    Range3 = event_sourcing_range:new(7, 8),
-    ?assertEqual({7, 8}, Range3).
+    ?assertEqual({7, 8}, event_sourcing_range:new(7, 8)),
 
-new_range_validation() ->
-    % Test valid cases
-    ?assertEqual({1, 5}, event_sourcing_range:new(1, 5)),
-    ?assertEqual({10, infinity}, event_sourcing_range:new(10, infinity)),
-    ?assertEqual({5, 5}, event_sourcing_range:new(5, 5)),
+    % Test normalization of empty range [5, 3)
+    ?assertEqual({3, 3}, event_sourcing_range:new(5, 3)),
 
-    % Test invalid cases - should throw function_clause error due to guard failure
+    % Test invalid range creation
     ?assertError(function_clause, event_sourcing_range:new(-1, 5)),
-    % From > To
-    ?assertError(function_clause, event_sourcing_range:new(5, 3)),
     ?assertError(function_clause, event_sourcing_range:new(5, -1)).
 
 is_empty_check() ->
