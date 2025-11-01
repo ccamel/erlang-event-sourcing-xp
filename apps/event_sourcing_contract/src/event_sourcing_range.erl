@@ -11,6 +11,7 @@ Ranges are half-open: they include the lower bound but exclude the upper bound.
     is_empty/1,
     equal/2,
     contain/2,
+    overlap/2,
     advance/2,
     lower_bound/1,
     upper_bound/1
@@ -87,6 +88,23 @@ contain(Outer, Inner) ->
                 end,
             LowerOk andalso UpperOk
     end.
+
+-doc """
+Check whether two range overlap.
+
+For half-open range `[A1, A2)` and `[B1, B2)`, they overlap when:
+- `A1 < B2` and
+- `B1 < A2`.
+
+Unbounded range (`To = infinity`) overlap any range that starts before their infinity.
+""".
+-spec overlap(range(), range()) -> boolean().
+overlap(RangeA, RangeB) ->
+    {FromA, ToA} = RangeA,
+    {FromB, ToB} = RangeB,
+    not (is_empty(RangeA) orelse is_empty(RangeB)) andalso
+        (FromA < ToB orelse ToB =:= infinity) andalso
+        (FromB < ToA orelse ToA =:= infinity).
 
 -doc """
 Advance the range by moving the lower bound forward by the given amount.
