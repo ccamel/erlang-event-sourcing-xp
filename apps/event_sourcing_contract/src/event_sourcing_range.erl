@@ -35,7 +35,7 @@ If `From > To` (when `To` is finite), the range is normalized to an empty range 
 new(From, infinity) when is_integer(From), From >= 0 ->
     {From, infinity};
 new(infinity, _) ->
-    error({invalid_interval, infinity_lower_bound});
+    error({invalid_range, infinity_lower_bound});
 new(From, To) when is_integer(From), is_integer(To), From >= 0, To >= 0 ->
     case From =< To of
         true -> {From, To};

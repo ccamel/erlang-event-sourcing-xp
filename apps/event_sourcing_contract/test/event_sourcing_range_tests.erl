@@ -56,7 +56,10 @@ new_range_creation() ->
 
     % Test invalid range creation
     ?assertError(function_clause, event_sourcing_range:new(-1, 5)),
-    ?assertError(function_clause, event_sourcing_range:new(5, -1)).
+    ?assertError(function_clause, event_sourcing_range:new(5, -1)),
+    ?assertError(
+        {invalid_range, infinity_lower_bound}, event_sourcing_range:new(infinity, infinity)
+    ).
 
 is_empty_check() ->
     % Test non-empty ranges (half-open [From, To))
