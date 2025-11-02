@@ -74,7 +74,6 @@ This holds when the lower bound of `RangeA` is less than the lower bound of `Ran
 -spec lt(range(), range()) -> boolean().
 lt(A, B) ->
     case {is_empty(A), is_empty(B)} of
-        % un vide n'est jamais "plus petit"
         {true, _} ->
             false;
         {_, true} ->
@@ -192,11 +191,17 @@ difference_partial({AF, AT}, {BF, BT}) ->
 
 -doc """
 Advance the range by moving the lower bound forward by the given amount.
-Returns the new range.
+If the advancement would make the range empty, returns an empty range.
 """.
 -spec advance(range(), non_neg_integer()) -> range().
-advance({From, To}, N) when N >= 0 ->
-    {From + N, To}.
+advance({From, infinity}, N) when N >= 0 ->
+    {From + N, infinity};
+advance({From, To}, N) when N >= 0, is_integer(To) ->
+    NewFrom = From + N,
+    case NewFrom < To of
+        true -> {NewFrom, To};
+        false -> {To, To}
+    end.
 
 -doc """
 Get the lower bound of the range.

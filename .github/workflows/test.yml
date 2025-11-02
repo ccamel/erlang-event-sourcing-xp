@@ -50,4 +50,24 @@ jobs:
 
       - name: Run EUnit tests
         run: |
-          rebar3 eunit
+          rebar3 eunit --cover
+
+      - name: Generate covertool
+        run: |
+          rebar3 covertool generate
+
+      - name: Collect coverage files
+        id: coverage_files
+        run: |
+          files=$(ls _build/test/covertool/*.covertool.xml)
+          list=$(printf "%s," $files)
+          list=${list%,}
+          echo "files=$list" >> "$GITHUB_OUTPUT"
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ${{ steps.coverage_files.outputs.files }}
+          flags: erlang
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
