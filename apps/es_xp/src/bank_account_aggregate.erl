@@ -1,6 +1,6 @@
 -module(bank_account_aggregate).
 
--behaviour(es_aggregate_behaviour).
+-behaviour(es_contract_aggregate).
 -behaviour(es_kernel_mgr_behaviour).
 
 %% Callbacks implementation

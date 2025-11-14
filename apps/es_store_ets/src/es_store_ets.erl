@@ -3,10 +3,10 @@
 The ETS-based implementation of the event store.
 """.
 
--behaviour(es_event_store_behaviour).
--behaviour(es_snapshot_store_behaviour).
+-behaviour(es_contract_event_store).
+-behaviour(es_contract_snapshot_store).
 
--include_lib("es_contract/include/es_contract.hrl").
+-include_lib("es_kernel/include/es_contract.hrl").
 
 -export([
     start/0,
@@ -83,15 +83,15 @@ append(_, Events) ->
     StreamId :: stream_id(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
-    Range :: es_range:range(),
+    Range :: es_contract_range:range(),
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
 fold(StreamId, FoldFun, InitialAcc, Range) when
     is_function(FoldFun, 2)
 ->
-    From = es_range:lower_bound(Range),
-    To = es_range:upper_bound(Range),
+    From = es_contract_range:lower_bound(Range),
+    To = es_contract_range:upper_bound(Range),
 
     Pattern = {event_record, '_', StreamId, '$1', '$2'},
     Guard = [{'>=', '$1', From}, {'<', '$1', To}],

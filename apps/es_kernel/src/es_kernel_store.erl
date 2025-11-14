@@ -1,6 +1,6 @@
 -module(es_kernel_store).
 -moduledoc """
-Core API for the event sourcing system.
+Kernel API for the event sourcing system.
 
 This module provides:
 - domain types (event, snapshot, sequence, stream_id, etc.)
@@ -12,7 +12,7 @@ A `store_context()` is represented as `{EventStore, SnapshotStore}`.
 Both modules may be the same if one backend implements both roles.
 """.
 
--include_lib("es_contract/include/es_contract.hrl").
+-include_lib("es_kernel/include/es_contract.hrl").
 
 -export([
     start/1,
@@ -127,7 +127,7 @@ retrieves events within the specified range and applies the fold function in seq
     StreamId :: stream_id(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
-    Range :: es_range:range(),
+    Range :: es_contract_range:range(),
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().
@@ -142,7 +142,7 @@ This is a convenience wrapper around fold/5 that collects all events into a list
 -spec retrieve_events(StoreContext, StreamId, Range) -> Result when
     StoreContext :: store_context(),
     StreamId :: stream_id(),
-    Range :: es_range:range(),
+    Range :: es_contract_range:range(),
     Result :: [event()].
 retrieve_events(StoreContext, StreamId, Range) ->
     fold(

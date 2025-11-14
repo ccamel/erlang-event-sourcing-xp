@@ -1,8 +1,8 @@
 {application, es_store_mnesia, [
-    {description, "Mnesia backend for es_core"},
+    {description, "Mnesia backend for es_kernel"},
     {vsn, "0.1.0"},
     {registered, []},
-    {applications, [kernel, stdlib, mnesia, es_core]},
+    {applications, [kernel, stdlib, mnesia, es_kernel]},
     {env, []},
     {modules, [es_store_mnesia]},
     {licenses, ["BSD 3-Clause"]},

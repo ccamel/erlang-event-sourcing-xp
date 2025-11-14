@@ -1,4 +1,4 @@
--module(es_snapshot_store_behaviour).
+-module(es_contract_snapshot_store).
 -moduledoc """
 Behaviour for **snapshot store backends**.
 

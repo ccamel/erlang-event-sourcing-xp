@@ -65,7 +65,7 @@ persist_single_event(Store) ->
     ?assertMatch(
         [Event],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_range:new(0, infinity)
+            Store, stream_A, es_contract_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, es_kernel_store:stop(Store)).
@@ -103,13 +103,13 @@ persist_2_streams_event(Store) ->
     ?assertMatch(
         EventStreamA,
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_range:new(0, infinity)
+            Store, stream_A, es_contract_range:new(0, infinity)
         )
     ),
     ?assertMatch(
         EventStreamB,
         es_kernel_store:retrieve_events(
-            Store, stream_B, es_range:new(0, infinity)
+            Store, stream_B, es_contract_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, es_kernel_store:stop(Store)).
@@ -142,19 +142,19 @@ fetch_streams_event(Store) ->
     ?assertMatch(
         [],
         es_kernel_store:retrieve_events(
-            Store, stream_X, es_range:new(0, infinity)
+            Store, stream_X, es_contract_range:new(0, infinity)
         )
     ),
     ?assertMatch(
         [],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_range:new(0, 1)
+            Store, stream_A, es_contract_range:new(0, 1)
         )
     ),
     ?assertMatch(
         [],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_range:new(1, 1)
+            Store, stream_A, es_contract_range:new(1, 1)
         )
     ),
 
@@ -164,31 +164,31 @@ fetch_streams_event(Store) ->
     ?assertMatch(
         [Event1],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_range:new(1, 2)
+            Store, stream_A, es_contract_range:new(1, 2)
         )
     ),
     ?assertMatch(
         [Event2],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_range:new(2, 3)
+            Store, stream_A, es_contract_range:new(2, 3)
         )
     ),
     ?assertMatch(
         [Event2, Event3],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_range:new(2, 4)
+            Store, stream_A, es_contract_range:new(2, 4)
         )
     ),
     ?assertMatch(
         [Event2],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_range:new(2, 3)
+            Store, stream_A, es_contract_range:new(2, 3)
         )
     ),
     ?assertMatch(
         Events,
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_range:new(0, infinity)
+            Store, stream_A, es_contract_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, es_kernel_store:stop(Store)).
@@ -214,13 +214,13 @@ wrong_stream_id(Store) ->
     ?assertMatch(
         [],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_range:new(0, infinity)
+            Store, stream_A, es_contract_range:new(0, infinity)
         )
     ),
     ?assertMatch(
         [],
         es_kernel_store:retrieve_events(
-            Store, stream_B, es_range:new(0, infinity)
+            Store, stream_B, es_contract_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, es_kernel_store:stop(Store)).
@@ -247,7 +247,7 @@ duplicate_event(Store) ->
     ?assertMatch(
         [Event],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_range:new(0, infinity)
+            Store, stream_A, es_contract_range:new(0, infinity)
         )
     ),
     Events =
@@ -286,7 +286,7 @@ duplicate_event(Store) ->
     ?assertMatch(
         [],
         es_kernel_store:retrieve_events(
-            Store, stream_B, es_range:new(0, infinity)
+            Store, stream_B, es_contract_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, es_kernel_store:stop(Store)).
@@ -365,7 +365,7 @@ composite_store_supports_mixed_backends() ->
     ?assertMatch(
         [Event],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_range:new(0, infinity)
+            Store, stream_A, es_contract_range:new(0, infinity)
         )
     ),
 

@@ -1,8 +1,8 @@
 {application, es_store_ets, [
-    {description, "ETS backend for es_core"},
+    {description, "ETS backend for es_kernel"},
     {vsn, "0.1.0"},
     {registered, []},
-    {applications, [kernel, stdlib, es_core]},
+    {applications, [kernel, stdlib, es_kernel]},
     {env, []},
     {modules, [es_store_ets]},
     {licenses, ["BSD 3-Clause"]},

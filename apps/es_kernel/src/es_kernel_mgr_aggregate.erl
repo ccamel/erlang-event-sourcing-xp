@@ -10,7 +10,7 @@ monitoring them for crashes.
 
 -behaviour(gen_server).
 
--include_lib("es_contract/include/es_contract.hrl").
+-include_lib("es_kernel/include/es_contract.hrl").
 
 -export([
     init/1,

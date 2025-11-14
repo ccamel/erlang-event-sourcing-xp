@@ -1,4 +1,4 @@
--module(es_event_store_behaviour).
+-module(es_contract_event_store).
 -moduledoc """
 Behaviour for **event store backends**.
 
@@ -71,9 +71,9 @@ It's typically used to rebuild application state by replaying events.
 - FoldFun is a function `fun((Event, AccIn) -> AccOut)` to process each event.
 - InitialAcc is the initial accumulator value (e.g., an empty state).
 - Range is a sequence range defining which events to retrieve:
-  - Use `es_range:new(0, infinity)` to replay all events.
-  - Use `es_range:new(N, infinity)` to replay from checkpoint N.
-  - Use `es_range:new(M, N)` to replay a specific bounded range.
+  - Use `es_contract_range:new(0, infinity)` to replay all events.
+  - Use `es_contract_range:new(N, infinity)` to replay from checkpoint N.
+  - Use `es_contract_range:new(M, N)` to replay a specific bounded range.
 
 Returns the final accumulator after folding all events in the range.
 """.
@@ -81,7 +81,7 @@ Returns the final accumulator after folding all events in the range.
     StreamId :: stream_id(),
     Fun :: fun((Event :: event(), AccIn) -> AccOut),
     Acc0 :: term(),
-    Range :: es_range:range(),
+    Range :: es_contract_range:range(),
     Acc1 :: term(),
     AccIn :: term(),
     AccOut :: term().

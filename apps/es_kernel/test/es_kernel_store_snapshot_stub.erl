@@ -1,6 +1,6 @@
 -module(es_kernel_store_snapshot_stub).
 
--include_lib("es_contract/include/es_contract.hrl").
+-include_lib("es_kernel/include/es_contract.hrl").
 
 -export([start/0, stop/0, store/1, load_latest/1]).
 

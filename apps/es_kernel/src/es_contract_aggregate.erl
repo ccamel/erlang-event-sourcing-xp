@@ -1,4 +1,4 @@
--module(es_aggregate_behaviour).
+-module(es_contract_aggregate).
 -moduledoc """
 Defines the aggregate behaviour for event-sourced domain modules.
 

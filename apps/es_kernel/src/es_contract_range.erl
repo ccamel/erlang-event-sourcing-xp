@@ -1,4 +1,4 @@
--module(es_range).
+-module(es_contract_range).
 -moduledoc """
 Algebraic data type for representing sequence ranges with lower and upper bounds.
 Supports both bounded ranges `[From, To)` and unbounded ranges `[From, +∞)`.

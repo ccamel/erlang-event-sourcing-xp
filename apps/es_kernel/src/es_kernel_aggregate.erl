@@ -1,6 +1,6 @@
 -module(es_kernel_aggregate).
 
--include_lib("es_contract/include/es_contract.hrl").
+-include_lib("es_kernel/include/es_contract.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -behaviour(gen_server).
@@ -28,7 +28,7 @@
 -define(SEQUENCE_ZERO, 0).
 -define(INACTIVITY_TIMEOUT, 5000).
 
--type aggregate_state() :: es_aggregate_behaviour:aggregate_state().
+-type aggregate_state() :: es_contract_aggregate:aggregate_state().
 
 -doc """
 Starts an aggregate process with a given timeout.
@@ -155,7 +155,7 @@ init({Aggregate, StoreContext, Id, Opts}) ->
             Id,
             FoldFun,
             {StateFromSnapshot, SequenceFromSnapshot},
-            es_range:new(SequenceFromSnapshot + 1, infinity)
+            es_contract_range:new(SequenceFromSnapshot + 1, infinity)
         ),
     Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
     SnapshotInterval = maps:get(snapshot_interval, Opts, 0),

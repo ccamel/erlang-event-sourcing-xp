@@ -9,7 +9,7 @@ for commands.
 Implementations of this behaviour are responsible for extracting routing information,
 enabling the aggregate manager to dispatch commands to the correct aggregate instance.
 """.
--include_lib("es_contract/include/es_contract.hrl").
+-include_lib("es_kernel/include/es_contract.hrl").
 
 -doc """
 Extracts the routing information from the command.
