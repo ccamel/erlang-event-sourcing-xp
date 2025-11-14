@@ -1,4 +1,4 @@
--module(es_core_mgr_aggregate_tests).
+-module(es_kernel_mgr_aggregate_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -14,10 +14,10 @@ suite_test_() ->
     {foreach, fun setup/0, fun teardown/1, TestCases}.
 
 setup() ->
-    es_core_store:start(?ETS_STORE).
+    es_kernel_store:start(?ETS_STORE).
 
 teardown(_) ->
-    es_core_store:stop(?ETS_STORE).
+    es_kernel_store:stop(?ETS_STORE).
 
 %%%  Test cases
 
@@ -39,23 +39,23 @@ aggregate_behaviour() ->
 
     ?assertEqual(
         ok,
-        es_core_mgr_aggregate:dispatch(Pid, {bank, deposit, Id, 100})
+        es_kernel_mgr_aggregate:dispatch(Pid, {bank, deposit, Id, 100})
     ),
     ?assertState(agg_id(Pid, Id), Id, #{balance := 100}, 1),
 
     ?assertEqual(
         ok,
-        es_core_mgr_aggregate:dispatch(Pid, {bank, deposit, Id, 100})
+        es_kernel_mgr_aggregate:dispatch(Pid, {bank, deposit, Id, 100})
     ),
     ?assertState(agg_id(Pid, Id), Id, #{balance := 200}, 2),
 
     ?assertEqual(
         ok,
-        es_core_mgr_aggregate:dispatch(Pid, {bank, withdraw, Id, 50})
+        es_kernel_mgr_aggregate:dispatch(Pid, {bank, withdraw, Id, 50})
     ),
     ?assertState(agg_id(Pid, Id), Id, #{balance := 150}, 3),
 
-    ?assertEqual(ok, es_core_mgr_aggregate:stop(Pid)).
+    ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
 
 aggregate_passivation() ->
     Pid = start_mgr(1000),
@@ -63,11 +63,11 @@ aggregate_passivation() ->
 
     ?assertEqual(
         ok,
-        es_core_mgr_aggregate:dispatch(Pid, {bank, deposit, Id, 100})
+        es_kernel_mgr_aggregate:dispatch(Pid, {bank, deposit, Id, 100})
     ),
     ?assertEqual(
         ok,
-        es_core_mgr_aggregate:dispatch(Pid, {bank, withdraw, Id, 25})
+        es_kernel_mgr_aggregate:dispatch(Pid, {bank, withdraw, Id, 25})
     ),
 
     ?assertState(agg_id(Pid, Id), Id, #{balance := 75}, 2),
@@ -81,12 +81,12 @@ aggregate_passivation() ->
 
     ?assertEqual(
         ok,
-        es_core_mgr_aggregate:dispatch(Pid, {bank, deposit, Id, 30})
+        es_kernel_mgr_aggregate:dispatch(Pid, {bank, deposit, Id, 30})
     ),
 
     ?assertState(agg_id(Pid, Id), Id, #{balance := 105}, 3),
 
-    ?assertEqual(ok, es_core_mgr_aggregate:stop(Pid)).
+    ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
 
 aggregate_invalid_command() ->
     Pid = start_mgr(5000),
@@ -94,18 +94,18 @@ aggregate_invalid_command() ->
 
     ?assertEqual(
         {error, invalid_command},
-        es_core_mgr_aggregate:dispatch(Pid, invalid)
+        es_kernel_mgr_aggregate:dispatch(Pid, invalid)
     ),
     ?assertEqual(
         {error, insufficient_funds},
-        es_core_mgr_aggregate:dispatch(Pid, {bank, withdraw, Id, 100})
+        es_kernel_mgr_aggregate:dispatch(Pid, {bank, withdraw, Id, 100})
     ),
 
-    ?assertEqual(ok, es_core_mgr_aggregate:stop(Pid)).
+    ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
 
 start_mgr(Timeout) ->
     {ok, Pid} =
-        es_core_mgr_aggregate:start_link(
+        es_kernel_mgr_aggregate:start_link(
             bank_account_aggregate,
             ?ETS_STORE,
             bank_account_aggregate,

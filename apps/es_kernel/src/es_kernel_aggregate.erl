@@ -1,4 +1,4 @@
--module(es_core_aggregate).
+-module(es_kernel_aggregate).
 
 -include_lib("es_contract/include/es_contract.hrl").
 -include_lib("kernel/include/logger.hrl").
@@ -42,7 +42,7 @@ Function returns `{ok, Pid}` if successful, `{error, Reason}` otherwise.
 """.
 -spec start_link(Aggregate, StoreContext, Id, Opts) -> gen_server:start_ret() when
     Aggregate :: module(),
-    StoreContext :: es_core_store:store_context(),
+    StoreContext :: es_kernel_store:store_context(),
     Id :: stream_id(),
     Opts ::
         #{
@@ -64,7 +64,7 @@ Starts a new aggregate process.
 """.
 -spec start_link(
     Aggregate :: module(),
-    StoreContext :: es_core_store:store_context(),
+    StoreContext :: es_kernel_store:store_context(),
     Id :: stream_id()
 ) ->
     gen_server:start_ret().
@@ -81,7 +81,7 @@ dispatch(Pid, Command) ->
 
 -record(state, {
     aggregate :: module(),
-    store :: es_core_store:store_context(),
+    store :: es_kernel_store:store_context(),
     id :: stream_id(),
     state :: aggregate_state(),
     sequence = ?SEQUENCE_ZERO :: non_neg_integer(),
@@ -114,7 +114,7 @@ sequentially to rehydrate the aggregate's state.
 Function returns {ok, state()} on success, and returns {stop, Reason} on failure.
 """.
 -spec init(
-    {module(), es_core_store:store_context(), stream_id(), #{
+    {module(), es_kernel_store:store_context(), stream_id(), #{
         timeout => timeout(),
         sequence_zero => fun(() -> sequence()),
         sequence_next => fun((sequence()) -> sequence()),
@@ -130,10 +130,10 @@ init({Aggregate, StoreContext, Id, Opts}) ->
 
     %% Try to load the latest snapshot
     {StateFromSnapshot, SequenceFromSnapshot} =
-        case es_core_store:load_latest(StoreContext, Id) of
+        case es_kernel_store:load_latest(StoreContext, Id) of
             {ok, Snapshot} ->
-                SnapshotState = es_core_store:snapshot_state(Snapshot),
-                SnapshotSeq = es_core_store:snapshot_sequence(Snapshot),
+                SnapshotState = es_kernel_store:snapshot_state(Snapshot),
+                SnapshotSeq = es_kernel_store:snapshot_sequence(Snapshot),
                 {SnapshotState, SnapshotSeq};
             {error, not_found} ->
                 {State0, SequenceZero()}
@@ -144,13 +144,13 @@ init({Aggregate, StoreContext, Id, Opts}) ->
         fun(Event, {StateAcc, _SeqAcc}) ->
             {
                 Aggregate:apply_event(
-                    es_core_store:payload(Event), StateAcc
+                    es_kernel_store:payload(Event), StateAcc
                 ),
-                es_core_store:sequence(Event)
+                es_kernel_store:sequence(Event)
             }
         end,
     {State1, Sequence1} =
-        es_core_store:fold(
+        es_kernel_store:fold(
             StoreContext,
             Id,
             FoldFun,
@@ -320,7 +320,7 @@ apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}) ->
     PayloadEvents :: [event_payload()],
     {
         Aggregate :: module(),
-        StoreContext :: es_core_store:store_context(),
+        StoreContext :: es_kernel_store:store_context(),
         Id :: stream_id(),
         Sequence0 :: sequence(),
         SequenceNext :: fun((sequence()) -> sequence()),
@@ -335,7 +335,7 @@ persist_events(PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, SequenceN
                 SequenceN1 = SequenceNext(SequenceN),
                 EventType = Aggregate:event_type(PayloadEvent),
                 Event =
-                    es_core_store:new_event(
+                    es_kernel_store:new_event(
                         Id,
                         Aggregate,
                         EventType,
@@ -354,7 +354,7 @@ persist_events(PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, SequenceN
         end,
         Events
     ),
-    es_core_store:append(StoreContext, Id, Events).
+    es_kernel_store:append(StoreContext, Id, Events).
 
 -doc """
 Saves a snapshot if the snapshot interval is configured and the current
@@ -378,8 +378,8 @@ maybe_save_snapshot(
 ) when Sequence rem Interval =:= 0 ->
     Timestamp = NowFun(),
     logger:info("Saving snapshot for ~p at sequence ~p", [Id, Sequence]),
-    Snapshot = es_core_store:new_snapshot(Aggregate, Id, Sequence, Timestamp, AggState),
-    case es_core_store:store(StoreContext, Snapshot) of
+    Snapshot = es_kernel_store:new_snapshot(Aggregate, Id, Sequence, Timestamp, AggState),
+    case es_kernel_store:store(StoreContext, Snapshot) of
         ok ->
             ok;
         {warning, Reason} ->

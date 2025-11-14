@@ -1,4 +1,4 @@
--module(es_core_mgr_aggregate).
+-module(es_kernel_mgr_aggregate).
 -moduledoc """
 This module implements a `gen_server` that manages event-sourcing aggregates.
 
@@ -28,7 +28,7 @@ monitoring them for crashes.
 
 -record(state, {
     aggregate :: module(),
-    store :: es_core_store:store_context(),
+    store :: es_kernel_store:store_context(),
     router :: module(),
     opts ::
         #{
@@ -58,7 +58,7 @@ Function returns `{ok, Pid}` on success, or an error tuple if the server fails t
 """.
 -spec start_link(Aggregate, StoreContext, Router, Opts) -> gen_server:start_ret() when
     Aggregate :: module(),
-    StoreContext :: es_core_store:store_context(),
+    StoreContext :: es_kernel_store:store_context(),
     Router :: module(),
     Opts ::
         #{
@@ -82,7 +82,7 @@ Function returns `{ok, Pid}` on success, or an error tuple if the server fails t
 """.
 -spec start_link(Aggregate, StoreContext, Router) -> gen_server:start_ret() when
     Aggregate :: module(),
-    StoreContext :: es_core_store:store_context(),
+    StoreContext :: es_kernel_store:store_context(),
     Router :: module().
 start_link(Aggregate, StoreContext, Router) ->
     start_link(Aggregate, StoreContext, Router, #{}).
@@ -126,7 +126,7 @@ Function returns `{ok, State}` with an initialized state record.
 """.
 -spec init({Aggregate, StoreContext, Router, Opts}) -> {ok, State} when
     Aggregate :: module(),
-    StoreContext :: es_core_store:store_context(),
+    StoreContext :: es_kernel_store:store_context(),
     Router :: module(),
     Opts ::
         #{
@@ -249,7 +249,7 @@ Function returns The result of the aggregate's dispatch function.
     Result :: pid(),
     Reason :: term().
 forward(Pid, Command) ->
-    es_core_aggregate:dispatch(Pid, Command).
+    es_kernel_aggregate:dispatch(Pid, Command).
 
 -doc """
 Starts an aggregate process for a given stream ID.
@@ -260,7 +260,7 @@ Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
 """.
 -spec start_aggregate(Aggregate, StoreContext, Id, Opts) -> {ok, Result} | {error, Reason} when
     Aggregate :: module(),
-    StoreContext :: es_core_store:store_context(),
+    StoreContext :: es_kernel_store:store_context(),
     Id :: stream_id(),
     Opts ::
         #{
@@ -272,7 +272,7 @@ Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
     Result :: pid(),
     Reason :: term().
 start_aggregate(Aggregate, StoreContext, Id, Opts) ->
-    case es_core_aggregate:start_link(Aggregate, StoreContext, Id, Opts) of
+    case es_kernel_aggregate:start_link(Aggregate, StoreContext, Id, Opts) of
         {ok, Pid} ->
             erlang:monitor(process, Pid),
             {ok, Pid};

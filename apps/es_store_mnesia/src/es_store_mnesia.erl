@@ -103,12 +103,12 @@ append(StreamId, Events) ->
 persist_events_in_tx(_, []) ->
     ok;
 persist_events_in_tx(StreamId, [Event | Rest]) ->
-    Id = es_core_store:id(Event),
+    Id = es_kernel_store:id(Event),
     Record =
         #event_record{
             key = Id,
-            stream_id = es_core_store:stream_id(Event),
-            sequence = es_core_store:sequence(Event),
+            stream_id = es_kernel_store:stream_id(Event),
+            sequence = es_kernel_store:sequence(Event),
             event = Event
         },
     case mnesia:read(?EVENT_TABLE_NAME, Id, read) of
@@ -160,9 +160,9 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
 store(Snapshot) ->
     try
         Record = #snapshot_record{
-            stream_id = es_core_store:snapshot_stream_id(Snapshot),
-            sequence = es_core_store:snapshot_sequence(Snapshot),
-            timestamp = es_core_store:snapshot_timestamp(Snapshot),
+            stream_id = es_kernel_store:snapshot_stream_id(Snapshot),
+            sequence = es_kernel_store:snapshot_sequence(Snapshot),
+            timestamp = es_kernel_store:snapshot_timestamp(Snapshot),
             snapshot = Snapshot
         },
         ok = mnesia:dirty_write(?SNAPSHOT_TABLE_NAME, Record),

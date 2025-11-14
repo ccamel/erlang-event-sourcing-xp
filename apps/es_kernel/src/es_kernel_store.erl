@@ -1,4 +1,4 @@
--module(es_core_store).
+-module(es_kernel_store).
 -moduledoc """
 Core API for the event sourcing system.
 

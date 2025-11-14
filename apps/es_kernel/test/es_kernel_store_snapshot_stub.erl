@@ -1,4 +1,4 @@
--module(es_core_store_snapshot_stub).
+-module(es_kernel_store_snapshot_stub).
 
 -include_lib("es_contract/include/es_contract.hrl").
 
@@ -28,7 +28,7 @@ stop() ->
 
 -spec store(snapshot()) -> ok.
 store(Snapshot) ->
-    StreamId = es_core_store:snapshot_stream_id(Snapshot),
+    StreamId = es_kernel_store:snapshot_stream_id(Snapshot),
     ets:insert(?TABLE, {StreamId, Snapshot}),
     ok.
 

@@ -1,4 +1,4 @@
--module(es_core_aggregate_tests).
+-module(es_kernel_aggregate_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -17,10 +17,10 @@ suite_test_() ->
     {foreach, fun setup/0, fun teardown/1, TestCases}.
 
 setup() ->
-    es_core_store:start(?ETS_STORE_CONTEXT).
+    es_kernel_store:start(?ETS_STORE_CONTEXT).
 
 teardown(_) ->
-    es_core_store:stop(?ETS_STORE_CONTEXT).
+    es_kernel_store:stop(?ETS_STORE_CONTEXT).
 
 %%%  Test cases
 
@@ -37,20 +37,20 @@ aggregate_behaviour() ->
 
     ?assertState(Pid, Id, #{balance := 0}, 0),
 
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid, {bank, deposit, Id, 100})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid, {bank, deposit, Id, 100})),
     ?assertState(Pid, Id, #{balance := 100}, 1),
 
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid, {bank, deposit, Id, 100})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid, {bank, deposit, Id, 100})),
     ?assertState(Pid, Id, #{balance := 200}, 2),
 
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid, {bank, withdraw, Id, 50})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid, {bank, withdraw, Id, 50})),
     ?assertState(Pid, Id, #{balance := 150}, 3).
 
 aggregate_passivation() ->
     {Id, Pid} = start_test_account(1000),
 
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid, {bank, deposit, Id, 100})),
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid, {bank, withdraw, Id, 25})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid, {bank, deposit, Id, 100})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid, {bank, withdraw, Id, 25})),
 
     ?assertState(Pid, Id, #{balance := 75}, 2),
 
@@ -62,7 +62,7 @@ aggregate_passivation() ->
 
     % start a new aggregate with the same id and check hydration
     {ok, Pid2} =
-        es_core_aggregate:start_link(
+        es_kernel_aggregate:start_link(
             bank_account_aggregate,
             ?ETS_STORE_CONTEXT,
             Id,
@@ -75,18 +75,18 @@ aggregate_invalid_command() ->
 
     ?assertEqual(
         {error, invalid_command},
-        es_core_aggregate:dispatch(Pid, invalid)
+        es_kernel_aggregate:dispatch(Pid, invalid)
     ),
     ?assertEqual(
         {error, insufficient_funds},
-        es_core_aggregate:dispatch(Pid, {bank, withdraw, Id, 100})
+        es_kernel_aggregate:dispatch(Pid, {bank, withdraw, Id, 100})
     ).
 
 start_test_account(Timeout) ->
     %% Generate unique ID to avoid conflicts between tests
     Id = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
     {ok, Pid} =
-        es_core_aggregate:start_link(
+        es_kernel_aggregate:start_link(
             bank_account_aggregate,
             ?ETS_STORE_CONTEXT,
             Id,
@@ -98,7 +98,7 @@ start_test_account_with_snapshots(Timeout, SnapshotInterval) ->
     %% Generate unique ID to avoid conflicts between tests
     Id = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
     {ok, Pid} =
-        es_core_aggregate:start_link(
+        es_kernel_aggregate:start_link(
             bank_account_aggregate,
             ?ETS_STORE_CONTEXT,
             Id,
@@ -110,32 +110,32 @@ aggregate_snapshot_creation() ->
     {Id, Pid} = start_test_account_with_snapshots(5000, 3),
 
     %% Process 5 commands
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid, {bank, deposit, Id, 100})),
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid, {bank, deposit, Id, 50})),
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid, {bank, withdraw, Id, 25})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid, {bank, deposit, Id, 100})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid, {bank, deposit, Id, 50})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid, {bank, withdraw, Id, 25})),
     ?assertState(Pid, Id, #{balance := 125}, 3),
 
     %% Snapshot should be saved at sequence 3 (3 % 3 == 0)
-    {ok, Snapshot} = es_core_store:load_latest(
+    {ok, Snapshot} = es_kernel_store:load_latest(
         ?ETS_STORE_CONTEXT,
         Id
     ),
-    ?assertEqual(3, es_core_store:snapshot_sequence(Snapshot)),
-    ?assertEqual(#{balance => 125}, es_core_store:snapshot_state(Snapshot)),
+    ?assertEqual(3, es_kernel_store:snapshot_sequence(Snapshot)),
+    ?assertEqual(#{balance => 125}, es_kernel_store:snapshot_state(Snapshot)),
 
     %% Continue with more commands
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid, {bank, deposit, Id, 75})),
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid, {bank, withdraw, Id, 50})),
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid, {bank, deposit, Id, 100})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid, {bank, deposit, Id, 75})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid, {bank, withdraw, Id, 50})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid, {bank, deposit, Id, 100})),
     ?assertState(Pid, Id, #{balance := 250}, 6),
 
     %% Snapshot should now be at sequence 6 (6 % 3 == 0)
-    {ok, Snapshot2} = es_core_store:load_latest(
+    {ok, Snapshot2} = es_kernel_store:load_latest(
         ?ETS_STORE_CONTEXT,
         Id
     ),
-    ?assertEqual(6, es_core_store:snapshot_sequence(Snapshot2)),
-    ?assertEqual(#{balance => 250}, es_core_store:snapshot_state(Snapshot2)).
+    ?assertEqual(6, es_kernel_store:snapshot_sequence(Snapshot2)),
+    ?assertEqual(#{balance => 250}, es_kernel_store:snapshot_state(Snapshot2)).
 
 aggregate_snapshot_rehydration() ->
     %% Generate unique ID to avoid conflicts between tests
@@ -143,7 +143,7 @@ aggregate_snapshot_rehydration() ->
 
     %% First, create an aggregate with snapshots
     {ok, Pid1} =
-        es_core_aggregate:start_link(
+        es_kernel_aggregate:start_link(
             bank_account_aggregate,
             ?ETS_STORE_CONTEXT,
             Id,
@@ -151,19 +151,19 @@ aggregate_snapshot_rehydration() ->
         ),
 
     %% Process commands to create events and snapshots
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid1, {bank, deposit, Id, 100})),
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid1, {bank, deposit, Id, 200})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid1, {bank, deposit, Id, 100})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid1, {bank, deposit, Id, 200})),
     ?assertState(Pid1, Id, #{balance := 300}, 2),
 
     %% Snapshot should exist at sequence 2
-    {ok, _Snapshot} = es_core_store:load_latest(
+    {ok, _Snapshot} = es_kernel_store:load_latest(
         ?ETS_STORE_CONTEXT,
         Id
     ),
 
     %% Add more events after snapshot
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid1, {bank, withdraw, Id, 50})),
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid1, {bank, deposit, Id, 150})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid1, {bank, withdraw, Id, 50})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid1, {bank, deposit, Id, 150})),
     ?assertState(Pid1, Id, #{balance := 400}, 4),
 
     %% Stop the aggregate
@@ -171,7 +171,7 @@ aggregate_snapshot_rehydration() ->
 
     %% Start a new aggregate with the same ID - should load from snapshot + replay events
     {ok, Pid2} =
-        es_core_aggregate:start_link(
+        es_kernel_aggregate:start_link(
             bank_account_aggregate,
             ?ETS_STORE_CONTEXT,
             Id,
@@ -191,7 +191,7 @@ aggregate_custom_now_fun() ->
 
     %% Start aggregate with custom now_fun
     {ok, Pid} =
-        es_core_aggregate:start_link(
+        es_kernel_aggregate:start_link(
             bank_account_aggregate,
             ?ETS_STORE_CONTEXT,
             Id,
@@ -199,12 +199,12 @@ aggregate_custom_now_fun() ->
         ),
 
     %% Dispatch a command that will persist an event
-    ?assertEqual(ok, es_core_aggregate:dispatch(Pid, {bank, deposit, Id, 42})),
+    ?assertEqual(ok, es_kernel_aggregate:dispatch(Pid, {bank, deposit, Id, 42})),
 
     %% Retrieve persisted events and assert the timestamp matches the injected Now
-    Events = es_core_store:retrieve_events(
+    Events = es_kernel_store:retrieve_events(
         ?ETS_STORE_CONTEXT, Id, es_range:new(0, infinity)
     ),
     ?assertEqual(1, length(Events)),
     [Event] = Events,
-    ?assertEqual(Now, es_core_store:timestamp(Event)).
+    ?assertEqual(Now, es_kernel_store:timestamp(Event)).

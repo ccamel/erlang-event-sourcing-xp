@@ -101,9 +101,9 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
 
 event_to_record(Event) ->
     #event_record{
-        key = es_core_store:id(Event),
-        stream_id = es_core_store:stream_id(Event),
-        sequence = es_core_store:sequence(Event),
+        key = es_kernel_store:id(Event),
+        stream_id = es_kernel_store:stream_id(Event),
+        sequence = es_kernel_store:sequence(Event),
         event = Event
     }.
 
@@ -113,9 +113,9 @@ event_to_record(Event) ->
 store(Snapshot) ->
     try
         Record = #snapshot_record{
-            stream_id = es_core_store:snapshot_stream_id(Snapshot),
-            sequence = es_core_store:snapshot_sequence(Snapshot),
-            timestamp = es_core_store:snapshot_timestamp(Snapshot),
+            stream_id = es_kernel_store:snapshot_stream_id(Snapshot),
+            sequence = es_kernel_store:snapshot_sequence(Snapshot),
+            timestamp = es_kernel_store:snapshot_timestamp(Snapshot),
             snapshot = Snapshot
         },
         true = ets:insert(?SNAPSHOT_TABLE_NAME, Record),
