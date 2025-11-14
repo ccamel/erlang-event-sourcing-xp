@@ -1,0 +1,14 @@
+{application, es_contract, [
+    {description, "Contracts (behaviours and types) for event sourcing components"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib]},
+    {env, []},
+    {modules, [
+        es_aggregate_behaviour,
+        es_event_store_behaviour,
+        es_snapshot_store_behaviour
+    ]},
+    {licenses, ["BSD 3-Clause"]},
+    {links, []}
+]}.

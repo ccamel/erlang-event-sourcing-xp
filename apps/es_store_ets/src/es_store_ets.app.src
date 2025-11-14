@@ -1,0 +1,10 @@
+{application, es_store_ets, [
+    {description, "ETS backend for es_core"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib, es_core]},
+    {env, []},
+    {modules, [es_store_ets]},
+    {licenses, ["BSD 3-Clause"]},
+    {links, []}
+]}.

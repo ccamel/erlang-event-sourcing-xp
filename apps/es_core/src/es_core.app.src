@@ -1,0 +1,15 @@
+{application, es_core, [
+    {description, "Core library for event sourcing implementation in Erlang"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib, es_contract]},
+    {env, []},
+    {modules, [
+        es_core_store,
+        es_core_mgr_aggregate,
+        es_core_aggregate,
+        es_core_mgr_behaviour
+    ]},
+    {licenses, ["BSD 3-Clause"]},
+    {links, []}
+]}.

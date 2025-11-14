@@ -53,8 +53,8 @@ plugins:
   - - "semantic-release-replace-plugin"
     - replacements:
         - files: [rebar.config]
-          from: "{release, {event_sourcing_xp, \".*\"}"
-          to: "{release, {event_sourcing_xp, \"${nextRelease.version}\"}"
+          from: "{release, {es_xp, \".*\"}"
+          to: "{release, {es_xp, \"${nextRelease.version}\"}"
           countMatches: true
           results:
             - file: rebar.config
@@ -69,7 +69,7 @@ plugins:
   - - "@semantic-release/github"
     - successComment: false
       assets:
-        - "_build/prod/rel/event_sourcing_xp/event_sourcing_xp-*.tar.gz"
+        - "_build/prod/rel/es_xp/es_xp-*.tar.gz"
   - - "@semantic-release/git"
     - assets:
         - README.md

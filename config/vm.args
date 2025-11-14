@@ -1,6 +1,6 @@
--sname event_sourcing_xp
+-sname es_xp
 
--setcookie event_sourcing_xp_cookie
+-setcookie es_xp_cookie
 
 +K true
 +A30

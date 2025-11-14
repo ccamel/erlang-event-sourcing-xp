@@ -1,0 +1,10 @@
+{application, es_store_mnesia, [
+    {description, "Mnesia backend for es_core"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib, mnesia, es_core]},
+    {env, []},
+    {modules, [es_store_mnesia]},
+    {licenses, ["BSD 3-Clause"]},
+    {links, []}
+]}.
