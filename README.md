@@ -58,15 +58,15 @@ Start the Erlang [shell](https://www.erlang.org/docs/20/man/shell.html) and run 
 %% Usage:
 %%     rebar3 shell < examples/demo_bank.script
 
-StoreContext = {event_sourcing_store_ets, event_sourcing_store_ets},
+StoreContext = {es_store_ets, es_store_ets},
 
 io:format("~n[1] starting in-memory store (ETS)~n", []),
-StartRes = event_sourcing_core_store:start(StoreContext),
+StartRes = es_kernel_store:start(StoreContext),
 io:format(" -> ~p~n", [StartRes]),
 
 io:format("[2] starting bank account aggregate manager~n", []),
 {ok, BankMgr} =
-    event_sourcing_core_mgr_aggregate:start_link(
+    es_kernel_mgr_aggregate:start_link(
         bank_account_aggregate,
         StoreContext,
         bank_account_aggregate
@@ -76,21 +76,21 @@ io:format(" -> BankMgr pid: ~p~n", [BankMgr]),
 AccountId = <<"bank-account-123">>,
 
 io:format("[3] deposit $100~n", []),
-Res1 = event_sourcing_core_mgr_aggregate:dispatch(
+Res1 = es_kernel_mgr_aggregate:dispatch(
     BankMgr,
     {bank, deposit, AccountId, 100}
 ),
 io:format(" -> ~p~n", [Res1]),
 
 io:format("[4] withdraw $10~n", []),
-Res2 = event_sourcing_core_mgr_aggregate:dispatch(
+Res2 = es_kernel_mgr_aggregate:dispatch(
     BankMgr,
     {bank, withdraw, AccountId, 10}
 ),
 io:format(" -> ~p~n", [Res2]),
 
 io:format("[5] withdraw $1000 (should fail)~n", []),
-Res3 = event_sourcing_core_mgr_aggregate:dispatch(
+Res3 = es_kernel_mgr_aggregate:dispatch(
     BankMgr,
     {bank, withdraw, AccountId, 1000}
 ),
@@ -131,7 +131,7 @@ The event store is a core component in this experiment, designed as a customizab
     when StreamId :: stream_id(),
          FoldFun :: fun((Event :: event(), AccIn) -> AccOut),
          InitialAcc :: term(),
-         Range :: event_sourcing_range:range(),
+         Range :: es_contract_range:range(),
          Acc1 :: term(),
          AccIn :: term(),
          AccOut :: term().
@@ -161,7 +161,7 @@ The snapshot record contains all necessary fields (domain, stream_id, sequence, 
 
 ```erlang
 % Start aggregate with snapshot every 10 events
-event_sourcing_core_aggregate:start_link(
+es_kernel_aggregate:start_link(
     Module,
     Store,
     Id,
@@ -243,7 +243,7 @@ This helps:
 Passivation is configured via a `timeout` value when the aggregate is started (defaults to 5000 ms):
 
 ```erlang
-event_sourcing_core_aggregate:start_link(Module, Store, Id, #{timeout => 10000}).
+es_kernel_aggregate:start_link(Module, Store, Id, #{timeout => 10000}).
 ```
 
 When no messages are received within the timeout window:
@@ -274,9 +274,9 @@ Snapshots provide a performance optimization for aggregate rehydration by avoidi
 
 ```erlang
 % Create aggregate with snapshots every 10 events
-event_sourcing_core_aggregate:start_link(
+es_kernel_aggregate:start_link(
     bank_account_aggregate,
-    event_sourcing_store_ets,
+    es_store_ets,
     <<"account-123">>,
     #{
         timeout => 5000,
@@ -304,8 +304,8 @@ The aggregate manager maintains a mapping of stream IDs to aggregate process PID
 1. The `Router` module extracts the target aggregate type and stream ID from the command.
 2. If the aggregate type matches the manager's configured `Aggregate` module:
    - The manager checks its internal `pids` map for an existing process for the stream ID.
-   - If none exists, it spawns a new `event_sourcing_core_aggregate` process using the provided Aggregate, Store, and stream ID, then monitors it.
-   - The command is forwarded to the aggregate process via `event_sourcing_core_aggregate:dispatch/2`.
+   - If none exists, it spawns a new `es_kernel_aggregate` process using the provided Aggregate, Store, and stream ID, then monitors it.
+   - The command is forwarded to the aggregate process via `es_kernel_aggregate:dispatch/2`.
 3. If the aggregate type mismatches or routing fails, an error is returned.
 
 ```mermaid
@@ -339,33 +339,6 @@ The manager can be configured with options such as:
 - `sequence_zero`: Function to initialize event sequences.
 - `sequence_next`: Function to increment sequences.
 - `now_fun`: Function to provide timestamps.
-
-### Project organization
-
-```plaintext
-apps/
-├── event_sourcing_contract
-│   ├── include/event_sourcing.hrl                  % Shared types and records
-│   └── src                                         % Public behaviours (the contract)
-│       ├── event_sourcing_contract.app.src
-│       ├── event_sourcing_aggregate_behaviour.erl
-│       ├── event_sourcing_event_store_behaviour.erl
-│       └── event_sourcing_snapshot_store_behaviour.erl
-├── event_sourcing_core
-│   ├── src                                         % Core processes built on the contract
-│   │   ├── event_sourcing_core.app.src
-│   │   ├── event_sourcing_core_aggregate.erl
-│   │   ├── event_sourcing_core_mgr_aggregate.erl
-│   │   ├── event_sourcing_core_mgr_behaviour.erl
-│   │   └── event_sourcing_core_store.erl
-│   └── test                                        % Aggregate + store suites
-├── event_sourcing_store_ets
-│   ├── src/event_sourcing_store_ets.erl            % ETS-backed store implementation
-│   └── test                                        % ETS-focused tests (planned)
-└── event_sourcing_store_mnesia
-    ├── src/event_sourcing_store_mnesia.erl         % Mnesia-backed store implementation
-    └── test                                        % Mnesia-focused tests (planned)
-```
 
 ## Build
 
