@@ -69,7 +69,7 @@ jobs:
             -hash-${{ hashFiles('rebar.lock') }}"
 
       - name: Release project
-        uses: cycjimmy/semantic-release-action@v5
+        uses: cycjimmy/semantic-release-action@v6
         with:
           semantic_version: 22.0.5
           branch: main
