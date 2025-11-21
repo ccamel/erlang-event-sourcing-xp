@@ -29,8 +29,6 @@ monitoring them for crashes.
     opts ::
         #{
             timeout => timeout(),
-            sequence_zero => fun(() -> es_contract_event:sequence()),
-            sequence_next => fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
             now_fun => fun(() -> non_neg_integer())
         },
     pids :: #{es_contract_event:stream_id() => pid()}
@@ -47,8 +45,6 @@ Starts the aggregate manager with custom options.
 - Router is the module extracting routing info from commands.
 - Opts is the configuration options:
   - `timeout`: Timeout for operations (default: `infinity`).
-  - `sequence_zero`: Function to initialize sequence (default: returns 0).
-  - `sequence_next`: Function to increment sequence (default: adds 1).
   - `now_fun`: Function to get current timestamp (default: system time).
 
 Function returns `{ok, Pid}` on success, or an error tuple if the server fails to start.
@@ -60,8 +56,6 @@ Function returns `{ok, Pid}` on success, or an error tuple if the server fails t
     Opts ::
         #{
             timeout => timeout(),
-            sequence_zero => fun(() -> es_contract_event:sequence()),
-            sequence_next => fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
             now_fun => fun(() -> non_neg_integer())
         }.
 start_link(Aggregate, StoreContext, Router, Opts) ->
@@ -128,8 +122,6 @@ Function returns `{ok, State}` with an initialized state record.
     Opts ::
         #{
             timeout => timeout(),
-            sequence_zero => fun(() -> es_contract_event:sequence()),
-            sequence_next => fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
             now_fun => fun(() -> non_neg_integer())
         },
     State :: state().
@@ -262,8 +254,6 @@ Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
     Opts ::
         #{
             timeout => timeout(),
-            sequence_zero => fun(() -> es_contract_event:sequence()),
-            sequence_next => fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
             now_fun => fun(() -> non_neg_integer())
         },
     Result :: pid(),

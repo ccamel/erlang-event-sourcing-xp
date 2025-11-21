@@ -92,13 +92,13 @@ It consists of:
 -spec new(domain(), type(), stream_id(), sequence(), metadata(), payload()) -> t().
 new(Domain, Type, StreamId, Sequence, Metadata, Payload) ->
     #{
-        domain    => Domain,
-        type      => Type,
+        domain => Domain,
+        type => Type,
         stream_id => StreamId,
-        sequence  => Sequence,
-        metadata  => Metadata,
-        tags      => [],
-        payload   => Payload
+        sequence => Sequence,
+        metadata => Metadata,
+        tags => [],
+        payload => Payload
     }.
 
 -spec key(t()) -> key().

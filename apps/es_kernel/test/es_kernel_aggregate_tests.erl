@@ -27,7 +27,7 @@ teardown(_) ->
 -define(assertState(Pid, Id, ExpectedState, ExpectedSeq),
     ?assertMatch(
         {state, bank_account_aggregate, ?ETS_STORE_CONTEXT, Id, ExpectedState, ExpectedSeq, _, _, _,
-            _, _, _},
+            _},
         sys:get_state(Pid)
     )
 ).

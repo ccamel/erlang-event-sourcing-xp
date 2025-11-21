@@ -27,8 +27,6 @@
     state :: aggregate_state(),
     sequence = ?SEQUENCE_ZERO :: non_neg_integer(),
     timeout = ?INACTIVITY_TIMEOUT :: timeout(),
-    sequence_zero :: fun(() -> es_contract_event:sequence()),
-    sequence_next :: fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
     now_fun :: fun(() -> non_neg_integer()),
     timer_ref = undefined :: reference() | undefined,
     snapshot_interval = 0 :: non_neg_integer()
@@ -54,8 +52,6 @@ Function returns `{ok, Pid}` if successful, `{error, Reason}` otherwise.
     Opts ::
         #{
             timeout => timeout(),
-            sequence_zero => fun(() -> es_contract_event:sequence()),
-            sequence_next => fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
             now_fun => fun(() -> non_neg_integer()),
             snapshot_interval => non_neg_integer()
         }.
@@ -96,8 +92,6 @@ sequentially to rehydrate the aggregate's state.
 - Id is the unique identifier for the aggregate.
 - Opts is a map of options including:
   - `timeout`: Inactivity timeout in milliseconds.
-  - `sequence_zero`: Function to get the initial sequence number.
-  - `sequence_next`: Function to get the next sequence number.
   - `now_fun`: Function to get the current timestamp.
   - `snapshot_interval`: Interval for snapshot creation.
 
@@ -106,8 +100,6 @@ Function returns {ok, state()} on success, and returns {stop, Reason} on failure
 -spec init(
     {module(), es_kernel_store:store_context(), es_contract_event:stream_id(), #{
         timeout => timeout(),
-        sequence_zero => fun(() -> es_contract_event:sequence()),
-        sequence_next => fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
         now_fun => fun(() -> non_neg_integer()),
         snapshot_interval => non_neg_integer()
     }}
@@ -115,8 +107,6 @@ Function returns {ok, state()} on success, and returns {stop, Reason} on failure
     {ok, state()}.
 init({Aggregate, StoreContext, Id, Opts}) ->
     State0 = Aggregate:init(),
-    SequenceZero = maps:get(sequence_zero, Opts, fun() -> ?SEQUENCE_ZERO end),
-    SequenceNext = maps:get(sequence_next, Opts, fun(Sequence) -> Sequence + 1 end),
 
     %% Try to load the latest snapshot
     {StateFromSnapshot, SequenceFromSnapshot} =
@@ -126,7 +116,7 @@ init({Aggregate, StoreContext, Id, Opts}) ->
                 SnapshotSeq = es_kernel_store:snapshot_sequence(Snapshot),
                 {SnapshotState, SnapshotSeq};
             {error, not_found} ->
-                {State0, SequenceZero()}
+                {State0, ?SEQUENCE_ZERO}
         end,
 
     %% Replay events after the snapshot
@@ -157,8 +147,6 @@ init({Aggregate, StoreContext, Id, Opts}) ->
         state = State1,
         sequence = Sequence1,
         timeout = Timeout,
-        sequence_zero = SequenceZero,
-        sequence_next = SequenceNext,
         now_fun = maps:get(now_fun, Opts, fun() -> erlang:system_time(millisecond) end),
         timer_ref = TimerRef,
         snapshot_interval = SnapshotInterval
@@ -265,7 +253,6 @@ process_command(
         id = Id,
         state = State0,
         sequence = Sequence0,
-        sequence_next = SequenceNext,
         now_fun = NowFun
     },
     Command
@@ -276,10 +263,10 @@ process_command(
             {ok, {State0, Sequence0}};
         {ok, PayloadEvents} when is_list(PayloadEvents) ->
             ok = persist_events(
-                PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, SequenceNext, NowFun}
+                PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, NowFun}
             ),
             {State1, Sequence1} =
-                apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}),
+                apply_events(PayloadEvents, {Aggregate, State0, Sequence0}),
             {ok, {State1, Sequence1}};
         {error, Reason} ->
             {error, Reason}
@@ -290,16 +277,15 @@ process_command(
     {
         Aggregate :: module(),
         State :: aggregate_state(),
-        Sequence0 :: es_contract_event:sequence(),
-        SequenceNext :: fun((es_contract_event:sequence()) -> es_contract_event:sequence())
+        Sequence0 :: es_contract_event:sequence()
     }
 ) ->
     {State :: aggregate_state(), Sequence :: es_contract_event:sequence()}.
-apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}) ->
+apply_events(PayloadEvents, {Aggregate, State0, Sequence0}) ->
     lists:foldl(
         fun(Event, {StateN, SequenceN}) ->
             StateN1 = Aggregate:apply_event(Event, StateN),
-            SequenceN1 = SequenceNext(SequenceN),
+            SequenceN1 = SequenceN + 1,
             {StateN1, SequenceN1}
         end,
         {State0, Sequence0},
@@ -313,16 +299,15 @@ apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}) ->
         StoreContext :: es_kernel_store:store_context(),
         Id :: es_contract_event:stream_id(),
         Sequence0 :: es_contract_event:sequence(),
-        SequenceNext :: fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
         NowFun :: fun(() -> non_neg_integer())
     }
 ) -> ok.
-persist_events(PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, SequenceNext, NowFun}) ->
+persist_events(PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, NowFun}) ->
     {Events, _} =
         lists:foldl(
             fun(PayloadEvent, {Events, SequenceN}) ->
                 Now = NowFun(),
-                SequenceN1 = SequenceNext(SequenceN),
+                SequenceN1 = SequenceN + 1,
                 EventType = Aggregate:event_type(PayloadEvent),
                 Event =
                     es_kernel_store:new_event(

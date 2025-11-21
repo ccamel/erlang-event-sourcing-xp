@@ -51,11 +51,11 @@ A snapshot represents a point-in-time capture of an aggregate's state. It consis
 - `state`: The actual aggregate state at that point in time
 """.
 -type t() :: #{
-    domain    := domain(),
+    domain := domain(),
     stream_id := stream_id(),
-    sequence  := sequence(),
-    metadata  := metadata(),
-    state     := state()
+    sequence := sequence(),
+    metadata := metadata(),
+    state := state()
 }.
 
 -doc """
@@ -72,11 +72,11 @@ a snapshot within the entire snapshot store.
 -spec new(domain(), stream_id(), sequence(), metadata(), state()) -> t().
 new(Domain, StreamId, Sequence, Metadata, State) ->
     #{
-        domain    => Domain,
+        domain => Domain,
         stream_id => StreamId,
-        sequence  => Sequence,
-        metadata  => Metadata,
-        state     => State
+        sequence => Sequence,
+        metadata => Metadata,
+        state => State
     }.
 
 -spec key(t()) -> key().
