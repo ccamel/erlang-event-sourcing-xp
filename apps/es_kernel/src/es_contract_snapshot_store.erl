@@ -20,8 +20,6 @@ Common implementations include key–value stores, databases, or object storage
 systems (e.g., S3).
 """.
 
--include("es_contract.hrl").
-
 -doc """
 Store a snapshot for a stream.
 
@@ -40,7 +38,7 @@ warning is preferred over throwing an exception, as snapshot failures should not
 crash aggregates.
 """.
 -callback store(Snapshot) -> ok | {warning, Reason} when
-    Snapshot :: snapshot(),
+    Snapshot :: es_contract_snapshot:t(),
     Reason :: term().
 
 -doc """
@@ -56,5 +54,5 @@ Returns `{ok, Snapshot}` if a snapshot exists, or `{error, not_found}` if no sna
 has been saved for this stream.
 """.
 -callback load_latest(StreamId) -> {ok, Snapshot} | {error, not_found} when
-    StreamId :: stream_id(),
-    Snapshot :: snapshot().
+    StreamId :: es_contract_snapshot:stream_id(),
+    Snapshot :: es_contract_snapshot:t().

@@ -1,6 +1,5 @@
 -module(es_kernel_aggregate).
 
--include_lib("es_kernel/include/es_contract.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 -behaviour(gen_server).
@@ -16,19 +15,27 @@
     dispatch/2
 ]).
 
--export_type([
-    command/0,
-    aggregate_state/0,
-    stream_id/0,
-    state/0,
-    sequence/0,
-    timestamp/0
-]).
-
 -define(SEQUENCE_ZERO, 0).
 -define(INACTIVITY_TIMEOUT, 5000).
 
 -type aggregate_state() :: es_contract_aggregate:aggregate_state().
+
+-record(state, {
+    aggregate :: module(),
+    store :: es_kernel_store:store_context(),
+    id :: es_contract_event:stream_id(),
+    state :: aggregate_state(),
+    sequence = ?SEQUENCE_ZERO :: non_neg_integer(),
+    timeout = ?INACTIVITY_TIMEOUT :: timeout(),
+    sequence_zero :: fun(() -> es_contract_event:sequence()),
+    sequence_next :: fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
+    now_fun :: fun(() -> non_neg_integer()),
+    timer_ref = undefined :: reference() | undefined,
+    snapshot_interval = 0 :: non_neg_integer()
+}).
+
+-opaque state() :: #state{}.
+-export_type([state/0]).
 
 -doc """
 Starts an aggregate process with a given timeout.
@@ -43,13 +50,13 @@ Function returns `{ok, Pid}` if successful, `{error, Reason}` otherwise.
 -spec start_link(Aggregate, StoreContext, Id, Opts) -> gen_server:start_ret() when
     Aggregate :: module(),
     StoreContext :: es_kernel_store:store_context(),
-    Id :: stream_id(),
+    Id :: es_contract_event:stream_id(),
     Opts ::
         #{
             timeout => timeout(),
-            sequence_zero => fun(() -> sequence()),
-            sequence_next => fun((sequence()) -> sequence()),
-            now_fun => fun(() -> timestamp()),
+            sequence_zero => fun(() -> es_contract_event:sequence()),
+            sequence_next => fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
+            now_fun => fun(() -> non_neg_integer()),
             snapshot_interval => non_neg_integer()
         }.
 start_link(Aggregate, StoreContext, Id, Opts) ->
@@ -65,7 +72,7 @@ Starts a new aggregate process.
 -spec start_link(
     Aggregate :: module(),
     StoreContext :: es_kernel_store:store_context(),
-    Id :: stream_id()
+    Id :: es_contract_event:stream_id()
 ) ->
     gen_server:start_ret().
 start_link(Aggregate, StoreContext, Id) ->
@@ -73,28 +80,11 @@ start_link(Aggregate, StoreContext, Id) ->
 
 -spec dispatch(Pid, Command) -> {ok, Result} | {error, Reason} when
     Pid :: pid(),
-    Command :: command(),
+    Command :: es_contract_command:t(),
     Result :: term(),
     Reason :: term().
 dispatch(Pid, Command) ->
     gen_server:call(Pid, Command).
-
--record(state, {
-    aggregate :: module(),
-    store :: es_kernel_store:store_context(),
-    id :: stream_id(),
-    state :: aggregate_state(),
-    sequence = ?SEQUENCE_ZERO :: non_neg_integer(),
-    timeout = ?INACTIVITY_TIMEOUT :: timeout(),
-    sequence_zero :: fun(() -> sequence()),
-    sequence_next :: fun((sequence()) -> sequence()),
-    now_fun :: fun(() -> timestamp()),
-    timer_ref = undefined :: reference() | undefined,
-    snapshot_interval = 0 :: non_neg_integer()
-}).
-
--opaque state() :: #state{}.
-
 -doc """
 Initializes the aggregate process.
 
@@ -114,11 +104,11 @@ sequentially to rehydrate the aggregate's state.
 Function returns {ok, state()} on success, and returns {stop, Reason} on failure.
 """.
 -spec init(
-    {module(), es_kernel_store:store_context(), stream_id(), #{
+    {module(), es_kernel_store:store_context(), es_contract_event:stream_id(), #{
         timeout => timeout(),
-        sequence_zero => fun(() -> sequence()),
-        sequence_next => fun((sequence()) -> sequence()),
-        now_fun => fun(() -> timestamp()),
+        sequence_zero => fun(() -> es_contract_event:sequence()),
+        sequence_next => fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
+        now_fun => fun(() -> non_neg_integer()),
         snapshot_interval => non_neg_integer()
     }}
 ) ->
@@ -183,7 +173,7 @@ Handles a call to the aggregate.
 
 Function returns A tuple indicating the result of the call and the new state of the aggregate.
 """.
--spec handle_call(Command :: command(), From :: {pid(), term()}, State :: state()) ->
+-spec handle_call(Command :: es_contract_command:t(), From :: {pid(), term()}, State :: state()) ->
     {reply, ok, state()} | {reply, {error, term()}, State :: state()}.
 handle_call(Command, _From, State) ->
     NewTimerRef = install_passivation(State#state.timeout, State#state.timer_ref),
@@ -207,7 +197,7 @@ Handles a cast message (asynchronous message) sent to the aggregate process.
 
 Function returns A tuple indicating no reply and the updated state of the aggregate process.
 """.
--spec handle_cast(Command :: command(), State :: state()) -> {noreply, state()}.
+-spec handle_cast(Command :: es_contract_command:t(), State :: state()) -> {noreply, state()}.
 handle_cast(Command, State) ->
     NewTimerRef = install_passivation(State#state.timeout, State#state.timer_ref),
     case process_command(State, Command) of
@@ -263,9 +253,9 @@ Function returns the new state and sequence of the aggregate after the command i
 """.
 -spec process_command(State, Command) -> {ok, Result} | {error, Reason} when
     State :: state(),
-    Command :: command(),
+    Command :: es_contract_command:t(),
     State1 :: aggregate_state(),
-    Sequence1 :: sequence(),
+    Sequence1 :: es_contract_event:sequence(),
     Result :: {State1, Sequence1},
     Reason :: term().
 process_command(
@@ -296,15 +286,15 @@ process_command(
     end.
 
 -spec apply_events(
-    PayloadEvents :: [event_payload()],
+    PayloadEvents :: [es_contract_event:payload()],
     {
         Aggregate :: module(),
         State :: aggregate_state(),
-        Sequence0 :: sequence(),
-        SequenceNext :: fun((sequence()) -> sequence())
+        Sequence0 :: es_contract_event:sequence(),
+        SequenceNext :: fun((es_contract_event:sequence()) -> es_contract_event:sequence())
     }
 ) ->
-    {State :: aggregate_state(), Sequence :: sequence()}.
+    {State :: aggregate_state(), Sequence :: es_contract_event:sequence()}.
 apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}) ->
     lists:foldl(
         fun(Event, {StateN, SequenceN}) ->
@@ -317,14 +307,14 @@ apply_events(PayloadEvents, {Aggregate, State0, Sequence0, SequenceNext}) ->
     ).
 
 -spec persist_events(
-    PayloadEvents :: [event_payload()],
+    PayloadEvents :: [es_contract_event:payload()],
     {
         Aggregate :: module(),
         StoreContext :: es_kernel_store:store_context(),
-        Id :: stream_id(),
-        Sequence0 :: sequence(),
-        SequenceNext :: fun((sequence()) -> sequence()),
-        NowFun :: fun(() -> timestamp())
+        Id :: es_contract_event:stream_id(),
+        Sequence0 :: es_contract_event:sequence(),
+        SequenceNext :: fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
+        NowFun :: fun(() -> non_neg_integer())
     }
 ) -> ok.
 persist_events(PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, SequenceNext, NowFun}) ->

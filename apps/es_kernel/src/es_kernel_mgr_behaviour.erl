@@ -9,13 +9,12 @@ for commands.
 Implementations of this behaviour are responsible for extracting routing information,
 enabling the aggregate manager to dispatch commands to the correct aggregate instance.
 """.
--include_lib("es_kernel/include/es_contract.hrl").
 
 -doc """
 Extracts the routing information from the command.
 
 The routing information is the aggregate module and the stream id.
 """.
--callback extract_routing(Command :: command()) -> {ok, Route} | {error, Reason} when
-    Route :: {Aggregate :: module(), Id :: stream_id()},
+-callback extract_routing(Command :: es_contract_command:t()) -> {ok, Route} | {error, Reason} when
+    Route :: {Aggregate :: module(), Id :: es_contract_command:stream_id()},
     Reason :: term().

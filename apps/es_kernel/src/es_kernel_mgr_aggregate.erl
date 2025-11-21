@@ -10,8 +10,6 @@ monitoring them for crashes.
 
 -behaviour(gen_server).
 
--include_lib("es_kernel/include/es_contract.hrl").
-
 -export([
     init/1,
     handle_cast/2,
@@ -24,8 +22,6 @@ monitoring them for crashes.
     dispatch/2
 ]).
 
--export_type([command/0, state/0, sequence/0, timestamp/0]).
-
 -record(state, {
     aggregate :: module(),
     store :: es_kernel_store:store_context(),
@@ -33,19 +29,20 @@ monitoring them for crashes.
     opts ::
         #{
             timeout => timeout(),
-            sequence_zero => fun(() -> sequence()),
-            sequence_next => fun((sequence()) -> sequence()),
-            now_fun => fun(() -> timestamp())
+            sequence_zero => fun(() -> es_contract_event:sequence()),
+            sequence_next => fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
+            now_fun => fun(() -> non_neg_integer())
         },
-    pids :: #{stream_id() => pid()}
+    pids :: #{es_contract_event:stream_id() => pid()}
 }).
 
 -opaque state() :: #state{}.
+-export_type([state/0]).
 
 -doc """
 Starts the aggregate manager with custom options.
 
-- Aggregate is he module implementing the aggregate logic.
+- Aggregate is the module implementing the aggregate logic.
 - StoreContext is a `{EventStore, SnapshotStore}` tuple.
 - Router is the module extracting routing info from commands.
 - Opts is the configuration options:
@@ -63,9 +60,9 @@ Function returns `{ok, Pid}` on success, or an error tuple if the server fails t
     Opts ::
         #{
             timeout => timeout(),
-            sequence_zero => fun(() -> sequence()),
-            sequence_next => fun((sequence()) -> sequence()),
-            now_fun => fun(() -> timestamp())
+            sequence_zero => fun(() -> es_contract_event:sequence()),
+            sequence_next => fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
+            now_fun => fun(() -> non_neg_integer())
         }.
 start_link(Aggregate, StoreContext, Router, Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, {Aggregate, StoreContext, Router, Opts}, []).
@@ -111,7 +108,7 @@ Function returns `{ok, Result}` on success, or `{error, Reason}` if routing or e
 """.
 -spec dispatch(Pid, Command) -> {ok, Result} | {error, Reason} when
     Pid :: pid(),
-    Command :: command(),
+    Command :: es_contract_command:t(),
     Result :: term(),
     Reason :: term().
 dispatch(Pid, Command) ->
@@ -131,9 +128,9 @@ Function returns `{ok, State}` with an initialized state record.
     Opts ::
         #{
             timeout => timeout(),
-            sequence_zero => fun(() -> sequence()),
-            sequence_next => fun((sequence()) -> sequence()),
-            now_fun => fun(() -> timestamp())
+            sequence_zero => fun(() -> es_contract_event:sequence()),
+            sequence_next => fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
+            now_fun => fun(() -> non_neg_integer())
         },
     State :: state().
 init({Aggregate, StoreContext, Router, Opts}) ->
@@ -148,7 +145,7 @@ init({Aggregate, StoreContext, Router, Opts}) ->
 -spec handle_call(Command, From, State) ->
     {reply, ok, State} | {reply, {error, Reason}, State}
 when
-    Command :: command(),
+    Command :: es_contract_command:t(),
     From :: {pid(), term()},
     State :: state(),
     Reason :: term().
@@ -163,7 +160,7 @@ handle_call(Command, _From, #state{aggregate = Aggregate, router = Router} = Sta
     end.
 
 -spec handle_cast(Command, State) -> {noreply, State} when
-    Command :: command(),
+    Command :: es_contract_command:t(),
     State :: state().
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -208,8 +205,8 @@ Function returns `{reply, {ok, Result}, State}` or `{reply, {error, Reason}, Sta
 """.
 -spec ensure_and_dispatch(Aggregate, Id, Command, State) -> {reply, Result, State} when
     Aggregate :: module(),
-    Id :: stream_id(),
-    Command :: command(),
+    Id :: es_contract_event:stream_id(),
+    Command :: es_contract_command:t(),
     Result :: term(),
     State :: state().
 ensure_and_dispatch(
@@ -245,7 +242,7 @@ Function returns The result of the aggregate's dispatch function.
 """.
 -spec forward(Pid, Command) -> {ok, Result} | {error, Reason} when
     Pid :: pid(),
-    Command :: command(),
+    Command :: es_contract_command:t(),
     Result :: pid(),
     Reason :: term().
 forward(Pid, Command) ->
@@ -261,13 +258,13 @@ Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
 -spec start_aggregate(Aggregate, StoreContext, Id, Opts) -> {ok, Result} | {error, Reason} when
     Aggregate :: module(),
     StoreContext :: es_kernel_store:store_context(),
-    Id :: stream_id(),
+    Id :: es_contract_event:stream_id(),
     Opts ::
         #{
             timeout => timeout(),
-            sequence_zero => fun(() -> sequence()),
-            sequence_next => fun((sequence()) -> sequence()),
-            now_fun => fun(() -> timestamp())
+            sequence_zero => fun(() -> es_contract_event:sequence()),
+            sequence_next => fun((es_contract_event:sequence()) -> es_contract_event:sequence()),
+            now_fun => fun(() -> non_neg_integer())
         },
     Result :: pid(),
     Reason :: term().
