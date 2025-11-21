@@ -1,7 +1,5 @@
 -module(es_kernel_store_snapshot_stub).
 
--include_lib("es_kernel/include/es_contract.hrl").
-
 -export([start/0, stop/0, store/1, load_latest/1]).
 
 -define(TABLE, ?MODULE).
@@ -26,13 +24,14 @@ stop() ->
             ok
     end.
 
--spec store(snapshot()) -> ok.
+-spec store(es_contract_snapshot:t()) -> ok.
 store(Snapshot) ->
     StreamId = es_kernel_store:snapshot_stream_id(Snapshot),
     ets:insert(?TABLE, {StreamId, Snapshot}),
     ok.
 
--spec load_latest(stream_id()) -> {ok, snapshot()} | {error, not_found}.
+-spec load_latest(es_contract_event:stream_id()) ->
+    {ok, es_contract_snapshot:t()} | {error, not_found}.
 load_latest(StreamId) ->
     case ets:lookup(?TABLE, StreamId) of
         [{_, Snapshot}] ->

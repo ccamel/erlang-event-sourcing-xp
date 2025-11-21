@@ -15,8 +15,6 @@ Implementers are responsible for:
 - Identifying the event type for a payload (`event_type/1`)
 """.
 
--include("es_contract.hrl").
-
 -export_type([aggregate_state/0]).
 
 -type aggregate_state() :: term().
@@ -30,17 +28,7 @@ any events have been applied.
 Function shall return The initial aggregate state.
 """.
 -callback init() -> aggregate_state().
--doc """
-Determine the event type for a given payload.
 
-This is used internally to construct full event records
-during command handling. The returned type is stored in the event store.
-
-- Payload is the raw event payload.
-
-Function shall return an atom representing the event type (e.g., `user_registered`).
-""".
--callback event_type(event_payload()) -> atom().
 -doc """
 Handle a domain command.
 
@@ -48,7 +36,7 @@ This function is responsible for validating and transforming a command
 into one or more domain events. It receives the current state of the
 aggregate and returns either:
 
-- `{ok, [event_payload()]}` — A list of events to persist and apply.
+- `{ok, [es_contract_event:payload()]}` — A list of events to persist and apply.
 - `{error, Reason}` — A reason for rejecting the command.
 
 This function should be pure and side-effect free.
@@ -56,8 +44,10 @@ This function should be pure and side-effect free.
 - Command is the incoming domain command.
 - State is the current aggregate state.
 """.
--callback handle_command(Command, State) -> {ok, [event_payload()]} | {error, term()} when
-    Command :: command(),
+-callback handle_command(Command, State) ->
+    {ok, [es_contract_event:payload()]} | {error, term()}
+when
+    Command :: es_contract_command:t(),
     State :: aggregate_state().
 -doc """
 Apply a domain event to the aggregate state.
@@ -72,6 +62,6 @@ it should always return the same result. It is used both during rehydration
 Function shall return the updated aggregate state.
 """.
 -callback apply_event(Event, State0) -> State1 when
-    Event :: event_payload(),
+    Event :: es_contract_event:payload(),
     State0 :: aggregate_state(),
     State1 :: aggregate_state().

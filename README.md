@@ -336,8 +336,6 @@ flowchart LR
 The manager can be configured with options such as:
 
 - `timeout`: Timeout for operations.
-- `sequence_zero`: Function to initialize event sequences.
-- `sequence_next`: Function to increment sequences.
 - `now_fun`: Function to provide timestamps.
 
 ## Build

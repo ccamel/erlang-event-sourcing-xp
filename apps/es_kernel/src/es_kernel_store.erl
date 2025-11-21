@@ -12,8 +12,6 @@ A `store_context()` is represented as `{EventStore, SnapshotStore}`.
 Both modules may be the same if one backend implements both roles.
 """.
 
--include_lib("es_kernel/include/es_contract.hrl").
-
 -export([
     start/1,
     stop/1,
@@ -40,22 +38,7 @@ Both modules may be the same if one backend implements both roles.
     new_event/8, new_event/6
 ]).
 
--export_type([
-    domain/0,
-    event/0,
-    event_id/0,
-    event_payload/0,
-    event_type/0,
-    metadata/0,
-    sequence/0,
-    stream_id/0,
-    tags/0,
-    timestamp/0,
-    snapshot/0,
-    snapshot_id/0,
-    snapshot_data/0,
-    store_context/0
-]).
+-export_type([store_context/0]).
 
 -type store_backend() :: module().
 -type store_context() :: {store_backend(), store_backend()}.
@@ -89,8 +72,8 @@ atomic persistence and maintains sequence ordering.
 """.
 -spec append(StoreContext, StreamId, Events) -> ok when
     StoreContext :: store_context(),
-    StreamId :: stream_id(),
-    Events :: [event()].
+    StreamId :: es_contract_event:stream_id(),
+    Events :: [es_contract_event:t()].
 append({EventModule, _}, StreamId, Events) when is_list(Events) ->
     %% Validate that all events target the same StreamId
     ok = lists:foreach(
@@ -124,8 +107,8 @@ retrieves events within the specified range and applies the fold function in seq
 """.
 -spec fold(StoreContext, StreamId, Fun, Acc0, Range) -> Acc1 when
     StoreContext :: store_context(),
-    StreamId :: stream_id(),
-    Fun :: fun((Event :: event(), AccIn) -> AccOut),
+    StreamId :: es_contract_event:stream_id(),
+    Fun :: fun((Event :: es_contract_event:t(), AccIn) -> AccOut),
     Acc0 :: term(),
     Range :: es_contract_range:range(),
     Acc1 :: term(),
@@ -141,9 +124,9 @@ This is a convenience wrapper around fold/5 that collects all events into a list
 """.
 -spec retrieve_events(StoreContext, StreamId, Range) -> Result when
     StoreContext :: store_context(),
-    StreamId :: stream_id(),
+    StreamId :: es_contract_event:stream_id(),
     Range :: es_contract_range:range(),
-    Result :: [event()].
+    Result :: [es_contract_event:t()].
 retrieve_events(StoreContext, StreamId, Range) ->
     fold(
         StoreContext,
@@ -154,7 +137,7 @@ retrieve_events(StoreContext, StreamId, Range) ->
     ).
 
 -doc """
-Creates a new event.
+Creates a new event map.
 
 - StreamId is the unique identifier for the stream.
 - Domain is the domain to which the event belongs.
@@ -162,127 +145,112 @@ Creates a new event.
 - Sequence is the sequence number of the event in the stream.
 - Tags is a list of tags associated with the event.
 - Timestamp is the timestamp when the event occurred.
-- Metadata is the additional metadata for the event.
+- Metadata is additional contextual information for the event.
 - Payload is the actual data of the event.
 
-Returns the created event.
+The timestamp is stored inside the metadata map under the `timestamp` key, so callers
+can access it uniformly through metadata.
 """.
 -spec new_event(
-    StreamId :: stream_id(),
-    Domain :: domain(),
-    Type :: event_type(),
-    Seq :: sequence(),
-    Tags :: tags(),
-    Timestamp :: timestamp(),
-    Metadata :: metadata(),
-    Payload :: event_payload()
+    StreamId :: es_contract_event:stream_id(),
+    Domain :: es_contract_event:domain(),
+    Type :: es_contract_event:type(),
+    Seq :: es_contract_event:sequence(),
+    Tags :: es_contract_event:tags(),
+    Timestamp :: non_neg_integer(),
+    Metadata :: es_contract_event:metadata(),
+    Payload :: es_contract_event:payload()
 ) ->
-    event().
+    es_contract_event:t().
 new_event(StreamId, Domain, Type, Sequence, Tags, Timestamp, Metadata, Payload) ->
-    #event{
-        stream_id = StreamId,
-        domain = Domain,
-        type = Type,
-        sequence = Sequence,
-        tags = Tags,
-        timestamp = Timestamp,
-        metadata = Metadata,
-        payload = Payload
-    }.
+    Event0 = es_contract_event:new(
+        Domain,
+        Type,
+        StreamId,
+        Sequence,
+        Metadata#{timestamp => Timestamp},
+        Payload
+    ),
+    es_contract_event:with_tags(Tags, Event0).
 
 -doc """
-Creates a new event.
-
-- StreamId is the unique identifier for the stream.
-- Domain is the domain to which the event belongs.
-- Type is the type of the event.
-- Sequence is the sequence number of the event in the stream.
-- Timestamp is the timestamp when the event occurred.
-- Payload is the actual data of the event.
-
-@return The created event.
+Creates a new event, defaulting tags to `[]` and metadata to `#{}`.
 """.
 -spec new_event(
-    StreamId :: stream_id(),
-    Domain :: domain(),
-    Type :: event_type(),
-    Sequence :: sequence(),
-    Timestamp :: timestamp(),
-    Payload :: event_payload()
+    StreamId :: es_contract_event:stream_id(),
+    Domain :: es_contract_event:domain(),
+    Type :: es_contract_event:type(),
+    Sequence :: es_contract_event:sequence(),
+    Timestamp :: non_neg_integer(),
+    Payload :: es_contract_event:payload()
 ) ->
-    event().
+    es_contract_event:t().
 new_event(StreamId, Domain, Type, Sequence, Timestamp, Payload) ->
     new_event(StreamId, Domain, Type, Sequence, [], Timestamp, #{}, Payload).
 
 -doc """
-Returns the unique identifier of the event.
-The identifier is a string composed of the domain, the stream id and sequence number.
+Returns the unique identifier of the event as `{Domain, StreamId, Sequence}`.
 """.
--spec id(Event :: event()) -> event_id().
-id(#event{
-    domain = Domain,
-    stream_id = StreamId,
-    sequence = Sequence
-}) ->
-    {Domain, StreamId, Sequence}.
+-spec id(Event :: es_contract_event:t()) -> es_contract_event:key().
+id(Event) ->
+    es_contract_event:key(Event).
 
 -doc """
-Returns the event domain, representing the domain context that generated the event.
+Returns the event domain.
 """.
--spec domain(event()) -> domain().
-domain(#event{domain = Domain}) ->
-    Domain.
+-spec domain(es_contract_event:t()) -> es_contract_event:domain().
+domain(Event) ->
+    maps:get(domain, Event).
 
 -doc """
-Returns the event type, representing the specific event that occurred.
+Returns the event type.
 """.
--spec type(event()) -> event_type().
-type(#event{type = Type}) ->
-    Type.
+-spec type(es_contract_event:t()) -> es_contract_event:type().
+type(Event) ->
+    maps:get(type, Event).
 
 -doc """
 Returns the identifier of the event stream to which this event belongs.
 """.
--spec stream_id(event()) -> stream_id().
-stream_id(#event{stream_id = StreamId}) ->
-    StreamId.
+-spec stream_id(es_contract_event:t()) -> es_contract_event:stream_id().
+stream_id(Event) ->
+    maps:get(stream_id, Event).
 
 -doc """
 Returns the sequence number of this event within its stream.
 """.
--spec sequence(event()) -> sequence().
-sequence(#event{sequence = Sequence}) ->
-    Sequence.
+-spec sequence(es_contract_event:t()) -> es_contract_event:sequence().
+sequence(Event) ->
+    maps:get(sequence, Event).
 
 -doc """
-Retrieves a list of tags associated with this event. Tags can be used for
-categorization, filtering, or indexing.
+Retrieves a list of tags associated with this event.
 """.
--spec tags(event()) -> tags().
-tags(#event{tags = Tags}) ->
-    Tags.
+-spec tags(es_contract_event:t()) -> es_contract_event:tags().
+tags(Event) ->
+    maps:get(tags, Event).
 
 -doc """
-Returns the timestamp marking when this event occurred (UTC).
+Returns the timestamp marking when this event occurred. The timestamp is stored
+in the event metadata under the `timestamp` key.
 """.
--spec timestamp(event()) -> timestamp().
-timestamp(#event{timestamp = Timestamp}) ->
-    Timestamp.
+-spec timestamp(es_contract_event:t()) -> non_neg_integer().
+timestamp(Event) ->
+    maps:get(timestamp, metadata(Event)).
 
 -doc """
-Retrieves arbitrary metadata associated with this event. Metadata typically
-includes contextual information.
+Retrieves arbitrary metadata associated with this event.
 """.
--spec metadata(event()) -> metadata().
-metadata(#event{metadata = Metadata}) ->
-    Metadata.
+-spec metadata(es_contract_event:t()) -> es_contract_event:metadata().
+metadata(Event) ->
+    maps:get(metadata, Event).
 
 -doc """
 Retrieves the payload containing the domain-specific data of this event.
 """.
--spec payload(event()) -> event_payload().
-payload(#event{payload = Payload}) ->
-    Payload.
+-spec payload(es_contract_event:t()) -> es_contract_event:payload().
+payload(Event) ->
+    maps:get(payload, Event).
 
 -doc """
 Creates a new snapshot record.
@@ -293,23 +261,18 @@ Creates a new snapshot record.
 - Timestamp is the timestamp when the snapshot was created.
 - State is the aggregate state to snapshot.
 
-Returns the created snapshot record.
+The timestamp is stored inside the snapshot metadata under the `timestamp` key.
 """.
 -spec new_snapshot(Domain, StreamId, Sequence, Timestamp, State) -> Snapshot when
-    Domain :: domain(),
-    StreamId :: stream_id(),
-    Sequence :: sequence(),
-    Timestamp :: timestamp(),
-    State :: snapshot_data(),
-    Snapshot :: snapshot().
+    Domain :: es_contract_event:domain(),
+    StreamId :: es_contract_event:stream_id(),
+    Sequence :: es_contract_event:sequence(),
+    Timestamp :: non_neg_integer(),
+    State :: es_contract_snapshot:state(),
+    Snapshot :: es_contract_snapshot:t().
 new_snapshot(Domain, StreamId, Sequence, Timestamp, State) ->
-    #snapshot{
-        domain = Domain,
-        stream_id = StreamId,
-        sequence = Sequence,
-        timestamp = Timestamp,
-        state = State
-    }.
+    Metadata = #{timestamp => Timestamp},
+    es_contract_snapshot:new(Domain, StreamId, Sequence, Metadata, State).
 
 -doc """
 Stores a snapshot using the specified store module.
@@ -318,16 +281,16 @@ This function delegates snapshot storage to the backend implementation. The snap
 captures aggregate state at a specific sequence number, enabling faster rehydration
 by avoiding full event replay from the stream's beginning.
 
-The snapshot record contains all necessary fields (domain, stream_id, sequence,
-timestamp, state), consistent with event persistence where complete records are
-passed rather than individual fields.
+The snapshot map contains all necessary information (domain, stream_id, sequence,
+metadata, state), consistent with event persistence where complete records are
+passed rather than individual fields. The timestamp is available inside the metadata.
 
 Returns `ok` on success, or `{warning, Reason}` if persistence fails. Warnings are
 preferred over exceptions since snapshots are optimizations, not requirements.
 """.
 -spec store(StoreContext, Snapshot) -> ok | {warning, Reason} when
     StoreContext :: store_context(),
-    Snapshot :: snapshot(),
+    Snapshot :: es_contract_snapshot:t(),
     Reason :: term().
 store({_, SnapshotModule}, Snapshot) ->
     SnapshotModule:store(Snapshot).
@@ -341,45 +304,45 @@ events that occurred after the snapshot's sequence number.
 """.
 -spec load_latest(StoreContext, StreamId) -> {ok, Snapshot} | {error, not_found} when
     StoreContext :: store_context(),
-    StreamId :: stream_id(),
-    Snapshot :: snapshot().
+    StreamId :: es_contract_event:stream_id(),
+    Snapshot :: es_contract_snapshot:t().
 load_latest({_, SnapshotModule}, StreamId) ->
     SnapshotModule:load_latest(StreamId).
 
 -doc """
 Returns the stream identifier of the snapshot.
 """.
--spec snapshot_stream_id(snapshot()) -> stream_id().
-snapshot_stream_id(#snapshot{stream_id = StreamId}) ->
-    StreamId.
+-spec snapshot_stream_id(es_contract_snapshot:t()) -> es_contract_event:stream_id().
+snapshot_stream_id(Snapshot) ->
+    maps:get(stream_id, Snapshot).
 
 -doc """
 Returns the domain of the snapshot.
 """.
--spec snapshot_domain(snapshot()) -> domain().
-snapshot_domain(#snapshot{domain = Domain}) ->
-    Domain.
+-spec snapshot_domain(es_contract_snapshot:t()) -> es_contract_event:domain().
+snapshot_domain(Snapshot) ->
+    maps:get(domain, Snapshot).
 
 -doc """
 Returns the sequence number of the snapshot (last event included).
 """.
--spec snapshot_sequence(snapshot()) -> sequence().
-snapshot_sequence(#snapshot{sequence = Sequence}) ->
-    Sequence.
+-spec snapshot_sequence(es_contract_snapshot:t()) -> es_contract_event:sequence().
+snapshot_sequence(Snapshot) ->
+    maps:get(sequence, Snapshot).
 
 -doc """
 Returns the timestamp when the snapshot was created.
 """.
--spec snapshot_timestamp(snapshot()) -> timestamp().
-snapshot_timestamp(#snapshot{timestamp = Timestamp}) ->
-    Timestamp.
+-spec snapshot_timestamp(es_contract_snapshot:t()) -> non_neg_integer().
+snapshot_timestamp(Snapshot) ->
+    maps:get(timestamp, maps:get(metadata, Snapshot)).
 
 -doc """
 Returns the state stored in the snapshot.
 """.
--spec snapshot_state(snapshot()) -> snapshot_data().
-snapshot_state(#snapshot{state = State}) ->
-    State.
+-spec snapshot_state(es_contract_snapshot:t()) -> es_contract_snapshot:state().
+snapshot_state(Snapshot) ->
+    maps:get(state, Snapshot).
 
 %% @private
 -spec ensure_started(module()) -> ok | no_return().

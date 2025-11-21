@@ -5,6 +5,13 @@
     {applications, [kernel, stdlib]},
     {env, []},
     {modules, [
+        es_contract_aggregate,
+        es_contract_command,
+        es_contract_event_store,
+        es_contract_event,
+        es_contract_range,
+        es_contract_snapshot_store,
+        es_contract_snapshot,
         es_kernel_store,
         es_kernel_mgr_aggregate,
         es_kernel_aggregate,
