@@ -9,8 +9,6 @@ suite_test_() ->
     Stores = [?MNESIA_STORE_CONTEXT, ?ETS_STORE_CONTEXT],
     BaseTests =
         [
-            {"start_once", fun start_once/1},
-            {"start_multiple_times", fun start_multiple_times/1},
             {"persist_single_event", fun persist_single_event/1},
             {"persist_2_streams_event", fun persist_2_streams_event/1},
             {"fetch_streams_event", fun fetch_streams_event/1},
@@ -39,17 +37,28 @@ teardown(_) ->
     mnesia:stop(),
     ok.
 
+%%% Helper functions
+
+start_store({EventStore, SnapshotStore}) ->
+    EventStore:start(),
+    case SnapshotStore =:= EventStore of
+        true -> ok;
+        false -> SnapshotStore:start()
+    end.
+
+stop_store({EventStore, SnapshotStore}) ->
+    case SnapshotStore =:= EventStore of
+        true ->
+            EventStore:stop();
+        false ->
+            SnapshotStore:stop(),
+            EventStore:stop()
+    end.
+
 %%% Test cases
 
-start_once(Store) ->
-    ?assertMatch(ok, es_kernel_store:start(Store)).
-
-start_multiple_times(Store) ->
-    ?assertMatch(ok, es_kernel_store:start(Store)),
-    ?assertMatch(ok, es_kernel_store:start(Store)).
-
 persist_single_event(Store) ->
-    ?assertMatch(ok, es_kernel_store:start(Store)),
+    start_store(Store),
     Timestamp = erlang:system_time(),
     Event =
         es_kernel_store:new_event(
@@ -68,10 +77,10 @@ persist_single_event(Store) ->
             Store, stream_A, es_contract_range:new(0, infinity)
         )
     ),
-    ?assertEqual(ok, es_kernel_store:stop(Store)).
+    stop_store(Store).
 
 persist_2_streams_event(Store) ->
-    ?assertMatch(ok, es_kernel_store:start(Store)),
+    start_store(Store),
     Timestamp = erlang:system_time(),
 
     EventStreamA =
@@ -112,10 +121,10 @@ persist_2_streams_event(Store) ->
             Store, stream_B, es_contract_range:new(0, infinity)
         )
     ),
-    ?assertEqual(ok, es_kernel_store:stop(Store)).
+    ?assertEqual(ok, stop_store(Store)).
 
 fetch_streams_event(Store) ->
-    ?assertMatch(ok, es_kernel_store:start(Store)),
+    ?assertMatch(ok, start_store(Store)),
     Timestamp = erlang:system_time(),
     Events =
         [
@@ -191,10 +200,10 @@ fetch_streams_event(Store) ->
             Store, stream_A, es_contract_range:new(0, infinity)
         )
     ),
-    ?assertEqual(ok, es_kernel_store:stop(Store)).
+    ?assertEqual(ok, stop_store(Store)).
 
 wrong_stream_id(Store) ->
-    ?assertMatch(ok, es_kernel_store:start(Store)),
+    ?assertMatch(ok, start_store(Store)),
     Timestamp = erlang:system_time(),
     Event =
         es_kernel_store:new_event(
@@ -223,10 +232,10 @@ wrong_stream_id(Store) ->
             Store, stream_B, es_contract_range:new(0, infinity)
         )
     ),
-    ?assertEqual(ok, es_kernel_store:stop(Store)).
+    ?assertEqual(ok, stop_store(Store)).
 
 duplicate_event(Store) ->
-    ?assertMatch(ok, es_kernel_store:start(Store)),
+    ?assertMatch(ok, start_store(Store)),
     Timestamp = erlang:system_time(),
     Event =
         es_kernel_store:new_event(
@@ -289,18 +298,18 @@ duplicate_event(Store) ->
             Store, stream_B, es_contract_range:new(0, infinity)
         )
     ),
-    ?assertEqual(ok, es_kernel_store:stop(Store)).
+    ?assertEqual(ok, stop_store(Store)).
 
 snapshot_not_found(Store) ->
-    ?assertMatch(ok, es_kernel_store:start(Store)),
+    ?assertMatch(ok, start_store(Store)),
     ?assertMatch(
         {error, not_found},
         es_kernel_store:load_latest(Store, stream_A)
     ),
-    ?assertEqual(ok, es_kernel_store:stop(Store)).
+    ?assertEqual(ok, stop_store(Store)).
 
 save_and_retrieve_snapshot(Store) ->
-    ?assertMatch(ok, es_kernel_store:start(Store)),
+    ?assertMatch(ok, start_store(Store)),
     Timestamp = erlang:system_time(),
     State = #{balance => 100, name => "John"},
     Sequence = 5,
@@ -316,10 +325,10 @@ save_and_retrieve_snapshot(Store) ->
     ?assertEqual(Timestamp, es_kernel_store:snapshot_timestamp(RetrievedSnapshot)),
     ?assertEqual(State, es_kernel_store:snapshot_state(RetrievedSnapshot)),
 
-    ?assertEqual(ok, es_kernel_store:stop(Store)).
+    ?assertEqual(ok, stop_store(Store)).
 
 overwrite_snapshot(Store) ->
-    ?assertMatch(ok, es_kernel_store:start(Store)),
+    ?assertMatch(ok, start_store(Store)),
     Timestamp1 = erlang:system_time(),
     State1 = #{balance => 100},
     Sequence1 = 5,
@@ -345,11 +354,11 @@ overwrite_snapshot(Store) ->
     ?assertEqual(Sequence2, es_kernel_store:snapshot_sequence(RetrievedSnapshot)),
     ?assertEqual(State2, es_kernel_store:snapshot_state(RetrievedSnapshot)),
 
-    ?assertEqual(ok, es_kernel_store:stop(Store)).
+    ?assertEqual(ok, stop_store(Store)).
 
 composite_store_supports_mixed_backends() ->
     Store = {es_store_ets, es_kernel_store_snapshot_stub},
-    ?assertMatch(ok, es_kernel_store:start(Store)),
+    ?assertMatch(ok, start_store(Store)),
 
     Timestamp = erlang:system_time(),
     Event =
@@ -377,11 +386,11 @@ composite_store_supports_mixed_backends() ->
     ?assertEqual(1, es_kernel_store:snapshot_sequence(RetrievedSnapshot)),
     ?assertEqual(#{balance => 100}, es_kernel_store:snapshot_state(RetrievedSnapshot)),
 
-    ?assertEqual(ok, es_kernel_store:stop(Store)).
+    ?assertEqual(ok, stop_store(Store)).
 
 snapshot_save_error(?ETS_STORE_CONTEXT = Store) ->
-    ?assertMatch(ok, es_kernel_store:start(Store)),
-    ?assertEqual(ok, es_kernel_store:stop(Store)),
+    ?assertMatch(ok, start_store(Store)),
+    ?assertEqual(ok, stop_store(Store)),
 
     %% Attempting to save a snapshot to a stopped ETS store should return a warning
     Timestamp = erlang:system_time(),
@@ -398,7 +407,7 @@ snapshot_save_error(?MNESIA_STORE_CONTEXT = Store) ->
     %% For Mnesia, the store persists even after stop() is called.
     %% Test that the error handling works correctly by verifying successful save
     %% The error path is tested implicitly through the try/catch in the implementation
-    ?assertMatch(ok, es_kernel_store:start(Store)),
+    ?assertMatch(ok, start_store(Store)),
 
     Timestamp = erlang:system_time(),
     State = #{balance => 100},
@@ -410,7 +419,7 @@ snapshot_save_error(?MNESIA_STORE_CONTEXT = Store) ->
     %% Normal save should still return ok
     ?assertMatch(ok, es_kernel_store:store(Store, Snapshot)),
 
-    ?assertEqual(ok, es_kernel_store:stop(Store)).
+    ?assertEqual(ok, stop_store(Store)).
 
 store_label({EventStore, SnapshotStore}) ->
     lists:flatten(io_lib:format("~p-~p", [EventStore, SnapshotStore])).

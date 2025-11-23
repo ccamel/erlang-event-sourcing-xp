@@ -3,10 +3,10 @@
 Behaviour for **snapshot store backends**.
 
 A snapshot store backend handles persistence of aggregate snapshots — condensed
-representations of the state after applying a set of events.
+representations of the state after applying a set of events. It defines the
+functional capabilities for snapshot operations, independent of lifecycle concerns.
 
 Callbacks:
-- `start/0`, `stop/0` — manage backend initialization and shutdown
 - `store/1` — persist a snapshot of the aggregate state
 - `load_latest/1` — fetch the most recent snapshot for a given stream
 
@@ -18,6 +18,9 @@ Design principles:
 
 Common implementations include key–value stores, databases, or object storage
 systems (e.g., S3).
+
+Note: Backend implementations may provide `start/0` and `stop/0` functions for
+lifecycle management, but these are not part of this behaviour contract.
 """.
 
 -doc """

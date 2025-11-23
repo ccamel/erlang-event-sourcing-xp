@@ -23,8 +23,9 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 
 ## Features
 
+- **Kernel OTP app** — packaged as an OTP application with a supervision tree (`es_kernel_sup`) that boots a dynamic aggregate supervisor and a singleton aggregate manager. Configure stores via application env, start with `application:ensure_all_started/1`, and dispatch commands through `es_kernel:dispatch/1`.
 - **Aggregate** — a reusable [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) harness that keeps domain logic pure while delegating event sourcing boilerplate.
-- **Aggregate Manager** — a router and lifecycle supervisor that spins up aggregates on demand, rehydrates them from persisted events, and passivates idle instances.
+- **Aggregate Manager** — a singleton router that spins up aggregates on demand via the dynamic supervisor, rehydrates them from persisted events, monitors them, and passivates idle instances.
 - **Event Store** — a behaviour-driven abstraction with drop-in backends so you can pick the storage engine that fits your deployment.
 - **Snapshots** — automatic checkpointing at configurable intervals to avoid replaying entire streams.
 - **Passivation** — idle aggregates are shut down cleanly and will rehydrate from the store on the next command.
@@ -42,7 +43,7 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 
 This project is a work in progress, and I welcome any feedback or contributions. If you're interested in [Event Sourcing](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing), [Erlang/OTP](https://www.erlang.org/), or both, feel free to reach out!
 
-Start the Erlang [shell](https://www.erlang.org/docs/20/man/shell.html) and run the following commands to play with the example:
+Start the Erlang [shell](https://www.erlang.org/docs/20/man/shell.html) and run the following commands to play with the example. The kernel now runs as an OTP application that boots a supervisor tree with a singleton aggregate manager; commands are dispatched through `es_kernel:dispatch/1`.
 
 <!-- DEMO-START -->
 
@@ -53,48 +54,50 @@ Start the Erlang [shell](https://www.erlang.org/docs/20/man/shell.html) and run 
 %% of domain events representing deposits and withdrawals.
 %% Each command sent to the aggregate produces an event persisted
 %% through the in-memory ETS backend (used here for both events
-%% and snapshots).
+%% and snapshots). The event/snapshot stores must be started before
+%% booting the es_kernel application.
 
 %% Usage:
 %%     rebar3 shell < examples/demo_bank.script
 
-StoreContext = {es_store_ets, es_store_ets},
+%% Configure the kernel to use ETS for both events and snapshots
+application:load(es_kernel),
+application:set_env(es_kernel, event_store, es_store_ets),
+application:set_env(es_kernel, snapshot_store, es_store_ets),
 
+%% Start the configured stores (required for ETS table creation)
 io:format("~n[1] starting in-memory store (ETS)~n", []),
-StartRes = es_kernel_store:start(StoreContext),
-io:format(" -> ~p~n", [StartRes]),
+ok = es_store_ets:start(),
+io:format(" -> ok~n", []),
 
-io:format("[2] starting bank account aggregate manager~n", []),
-{ok, BankMgr} =
-    es_kernel_mgr_aggregate:start_link(
-        bank_account_aggregate,
-        StoreContext,
-        bank_account_aggregate
-    ),
-io:format(" -> BankMgr pid: ~p~n", [BankMgr]),
+%% Boot the es_kernel OTP application (supervision tree + singleton manager)
+io:format("[2] starting es_kernel application~n", []),
+{ok, Started} = application:ensure_all_started(es_kernel),
+io:format(" -> ~p~n", [Started]),
 
 AccountId = <<"bank-account-123">>,
 
+Dispatch = fun(Type, Amount) ->
+    Command =
+        es_contract_command:new(
+            bank_account_aggregate,
+            Type,
+            AccountId,
+            0,
+            #{},
+            #{amount => Amount}
+        ),
+    es_kernel:dispatch(Command)
+end,
+
 io:format("[3] deposit $100~n", []),
-Res1 = es_kernel_mgr_aggregate:dispatch(
-    BankMgr,
-    {bank, deposit, AccountId, 100}
-),
-io:format(" -> ~p~n", [Res1]),
+io:format(" -> ~p~n", [Dispatch(deposit, 100)]),
 
 io:format("[4] withdraw $10~n", []),
-Res2 = es_kernel_mgr_aggregate:dispatch(
-    BankMgr,
-    {bank, withdraw, AccountId, 10}
-),
-io:format(" -> ~p~n", [Res2]),
+io:format(" -> ~p~n", [Dispatch(withdraw, 10)]),
 
 io:format("[5] withdraw $1000 (should fail)~n", []),
-Res3 = es_kernel_mgr_aggregate:dispatch(
-    BankMgr,
-    {bank, withdraw, AccountId, 1000}
-),
-io:format(" -> ~p~n", [Res3]),
+io:format(" -> ~p~n", [Dispatch(withdraw, 1000)]),
 
 ok.
 ```
@@ -109,6 +112,15 @@ This project is structured around the core principles of Event Sourcing:
 - All changes are represented as immutable events.
 - Aggregates handle commands and apply events to evolve their state.
 - State is rehydrated by replaying historical events. Possible optimizations include snapshots and caching.
+
+### Kernel application & supervision
+
+- `es_kernel` ships as an OTP application. Start it with `application:ensure_all_started(es_kernel)` after configuring `event_store` and `snapshot_store` (defaults to `es_store_ets`).
+- Start the configured store backends first (e.g., `es_store_ets:start/0`) so tables/processes exist before aggregates boot.
+- The top-level supervisor (`es_kernel_sup`) starts:
+  - `es_kernel_aggregate_sup`: a dynamic supervisor that spawns `es_kernel_aggregate` processes on demand.
+  - `es_kernel_mgr_aggregate`: a registered singleton that routes commands to aggregates and keeps track of live PIDs.
+- Commands are dispatched through the public API `es_kernel:dispatch/1`, which forwards to the registered manager.
 
 ### Event store
 
@@ -206,28 +218,27 @@ The following diagram shows how the system processes a command using the event-s
 ```mermaid
 sequenceDiagram
     actor User
-    participant GenAggregate as aggregate
-    participant GenServer as gen_server
+    participant Kernel as es_kernel (API)
+    participant AggMgr as es_kernel_mgr_aggregate
+    participant AggSup as es_kernel_aggregate_sup
+    participant Agg as es_kernel_aggregate
     participant DomainModule as AggregateModule (callback)
 
-    User ->> GenAggregate: gen_aggregate:start_link(...)
-    activate GenAggregate
-    GenAggregate ->>+ GenServer: gen_server:start_link(Module, State)
-    GenServer ->> GenAggregate: gen_aggregate:init/1
-    deactivate GenAggregate
+    User ->> Kernel: es_kernel:dispatch(Command)
+    Kernel ->> AggMgr: gen_server:call(?MODULE, Command)
 
-    User ->> GenAggregate: gen_aggregate:dispatch(Pid, Command)
-    activate GenAggregate
-    GenAggregate ->> GenServer: gen_server:call(Pid, Command)
-    GenServer ->> GenAggregate: gen_aggregate:handle_call/3
+    alt aggregate not running
+        AggMgr ->> AggSup: start_aggregate(Module, Store, Id, Opts)
+        AggSup -->> AggMgr: {ok, Pid}
+    end
 
-    GenAggregate ->> DomainModule: handle_command(Command, State)
-    GenAggregate ->> GenAggregate: persist_events(Store, Events)
+    AggMgr ->> Agg: es_kernel_aggregate:execute(Pid, Command)
+    Agg ->> DomainModule: handle_command(Command, State)
+    Agg ->> Agg: persist_events(Store, Events)
 
     loop For each Event
-        GenAggregate ->> DomainModule: apply_event(Event, State)
+        Agg ->> DomainModule: apply_event(Event, State)
     end
-    deactivate GenAggregate
 ```
 
 #### Passivation
@@ -289,54 +300,61 @@ Setting `snapshot_interval => 0` (the default) disables automatic snapshotting.
 
 ### Aggregate Manager
 
-The _aggregate manager_ is implemented as a [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html). It serves as a router and supervisor for aggregate processes, ensuring that commands are dispatched to the correct aggregate instance based on their stream ID.
+The _aggregate manager_ is a [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) started by `es_kernel_sup` and registered as `es_kernel_mgr_aggregate`. It routes `es_contract_command:t()` to the right aggregate process (keyed by `{domain, stream_id}`), spins up instances via the dynamic supervisor, and monitors them to keep its registry clean. The store context is taken from the `es_kernel` application environment, and the public entrypoint `es_kernel:dispatch/1` forwards to this singleton.
 
 The manager is responsible for:
 
-- Routing commands to the appropriate aggregate process.
-- Managing the lifecycle of aggregate instances, starting new ones as needed.
-- Monitoring aggregate processes and cleaning up when they terminate.
+- Routing commands to the appropriate aggregate process across all domains.
+- Starting aggregate instances on demand through `es_kernel_aggregate_sup`.
+- Monitoring aggregate processes (for passivation or crashes) and cleaning up registry entries when they terminate.
 
 #### How it works
 
-The aggregate manager maintains a mapping of stream IDs to aggregate process PIDs. When a command is received:
+The aggregate manager maintains a mapping of `{AggregateModule, StreamId}` to aggregate process PIDs. When a command is received (typically via `es_kernel:dispatch/1`):
 
-1. The `Router` module extracts the target aggregate type and stream ID from the command.
-2. If the aggregate type matches the manager's configured `Aggregate` module:
-   - The manager checks its internal `pids` map for an existing process for the stream ID.
-   - If none exists, it spawns a new `es_kernel_aggregate` process using the provided Aggregate, Store, and stream ID, then monitors it.
-   - The command is forwarded to the aggregate process via `es_kernel_aggregate:dispatch/2`.
-3. If the aggregate type mismatches or routing fails, an error is returned.
+1. It pattern matches the `domain` and `stream_id` from the command map.
+2. The internal `pids` map is checked for an existing aggregate instance.
+3. If none exists, the manager asks `es_kernel_aggregate_sup` to start the aggregate, monitors the new PID, and stores it in the registry.
+4. The command is forwarded to the aggregate via `es_kernel_aggregate:execute/2`.
+5. When an aggregate terminates (passivation or crash), the monitor `'DOWN'` message removes it from the registry so a new command will recreate it if needed.
 
 ```mermaid
 flowchart LR
-    %% Aggregate Managers
-    Mgr1((Agg. Mgr<br>Order)):::manager
-    Mgr2((Agg. Mgr<br>User)):::manager
-    Mgr3((Agg. Mgr<br>Bank)):::manager
+    %% Supervision tree
+    Kernel((es_kernel<br>application)):::app
+    KernelSup([es_kernel_sup]):::supervisor
+    AggSup([es_kernel_aggregate_sup]):::supervisor
+    AggMgr([es_kernel_mgr_aggregate<br>singleton]):::manager
 
     %% Aggregate Instances
-    Agg1((Order<br>order-123)):::aggregate
-    Agg1((Order<br>order-123)):::aggregate
-    Agg2((Order<br>order-456)):::aggregate
-    Agg2((Order<br>order-456)):::aggregate
+    AggOrder((order<br>order-123)):::aggregate
+    AggUser((user<br>user-456)):::aggregate
 
-    Agg3((User<br>user-123)):::aggregate
+    Kernel --> KernelSup
+    KernelSup -.->|supervises| AggSup
+    KernelSup -.->|supervises| AggMgr
+    AggSup -.->|starts| AggOrder
+    AggSup -.->|starts| AggUser
+    AggMgr -->|cmd| AggOrder
+    AggMgr -->|cmd| AggUser
+    AggMgr -.->|monitor| AggOrder
+    AggMgr -.->|monitor| AggUser
 
-    Mgr1 -->|cmd| Agg1
-    Mgr1 -.-|monitoring| Agg1
-    Mgr1 -->|cmd| Agg2
-    Mgr1 -.-|monitoring| Agg2
-    Mgr2 -->|cmd| Agg3
-    Mgr2 -.-|monitoring| Agg3
+    AggOrder -->|apply<br>events| AggOrder
+    AggUser -->|apply<br>events| AggUser
+
+    classDef supervisor stroke-dasharray: 5 5,stroke-width:2;
+    classDef manager stroke:#5b4ae0,stroke-width:2;
+    classDef aggregate stroke:#222,stroke-width:1.5;
+    classDef app stroke:#0b67a3,stroke-width:2;
 ```
 
 #### Options
 
-The manager can be configured with options such as:
+The manager options are applied to the aggregates it starts:
 
-- `timeout`: Timeout for operations.
-- `now_fun`: Function to provide timestamps.
+- `timeout`: Inactivity timeout passed to aggregates.
+- `now_fun`: Function to provide timestamps for events/snapshots.
 
 ## Build
 

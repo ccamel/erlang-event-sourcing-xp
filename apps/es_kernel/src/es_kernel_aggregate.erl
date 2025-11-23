@@ -12,7 +12,7 @@
     handle_cast/2,
     code_change/3,
     terminate/2,
-    dispatch/2
+    execute/2
 ]).
 
 -define(SEQUENCE_ZERO, 0).
@@ -36,14 +36,12 @@
 -export_type([state/0]).
 
 -doc """
-Starts an aggregate process with a given timeout.
+Starts an aggregate process for a given aggregate module and stream.
 
-- Aggregate is the aggregate module implementing the behavior.
-- StoreContext is a `{EventStore, SnapshotStore}` tuple.
-- Id is the unique identifier for the aggregate instance.
-- Timeout is the inactivity timeout in milliseconds before passivation.
-
-Function returns `{ok, Pid}` if successful, `{error, Reason}` otherwise.
+- Aggregate is the module implementing the domain aggregate.
+- StoreContext is the `{EventStore, SnapshotStore}` context.
+- Id is the identifier for the aggregate instance.
+- Opts controls inactivity timeout, time source, and snapshot interval.
 """.
 -spec start_link(Aggregate, StoreContext, Id, Opts) -> gen_server:start_ret() when
     Aggregate :: module(),
@@ -59,11 +57,7 @@ start_link(Aggregate, StoreContext, Id, Opts) ->
     gen_server:start_link(?MODULE, {Aggregate, StoreContext, Id, Opts}, []).
 
 -doc """
-Starts a new aggregate process.
-
-- Aggregate is the aggregate module to start.
-- StoreContext must be provided as `{EventStore, SnapshotStore}`.
-- Id is the unique identifier for the aggregate instance.
+Starts an aggregate process with default options.
 """.
 -spec start_link(
     Aggregate :: module(),
@@ -74,28 +68,25 @@ Starts a new aggregate process.
 start_link(Aggregate, StoreContext, Id) ->
     start_link(Aggregate, StoreContext, Id, #{}).
 
--spec dispatch(Pid, Command) -> {ok, Result} | {error, Reason} when
+-doc """
+Executes a command on an aggregate process.
+
+Sends a command to a running aggregate and waits for the result. Returns
+`ok` if the command was handled successfully, or `{error, Reason}` if
+it failed.
+""".
+-spec execute(Pid, Command) -> ok | {error, Reason} when
     Pid :: pid(),
     Command :: es_contract_command:t(),
-    Result :: term(),
     Reason :: term().
-dispatch(Pid, Command) ->
+execute(Pid, Command) ->
     gen_server:call(Pid, Command).
 -doc """
 Initializes the aggregate process.
 
-Retrieves all events for the aggregate from the persistence layer and applies them
-sequentially to rehydrate the aggregate's state.
-
-- Aggregate is the aggregate module implementing the domain logic.
-- StoreContext is a `{EventStore, SnapshotStore}` tuple used for event and snapshot persistence.
-- Id is the unique identifier for the aggregate.
-- Opts is a map of options including:
-  - `timeout`: Inactivity timeout in milliseconds.
-  - `now_fun`: Function to get the current timestamp.
-  - `snapshot_interval`: Interval for snapshot creation.
-
-Function returns {ok, state()} on success, and returns {stop, Reason} on failure.
+Rehydrates the aggregate state from the store and installs the
+passivation timer. Options control inactivity timeout, time source, and
+snapshot interval.
 """.
 -spec init(
     {module(), es_kernel_store:store_context(), es_contract_event:stream_id(), #{
@@ -106,37 +97,7 @@ Function returns {ok, state()} on success, and returns {stop, Reason} on failure
 ) ->
     {ok, state()}.
 init({Aggregate, StoreContext, Id, Opts}) ->
-    State0 = Aggregate:init(),
-
-    %% Try to load the latest snapshot
-    {StateFromSnapshot, SequenceFromSnapshot} =
-        case es_kernel_store:load_latest(StoreContext, Id) of
-            {ok, Snapshot} ->
-                SnapshotState = es_kernel_store:snapshot_state(Snapshot),
-                SnapshotSeq = es_kernel_store:snapshot_sequence(Snapshot),
-                {SnapshotState, SnapshotSeq};
-            {error, not_found} ->
-                {State0, ?SEQUENCE_ZERO}
-        end,
-
-    %% Replay events after the snapshot
-    FoldFun =
-        fun(Event, {StateAcc, _SeqAcc}) ->
-            {
-                Aggregate:apply_event(
-                    es_kernel_store:payload(Event), StateAcc
-                ),
-                es_kernel_store:sequence(Event)
-            }
-        end,
-    {State1, Sequence1} =
-        es_kernel_store:fold(
-            StoreContext,
-            Id,
-            FoldFun,
-            {StateFromSnapshot, SequenceFromSnapshot},
-            es_contract_range:new(SequenceFromSnapshot + 1, infinity)
-        ),
+    {State1, Sequence1} = rehydrate(Aggregate, StoreContext, Id),
     Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
     SnapshotInterval = maps:get(snapshot_interval, Opts, 0),
     TimerRef = install_passivation(Timeout, undefined),
@@ -153,13 +114,52 @@ init({Aggregate, StoreContext, Id, Opts}) ->
     }}.
 
 -doc """
-Handles a call to the aggregate.
+Rehydrates the aggregate state from the persistence layer.
 
-- Command is the command to be processed by the aggregate.
-- From is the caller's process identifier and a reference term.
-- State is the current state of the aggregate.
+Loads the latest snapshot if available, then replays subsequent events
+to rebuild the current state. Returns `{State, Sequence}` where
+`State` is the aggregate state and `Sequence` the last applied event
+sequence.
+""".
+-spec rehydrate(Aggregate, StoreContext, Id) -> {State, Sequence} when
+    Aggregate :: module(),
+    StoreContext :: es_kernel_store:store_context(),
+    Id :: es_contract_event:stream_id(),
+    State :: aggregate_state(),
+    Sequence :: non_neg_integer().
+rehydrate(Aggregate, StoreContext, Id) ->
+    State0 = Aggregate:init(),
+    {StateFromSnapshot, SequenceFromSnapshot} =
+        case es_kernel_store:load_latest(StoreContext, Id) of
+            {ok, Snapshot} ->
+                SnapshotState = es_kernel_store:snapshot_state(Snapshot),
+                SnapshotSeq = es_kernel_store:snapshot_sequence(Snapshot),
+                {SnapshotState, SnapshotSeq};
+            {error, not_found} ->
+                {State0, ?SEQUENCE_ZERO}
+        end,
+    FoldFun =
+        fun(Event, {StateAcc, _SeqAcc}) ->
+            {
+                Aggregate:apply_event(
+                    es_kernel_store:payload(Event), StateAcc
+                ),
+                es_kernel_store:sequence(Event)
+            }
+        end,
+    es_kernel_store:fold(
+        StoreContext,
+        Id,
+        FoldFun,
+        {StateFromSnapshot, SequenceFromSnapshot},
+        es_contract_range:new(SequenceFromSnapshot + 1, infinity)
+    ).
 
-Function returns A tuple indicating the result of the call and the new state of the aggregate.
+-doc """
+Handles synchronous commands sent to the aggregate.
+
+Processes the command, updates state and sequence if needed, and
+returns `ok` or `{error, Reason}` to the caller.
 """.
 -spec handle_call(Command :: es_contract_command:t(), From :: {pid(), term()}, State :: state()) ->
     {reply, ok, state()} | {reply, {error, term()}, State :: state()}.
@@ -178,12 +178,10 @@ handle_call(Command, _From, State) ->
     end.
 
 -doc """
-Handles a cast message (asynchronous message) sent to the aggregate process.
+Handles asynchronous commands sent to the aggregate.
 
-- Command is the command to be processed by the aggregate.
-- State is the current state of the aggregate process.
-
-Function returns A tuple indicating no reply and the updated state of the aggregate process.
+Processes the command and updates state and sequence if needed without
+replying to the caller.
 """.
 -spec handle_cast(Command :: es_contract_command:t(), State :: state()) -> {noreply, state()}.
 handle_cast(Command, State) ->
@@ -212,10 +210,10 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 -doc """
-Installs a passivation mechanism for the aggregate.
+Installs or refreshes the passivation timer for the aggregate.
 
-- Timeout is the time in milliseconds after which the aggregate should be passivated.
-- TimerRef is a reference to the timer that will trigger the passivation.
+- Timeout is the inactivity delay before passivation in milliseconds.
+- TimerRef is the current timer reference, if any.
 """.
 -spec install_passivation(Timeout, TimerRef0) -> TimerRef1 when
     Timeout :: non_neg_integer(),
@@ -232,12 +230,11 @@ install_passivation(Timeout, TimerRef) ->
     erlang:send_after(Timeout, self(), passivate).
 
 -doc """
-Handles a command for the given aggregate.
+Handles a command against the current aggregate state.
 
-- State is the current state of the server.
-- Command is the command to be handled.
-
-Function returns the new state and sequence of the aggregate after the command is applied.
+Delegates to the aggregate module to decide how to handle the command,
+persists any resulting events, applies them to the state, and returns
+either `{ok, {State, Sequence}}` or `{error, Reason}`.
 """.
 -spec process_command(State, Command) -> {ok, Result} | {error, Reason} when
     State :: state(),
@@ -332,8 +329,8 @@ persist_events(PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, NowFun}) 
     es_kernel_store:append(StoreContext, Id, Events).
 
 -doc """
-Saves a snapshot if the snapshot interval is configured and the current
-sequence is a multiple of the interval.
+Saves a snapshot when a snapshot interval is configured and the current
+sequence is a multiple of that interval.
 
 - State is the current aggregate state record.
 """.
