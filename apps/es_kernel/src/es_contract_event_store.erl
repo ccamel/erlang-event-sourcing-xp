@@ -20,8 +20,6 @@ Implementations must guarantee:
 Typical implementations include in-memory stores (ETS) and relational databases.
 """.
 
--include("es_contract.hrl").
-
 -doc """
 Starts the event store, performing any necessary initialization.
 
@@ -58,8 +56,8 @@ Returns `ok` on success. May throw an exception if persistence fails (e.g., bada
 stream ID is incorrect, duplicate events if the sequence number is not unique).
 """.
 -callback append(StreamId, Events) -> ok when
-    StreamId :: stream_id(),
-    Events :: [event()].
+    StreamId :: es_contract_event:stream_id(),
+    Events :: [es_contract_event:t()].
 -doc """
 Retrieves events from a stream and folds them into an accumulator.
 
@@ -78,8 +76,8 @@ It's typically used to rebuild application state by replaying events.
 Returns the final accumulator after folding all events in the range.
 """.
 -callback fold(StreamId, Fun, Acc0, Range) -> Acc1 when
-    StreamId :: stream_id(),
-    Fun :: fun((Event :: event(), AccIn) -> AccOut),
+    StreamId :: es_contract_event:stream_id(),
+    Fun :: fun((Event :: es_contract_event:t(), AccIn) -> AccOut),
     Acc0 :: term(),
     Range :: es_contract_range:range(),
     Acc1 :: term(),

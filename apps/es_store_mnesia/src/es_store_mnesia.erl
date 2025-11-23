@@ -7,7 +7,6 @@ The Mnesia-based implementation of the event store.
 -behaviour(es_contract_snapshot_store).
 
 -include_lib("stdlib/include/qlc.hrl").
--include_lib("es_kernel/include/es_contract.hrl").
 
 -export([
     start/0,
@@ -22,6 +21,14 @@ The Mnesia-based implementation of the event store.
     event/0, stream_id/0, sequence/0, timestamp/0, snapshot/0, snapshot_data/0
 ]).
 
+-type stream_id() :: es_contract_event:stream_id().
+-type sequence() :: es_contract_event:sequence().
+-type timestamp() :: non_neg_integer().
+-type event_id() :: es_contract_event:key().
+-type event() :: es_contract_event:t().
+-type snapshot() :: es_contract_snapshot:t().
+-type snapshot_data() :: es_contract_snapshot:state().
+
 -record(event_record, {
     key :: event_id(), stream_id :: stream_id(), sequence :: sequence(), event :: event()
 }).
@@ -29,7 +36,7 @@ The Mnesia-based implementation of the event store.
 -record(snapshot_record, {
     stream_id :: stream_id(),
     sequence :: sequence(),
-    timestamp :: timestamp(),
+    timestamp :: non_neg_integer(),
     snapshot :: snapshot()
 }).
 
