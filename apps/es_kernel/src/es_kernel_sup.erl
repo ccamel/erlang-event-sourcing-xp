@@ -54,10 +54,11 @@ init([]) ->
 
     %% Singleton aggregate manager
     StoreContext = es_kernel_app:get_store_context(),
+    AggregateOpts = es_kernel_app:get_aggregate_opts(),
     AggregateMgr =
         #{
             id => es_kernel_mgr_aggregate,
-            start => {es_kernel_mgr_aggregate, start_link, [StoreContext, #{}]},
+            start => {es_kernel_mgr_aggregate, start_link, [StoreContext, AggregateOpts]},
             restart => permanent,
             shutdown => 5000,
             type => worker,

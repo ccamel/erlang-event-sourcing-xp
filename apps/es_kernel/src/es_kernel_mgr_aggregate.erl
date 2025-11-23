@@ -30,7 +30,8 @@ supervisor.
     opts ::
         #{
             timeout => timeout(),
-            now_fun => fun(() -> non_neg_integer())
+            now_fun => fun(() -> non_neg_integer()),
+            snapshot_interval => non_neg_integer()
         },
     pids :: #{{module(), es_contract_event:stream_id()} => pid()}
 }).
@@ -54,7 +55,8 @@ The manager is registered with name `es_kernel_mgr_aggregate`.
     Opts ::
         #{
             timeout => timeout(),
-            now_fun => fun(() -> non_neg_integer())
+            now_fun => fun(() -> non_neg_integer()),
+            snapshot_interval => non_neg_integer()
         }.
 start_link(StoreContext, Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, {StoreContext, Opts}, []).
@@ -91,7 +93,8 @@ Initializes the aggregate manager state from the store context and options.
     Opts ::
         #{
             timeout => timeout(),
-            now_fun => fun(() -> non_neg_integer())
+            now_fun => fun(() -> non_neg_integer()),
+            snapshot_interval => non_neg_integer()
         },
     State :: state().
 init({StoreContext, Opts}) ->
@@ -225,7 +228,8 @@ when
     Opts ::
         #{
             timeout => timeout(),
-            now_fun => fun(() -> non_neg_integer())
+            now_fun => fun(() -> non_neg_integer()),
+            snapshot_interval => non_neg_integer()
         },
     Result :: pid(),
     Reason :: term().
