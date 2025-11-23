@@ -114,8 +114,7 @@ with_metadata(Meta, Event) when is_map(Event) ->
     Event#{metadata := Meta}.
 
 -spec put_metadata(metadata_key(), metadata_value(), t()) -> t().
-put_metadata(Key, Value, Event) when is_map(Event) ->
-    Meta = maps:get(metadata, Event),
+put_metadata(Key, Value, #{metadata := Meta} = Event) ->
     Event#{metadata := Meta#{Key => Value}}.
 
 -spec with_tags(tags(), t()) -> t().
@@ -123,11 +122,9 @@ with_tags(Tags, Event) when is_map(Event) ->
     Event#{tags := Tags}.
 
 -spec add_tag(tag(), t()) -> t().
-add_tag(Tag, Event) when is_map(Event) ->
-    Tags = maps:get(tags, Event),
+add_tag(Tag, #{tags := Tags} = Event) ->
     Event#{tags := [Tag | Tags]}.
 
 -spec map_payload(fun((payload()) -> payload()), t()) -> t().
-map_payload(Fun, Event) when is_map(Event) ->
-    Payload = maps:get(payload, Event),
+map_payload(Fun, #{payload := Payload} = Event) ->
     Event#{payload := Fun(Payload)}.
