@@ -38,28 +38,27 @@ The ETS-based implementation of the event store.
     snapshot :: snapshot()
 }).
 
-%% The name of the ETS table that will store events.
--define(EVENT_TABLE_NAME, events).
-
-%% The name of the ETS table that will store snapshots.
--define(SNAPSHOT_TABLE_NAME, snapshots).
+-define(DEFAULT_EVENT_TABLE_NAME, events).
+-define(DEFAULT_SNAPSHOT_TABLE_NAME, snapshots).
 
 -spec start() -> ok.
 start() ->
-    case ets:info(?EVENT_TABLE_NAME) of
+    EventTable = event_table_name(),
+    SnapshotTable = snapshot_table_name(),
+    case ets:info(EventTable) of
         undefined ->
             _ = ets:new(
-                ?EVENT_TABLE_NAME,
+                EventTable,
                 [ordered_set, named_table, public, {keypos, #event_record.key}]
             ),
             ok;
         _ ->
             ok
     end,
-    case ets:info(?SNAPSHOT_TABLE_NAME) of
+    case ets:info(SnapshotTable) of
         undefined ->
             _ = ets:new(
-                ?SNAPSHOT_TABLE_NAME,
+                SnapshotTable,
                 [set, named_table, public, {keypos, #snapshot_record.stream_id}]
             ),
             ok;
@@ -69,8 +68,8 @@ start() ->
 
 -spec stop() -> ok.
 stop() ->
-    ets:delete(?EVENT_TABLE_NAME),
-    ets:delete(?SNAPSHOT_TABLE_NAME),
+    ets:delete(event_table_name()),
+    ets:delete(snapshot_table_name()),
     ok.
 
 -spec append(StreamId, Events) -> ok when
@@ -78,7 +77,7 @@ stop() ->
     Events :: [event()].
 append(_, Events) ->
     Records = lists:map(fun event_to_record/1, Events),
-    case ets:insert_new(?EVENT_TABLE_NAME, Records) of
+    case ets:insert_new(event_table_name(), Records) of
         true ->
             ok;
         false ->
@@ -102,7 +101,7 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
     Pattern = {event_record, '_', StreamId, '$1', '$2'},
     Guard = [{'>=', '$1', From}, {'<', '$1', To}],
     MatchSpec = [{Pattern, Guard, ['$2']}],
-    ResultEvents = ets:select(?EVENT_TABLE_NAME, MatchSpec),
+    ResultEvents = ets:select(event_table_name(), MatchSpec),
     lists:foldl(FoldFun, InitialAcc, ResultEvents).
 
 event_to_record(Event) ->
@@ -124,7 +123,7 @@ store(Snapshot) ->
             timestamp = es_kernel_store:snapshot_timestamp(Snapshot),
             snapshot = Snapshot
         },
-        true = ets:insert(?SNAPSHOT_TABLE_NAME, Record),
+        true = ets:insert(snapshot_table_name(), Record),
         ok
     catch
         Class:Reason ->
@@ -135,9 +134,17 @@ store(Snapshot) ->
     StreamId :: stream_id(),
     Snapshot :: snapshot().
 load_latest(StreamId) ->
-    case ets:lookup(?SNAPSHOT_TABLE_NAME, StreamId) of
+    case ets:lookup(snapshot_table_name(), StreamId) of
         [#snapshot_record{snapshot = Snapshot}] ->
             {ok, Snapshot};
         [] ->
             {error, not_found}
     end.
+
+-spec event_table_name() -> atom().
+event_table_name() ->
+    application:get_env(es_store_ets, event_table_name, ?DEFAULT_EVENT_TABLE_NAME).
+
+-spec snapshot_table_name() -> atom().
+snapshot_table_name() ->
+    application:get_env(es_store_ets, snapshot_table_name, ?DEFAULT_SNAPSHOT_TABLE_NAME).
