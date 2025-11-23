@@ -4,7 +4,10 @@
     {registered, [es_kernel_sup, es_kernel_aggregate_sup, es_kernel_mgr_aggregate]},
     {mod, {es_kernel_app, []}},
     {applications, [kernel, stdlib]},
-    {env, []},
+    {env, [
+        {event_store, es_store_ets},
+        {snapshot_store, es_store_ets}
+    ]},
     {modules, [
         es_contract_aggregate,
         es_contract_command,

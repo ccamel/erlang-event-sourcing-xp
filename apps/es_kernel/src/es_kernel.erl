@@ -9,8 +9,8 @@ clean API.
 """.
 
 -export([
+    start_aggregate_manager/2,
     start_aggregate_manager/3,
-    start_aggregate_manager/4,
     dispatch/2,
     stop_aggregate_manager/1
 ]).
@@ -18,11 +18,10 @@ clean API.
 -doc """
 Starts an aggregate manager with custom options.
 
-The manager will be supervised by the es_kernel application and will
-route commands to aggregate instances based on the provided Router module.
+The manager will route commands to aggregate instances based on the provided
+Router module. The store configuration is read from the application environment.
 
 - Aggregate is the module implementing the aggregate logic.
-- StoreContext is a `{EventStore, SnapshotStore}` tuple.
 - Router is the module extracting routing info from commands.
 - Opts are configuration options:
   - `timeout`: Timeout for operations (default: `infinity`).
@@ -30,11 +29,10 @@ route commands to aggregate instances based on the provided Router module.
 
 Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
 """.
--spec start_aggregate_manager(Aggregate, StoreContext, Router, Opts) ->
+-spec start_aggregate_manager(Aggregate, Router, Opts) ->
     {ok, Pid} | {error, Reason}
 when
     Aggregate :: module(),
-    StoreContext :: es_kernel_store:store_context(),
     Router :: module(),
     Opts ::
         #{
@@ -43,28 +41,29 @@ when
         },
     Pid :: pid(),
     Reason :: term().
-start_aggregate_manager(Aggregate, StoreContext, Router, Opts) ->
+start_aggregate_manager(Aggregate, Router, Opts) ->
+    StoreContext = es_kernel_app:get_store_context(),
     es_kernel_mgr_aggregate:start_link(Aggregate, StoreContext, Router, Opts).
 
 -doc """
 Starts an aggregate manager with default options.
 
+The store configuration is read from the application environment.
+
 - Aggregate is the module implementing the aggregate logic.
-- StoreContext is a `{EventStore, SnapshotStore}` tuple.
 - Router is the module extracting routing info from commands.
 
 Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
 """.
--spec start_aggregate_manager(Aggregate, StoreContext, Router) ->
+-spec start_aggregate_manager(Aggregate, Router) ->
     {ok, Pid} | {error, Reason}
 when
     Aggregate :: module(),
-    StoreContext :: es_kernel_store:store_context(),
     Router :: module(),
     Pid :: pid(),
     Reason :: term().
-start_aggregate_manager(Aggregate, StoreContext, Router) ->
-    start_aggregate_manager(Aggregate, StoreContext, Router, #{}).
+start_aggregate_manager(Aggregate, Router) ->
+    start_aggregate_manager(Aggregate, Router, #{}).
 
 -doc """
 Dispatches a command to the appropriate aggregate instance.

@@ -8,7 +8,7 @@ within the Erlang/OTP application framework.
 
 -behaviour(application).
 
--export([start/2, stop/1]).
+-export([start/2, stop/1, get_store_context/0]).
 
 -doc """
 Starts the es_kernel application.
@@ -28,6 +28,8 @@ or `{error, Reason}` if startup fails.
     Pid :: pid(),
     Reason :: term().
 start(_StartType, _StartArgs) ->
+    StoreContext = get_store_context(),
+    ok = es_kernel_store:start(StoreContext),
     es_kernel_sup:start_link().
 
 -doc """
@@ -42,4 +44,21 @@ Function returns `ok`.
 """.
 -spec stop(State) -> ok when State :: term().
 stop(_State) ->
+    StoreContext = get_store_context(),
+    es_kernel_store:stop(StoreContext),
     ok.
+
+-doc """
+Retrieves the store context from the application environment.
+
+Reads the configured event_store and snapshot_store modules from the
+es_kernel application environment and constructs a store_context() tuple.
+
+Function returns `{EventStore, SnapshotStore}` where both are module names.
+Defaults to `es_store_ets` for both if not configured.
+""".
+-spec get_store_context() -> es_kernel_store:store_context().
+get_store_context() ->
+    EventStore = application:get_env(es_kernel, event_store, es_store_ets),
+    SnapshotStore = application:get_env(es_kernel, snapshot_store, es_store_ets),
+    {EventStore, SnapshotStore}.

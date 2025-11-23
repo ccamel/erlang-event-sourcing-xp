@@ -2,8 +2,6 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--define(ETS_STORE, {es_store_ets, es_store_ets}).
-
 suite_test_() ->
     TestCases =
         [
@@ -14,7 +12,14 @@ suite_test_() ->
     {foreach, fun setup/0, fun teardown/1, TestCases}.
 
 setup() ->
-    es_kernel_store:start(?ETS_STORE),
+    %% Set test configuration before starting the application
+    application:load(es_kernel),
+    application:set_env(es_kernel, event_store, es_store_ets),
+    application:set_env(es_kernel, snapshot_store, es_store_ets),
+
+    StoreContext = es_kernel_app:get_store_context(),
+    es_kernel_store:start(StoreContext),
+
     %% Start the aggregate supervisor needed by the manager
     case whereis(es_kernel_aggregate_sup) of
         undefined ->
@@ -22,9 +27,9 @@ setup() ->
         _Pid ->
             ok
     end,
-    ok.
+    StoreContext.
 
-teardown(_) ->
+teardown(StoreContext) ->
     %% Stop the aggregate supervisor
     case whereis(es_kernel_aggregate_sup) of
         undefined ->
@@ -35,7 +40,7 @@ teardown(_) ->
             %% Wait for it to terminate
             timer:sleep(10)
     end,
-    es_kernel_store:stop(?ETS_STORE).
+    es_kernel_store:stop(StoreContext).
 
 %%%  Test cases
 
@@ -43,12 +48,13 @@ agg_id(Pid, Id) ->
     {state, _, _, _, _, #{Id := AggPid}} = sys:get_state(Pid),
     AggPid.
 
--define(assertState(Pid, Id, ExpectedState, ExpectedSeq),
+-define(assertState(Pid, Id, ExpectedState, ExpectedSeq), begin
+    StoreCtx = es_kernel_app:get_store_context(),
     ?assertMatch(
-        {state, bank_account_aggregate, ?ETS_STORE, Id, ExpectedState, ExpectedSeq, _, _, _, _},
+        {state, bank_account_aggregate, StoreCtx, Id, ExpectedState, ExpectedSeq, _, _, _, _},
         sys:get_state(Pid)
     )
-).
+end).
 
 aggregate_behaviour() ->
     Pid = start_mgr(5000),
@@ -121,10 +127,11 @@ aggregate_invalid_command() ->
     ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
 
 start_mgr(Timeout) ->
+    StoreContext = es_kernel_app:get_store_context(),
     {ok, Pid} =
         es_kernel_mgr_aggregate:start_link(
             bank_account_aggregate,
-            ?ETS_STORE,
+            StoreContext,
             bank_account_aggregate,
             #{timeout => Timeout}
         ),
