@@ -15,6 +15,7 @@ event_type(#{type := Type}) ->
 handle_command(#{type := deposit, payload := #{amount := Amount}}, _) when Amount > 0 ->
     {ok, [#{type => deposited, amount => Amount}]};
 handle_command(#{type := withdraw, payload := #{amount := Amount}}, #{balance := Balance}) when
+    Amount > 0,
     Amount =< Balance
 ->
     {ok, [#{type => withdrawn, amount => Amount}]};
