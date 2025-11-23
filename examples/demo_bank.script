@@ -4,47 +4,49 @@
 %% of domain events representing deposits and withdrawals.
 %% Each command sent to the aggregate produces an event persisted
 %% through the in-memory ETS backend (used here for both events
-%% and snapshots).
+%% and snapshots). The event/snapshot stores must be started before
+%% booting the es_kernel application.
 
 %% Usage:
 %%     rebar3 shell < examples/demo_bank.script
 
-StoreContext = {es_store_ets, es_store_ets},
+%% Configure the kernel to use ETS for both events and snapshots
+application:load(es_kernel),
+application:set_env(es_kernel, event_store, es_store_ets),
+application:set_env(es_kernel, snapshot_store, es_store_ets),
 
+%% Start the configured stores (required for ETS table creation)
 io:format("~n[1] starting in-memory store (ETS)~n", []),
-StartRes = es_kernel_store:start(StoreContext),
-io:format(" -> ~p~n", [StartRes]),
+ok = es_store_ets:start(),
+io:format(" -> ok~n", []),
 
-io:format("[2] starting bank account aggregate manager~n", []),
-{ok, BankMgr} =
-    es_kernel_mgr_aggregate:start_link(
-        bank_account_aggregate,
-        StoreContext,
-        bank_account_aggregate
-    ),
-io:format(" -> BankMgr pid: ~p~n", [BankMgr]),
+%% Boot the es_kernel OTP application (supervision tree + singleton manager)
+io:format("[2] starting es_kernel application~n", []),
+{ok, Started} = application:ensure_all_started(es_kernel),
+io:format(" -> ~p~n", [Started]),
 
 AccountId = <<"bank-account-123">>,
 
+Dispatch = fun(Type, Amount) ->
+    Command =
+        es_contract_command:new(
+            bank_account_aggregate,
+            Type,
+            AccountId,
+            0,
+            #{},
+            #{amount => Amount}
+        ),
+    es_kernel:dispatch(Command)
+end,
+
 io:format("[3] deposit $100~n", []),
-Res1 = es_kernel_mgr_aggregate:dispatch(
-    BankMgr,
-    {bank, deposit, AccountId, 100}
-),
-io:format(" -> ~p~n", [Res1]),
+io:format(" -> ~p~n", [Dispatch(deposit, 100)]),
 
 io:format("[4] withdraw $10~n", []),
-Res2 = es_kernel_mgr_aggregate:dispatch(
-    BankMgr,
-    {bank, withdraw, AccountId, 10}
-),
-io:format(" -> ~p~n", [Res2]),
+io:format(" -> ~p~n", [Dispatch(withdraw, 10)]),
 
 io:format("[5] withdraw $1000 (should fail)~n", []),
-Res3 = es_kernel_mgr_aggregate:dispatch(
-    BankMgr,
-    {bank, withdraw, AccountId, 1000}
-),
-io:format(" -> ~p~n", [Res3]),
+io:format(" -> ~p~n", [Dispatch(withdraw, 1000)]),
 
 ok.
