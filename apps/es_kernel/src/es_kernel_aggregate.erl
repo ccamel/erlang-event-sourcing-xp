@@ -94,8 +94,8 @@ execute(Pid, Command) ->
 -doc """
 Initializes the aggregate process.
 
-Retrieves all events for the aggregate from the persistence layer and applies them
-sequentially to rehydrate the aggregate's state.
+Sets up the aggregate state by rehydrating from persistence layer and
+configuring the passivation timer.
 
 - Aggregate is the aggregate module implementing the domain logic.
 - StoreContext is a `{EventStore, SnapshotStore}` tuple used for event and snapshot persistence.
@@ -116,37 +116,7 @@ Function returns {ok, state()} on success, and returns {stop, Reason} on failure
 ) ->
     {ok, state()}.
 init({Aggregate, StoreContext, Id, Opts}) ->
-    State0 = Aggregate:init(),
-
-    %% Try to load the latest snapshot
-    {StateFromSnapshot, SequenceFromSnapshot} =
-        case es_kernel_store:load_latest(StoreContext, Id) of
-            {ok, Snapshot} ->
-                SnapshotState = es_kernel_store:snapshot_state(Snapshot),
-                SnapshotSeq = es_kernel_store:snapshot_sequence(Snapshot),
-                {SnapshotState, SnapshotSeq};
-            {error, not_found} ->
-                {State0, ?SEQUENCE_ZERO}
-        end,
-
-    %% Replay events after the snapshot
-    FoldFun =
-        fun(Event, {StateAcc, _SeqAcc}) ->
-            {
-                Aggregate:apply_event(
-                    es_kernel_store:payload(Event), StateAcc
-                ),
-                es_kernel_store:sequence(Event)
-            }
-        end,
-    {State1, Sequence1} =
-        es_kernel_store:fold(
-            StoreContext,
-            Id,
-            FoldFun,
-            {StateFromSnapshot, SequenceFromSnapshot},
-            es_contract_range:new(SequenceFromSnapshot + 1, infinity)
-        ),
+    {State1, Sequence1} = rehydrate(Aggregate, StoreContext, Id),
     Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
     SnapshotInterval = maps:get(snapshot_interval, Opts, 0),
     TimerRef = install_passivation(Timeout, undefined),
@@ -161,6 +131,52 @@ init({Aggregate, StoreContext, Id, Opts}) ->
         timer_ref = TimerRef,
         snapshot_interval = SnapshotInterval
     }}.
+
+-doc """
+Rehydrates the aggregate state from the persistence layer.
+
+Loads the latest snapshot (if available) and replays all events after
+the snapshot to rebuild the current state.
+
+- Aggregate is the aggregate module.
+- StoreContext is the storage context for events and snapshots.
+- Id is the stream identifier.
+
+Function returns {State, Sequence} tuple representing the current state and sequence number.
+""".
+-spec rehydrate(Aggregate, StoreContext, Id) -> {State, Sequence} when
+    Aggregate :: module(),
+    StoreContext :: es_kernel_store:store_context(),
+    Id :: es_contract_event:stream_id(),
+    State :: aggregate_state(),
+    Sequence :: non_neg_integer().
+rehydrate(Aggregate, StoreContext, Id) ->
+    State0 = Aggregate:init(),
+    {StateFromSnapshot, SequenceFromSnapshot} =
+        case es_kernel_store:load_latest(StoreContext, Id) of
+            {ok, Snapshot} ->
+                SnapshotState = es_kernel_store:snapshot_state(Snapshot),
+                SnapshotSeq = es_kernel_store:snapshot_sequence(Snapshot),
+                {SnapshotState, SnapshotSeq};
+            {error, not_found} ->
+                {State0, ?SEQUENCE_ZERO}
+        end,
+    FoldFun =
+        fun(Event, {StateAcc, _SeqAcc}) ->
+            {
+                Aggregate:apply_event(
+                    es_kernel_store:payload(Event), StateAcc
+                ),
+                es_kernel_store:sequence(Event)
+            }
+        end,
+    es_kernel_store:fold(
+        StoreContext,
+        Id,
+        FoldFun,
+        {StateFromSnapshot, SequenceFromSnapshot},
+        es_contract_range:new(SequenceFromSnapshot + 1, infinity)
+    ).
 
 -doc """
 Handles a call to the aggregate.
