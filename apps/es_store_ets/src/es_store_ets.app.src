@@ -4,7 +4,8 @@
     {registered, []},
     {applications, [kernel, stdlib, es_kernel]},
     {env, []},
-    {modules, [es_store_ets]},
+    {modules, [es_store_ets, es_store_ets_app, es_store_ets_sup]},
+    {mod, {es_store_ets_app, []}},
     {licenses, ["BSD 3-Clause"]},
     {links, []}
 ]}.
