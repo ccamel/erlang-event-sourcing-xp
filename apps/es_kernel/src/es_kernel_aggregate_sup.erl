@@ -1,11 +1,11 @@
 -module(es_kernel_aggregate_sup).
 -moduledoc """
-Dynamic supervisor for aggregate process instances.
+Dynamic supervisor for aggregate processes.
 
-Provides on-demand supervision for aggregate processes, ensuring that
-each aggregate instance is properly monitored and restarted on failure.
-Aggregates are started dynamically as commands are dispatched to new
-stream IDs.
+This supervisor owns the lifecycle of aggregate worker processes. It
+starts and supervises aggregate processes on demand, without
+automatically restarting them on failure. An aggregate that crashes
+remains terminated until a caller explicitly starts a new process.
 """.
 
 -behaviour(supervisor).
@@ -16,23 +16,19 @@ stream IDs.
 -define(SERVER, ?MODULE).
 
 -doc """
-Starts the aggregate dynamic supervisor.
-
-Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
+Starts the dynamic supervisor responsible for aggregate processes and
+registers it under its module name.
 """.
 -spec start_link() -> supervisor:startlink_ret().
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 -doc """
-Starts a new aggregate instance under this supervisor.
+Starts an aggregate worker process under this supervisor.
 
-- Aggregate is the aggregate module implementing the behavior.
-- StoreContext is the `{EventStore, SnapshotStore}` tuple.
-- Id is the unique identifier for the aggregate instance.
-- Opts are the aggregate options (timeout, now_fun, snapshot_interval).
-
-Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
+The caller controls when aggregate processes are created or recreated.
+If a child process crashes, it is not restarted automatically; calling
+`start_aggregate/4` again is the way to start a new aggregate process.
 """.
 -spec start_aggregate(Aggregate, StoreContext, Id, Opts) ->
     supervisor:startchild_ret()
@@ -50,12 +46,8 @@ start_aggregate(Aggregate, StoreContext, Id, Opts) ->
     supervisor:start_child(?SERVER, [Aggregate, StoreContext, Id, Opts]).
 
 -doc """
-Initializes the dynamic supervisor.
-
-Uses `simple_one_for_one` strategy to allow dynamic child creation.
-Each child is a `es_kernel_aggregate` process.
-
-Function returns `{ok, {SupFlags, ChildSpecs}}`.
+Initializes the supervisor with a dynamic strategy suitable for
+on-demand aggregate processes.
 """.
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->

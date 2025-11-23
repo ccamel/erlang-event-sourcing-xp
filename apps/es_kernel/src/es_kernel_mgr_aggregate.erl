@@ -2,14 +2,14 @@
 -moduledoc """
 Singleton aggregate manager for the event sourcing kernel.
 
-This module implements a `gen_server` that manages all event-sourcing aggregates
-across all domains. It acts as a universal router, dispatching commands to the
-appropriate aggregate instance based on domain (aggregate module) and stream ID
-extracted from the command. It ensures that each (domain, stream_id) pair maps
-to a single aggregate process, starting new ones as needed and monitoring them
-for crashes.
+This module implements a `gen_server` that manages all event-sourced
+aggregates across domains. It routes commands to aggregate processes
+based on the `domain` and `stream_id` carried by the command and
+ensures that each `{domain, stream_id}` pair is handled by at most one
+aggregate process at a time.
 
-The manager is registered as a singleton and started by the application supervisor.
+The manager is registered as a singleton and started by the application
+supervisor.
 """.
 
 -behaviour(gen_server).
@@ -62,9 +62,7 @@ start_link(StoreContext, Opts) ->
 -doc """
 Stops the aggregate manager.
 
-- ServerRef is a Reference to the gen_server (e.g., pid or name).
-
-Function returns `ok` on success; may throw an exception if the server is unreachable.
+- ServerRef is a reference to the gen_server (pid or registered name).
 """.
 -spec stop(ServerRef) -> ok when ServerRef :: gen_server:server_ref().
 stop(ServerRef) ->
@@ -72,8 +70,6 @@ stop(ServerRef) ->
 
 -doc """
 Dispatches a command to the appropriate aggregate instance.
-
-Routes the command to the aggregate process based on domain and stream_id.
 
 - ServerRef is the pid or registered name of the manager process.
 - Command is the command to dispatch.
@@ -88,11 +84,7 @@ dispatch(ServerRef, Command) ->
     gen_server:call(ServerRef, Command).
 
 -doc """
-Initializes the aggregate manager state.
-
-- Args is the tuple containing the store and options.
-
-Function returns `{ok, State}` with an initialized state record.
+Initializes the aggregate manager state from the store context and options.
 """.
 -spec init({StoreContext, Opts}) -> {ok, State} when
     StoreContext :: es_kernel_store:store_context(),
@@ -141,11 +133,9 @@ terminate(_Reason, _State) ->
 -doc """
 Handles process monitoring messages.
 
-Removes the pid of a downed aggregate from the state's `pids` map.
-
-- Info represents the `'DOWN'` message from a monitored process.
-
-Function returns `{noreply, State}` with updated state.
+On `{'DOWN', ...}` from an aggregate process, removes it from the
+internal registry so future commands will cause a new process to be
+started if needed.
 """.
 -spec handle_info(Info, State) -> {noreply, State} when
     Info :: {'DOWN', _Ref, process, Pid, _Reason},
@@ -164,9 +154,8 @@ handle_info(_Any, State) ->
     {noreply, State}.
 
 -doc """
-Ensures an aggregate process exists for the (domain, stream_id) pair and dispatches the command.
-
-Starts a new aggregate if none exists, then forwards the command.
+Ensures an aggregate process exists for the `{domain, stream_id}` pair
+and dispatches the command, starting a new process if needed.
 
 Returns `{ok, Result, State}` or `{error, Reason, State}`.
 """.
