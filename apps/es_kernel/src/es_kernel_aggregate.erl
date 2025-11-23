@@ -12,7 +12,7 @@
     handle_cast/2,
     code_change/3,
     terminate/2,
-    dispatch/2
+    execute/2
 ]).
 
 -define(SEQUENCE_ZERO, 0).
@@ -74,12 +74,22 @@ Starts a new aggregate process.
 start_link(Aggregate, StoreContext, Id) ->
     start_link(Aggregate, StoreContext, Id, #{}).
 
--spec dispatch(Pid, Command) -> {ok, Result} | {error, Reason} when
+-doc """
+Executes a command on an aggregate instance.
+
+This function sends a command to an already running aggregate process,
+which will handle the command and persist resulting events.
+
+- Pid is the process identifier of the aggregate instance.
+- Command is the command to execute.
+
+Function returns `ok` on success, or `{error, Reason}` if command execution fails.
+""".
+-spec execute(Pid, Command) -> ok | {error, Reason} when
     Pid :: pid(),
     Command :: es_contract_command:t(),
-    Result :: term(),
     Reason :: term().
-dispatch(Pid, Command) ->
+execute(Pid, Command) ->
     gen_server:call(Pid, Command).
 -doc """
 Initializes the aggregate process.

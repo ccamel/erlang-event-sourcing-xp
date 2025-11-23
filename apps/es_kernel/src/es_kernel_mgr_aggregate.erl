@@ -239,15 +239,14 @@ ensure_and_dispatch(
 -doc """
 Forwards a command to an aggregate process.
 
-Function returns The result of the aggregate's dispatch function.
+Function returns The result of the aggregate's execute function.
 """.
--spec forward(Pid, Command) -> {ok, Result} | {error, Reason} when
+-spec forward(Pid, Command) -> ok | {error, Reason} when
     Pid :: pid(),
     Command :: es_contract_command:t(),
-    Result :: term(),
     Reason :: term().
 forward(Pid, Command) ->
-    es_kernel_aggregate:dispatch(Pid, Command).
+    es_kernel_aggregate:execute(Pid, Command).
 
 -doc """
 Starts an aggregate process for a given stream ID.
