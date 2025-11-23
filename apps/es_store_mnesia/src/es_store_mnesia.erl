@@ -40,22 +40,22 @@ The Mnesia-based implementation of the event store.
     snapshot :: snapshot()
 }).
 
-%% The name of the table that will store events.
--define(EVENT_TABLE_NAME, events).
-
-%% The name of the table that will store snapshots.
--define(SNAPSHOT_TABLE_NAME, snapshots).
+%% Default table names; overridable via application environment.
+-define(DEFAULT_EVENT_TABLE_NAME, events).
+-define(DEFAULT_SNAPSHOT_TABLE_NAME, snapshots).
 
 -spec start() -> ok.
 start() ->
-    try mnesia:table_info(?EVENT_TABLE_NAME, all) of
+    EventTable = event_table_name(),
+    SnapshotTable = snapshot_table_name(),
+    try mnesia:table_info(EventTable, all) of
         _ ->
             ok
     catch
-        exit:{aborted, {no_exists, ?EVENT_TABLE_NAME, all}} ->
+        exit:{aborted, {no_exists, EventTable, all}} ->
             case
                 mnesia:create_table(
-                    ?EVENT_TABLE_NAME,
+                    EventTable,
                     [
                         {attributes, record_info(fields, event_record)},
                         {record_name, event_record},
@@ -70,14 +70,14 @@ start() ->
                     erlang:error(Reason)
             end
     end,
-    try mnesia:table_info(?SNAPSHOT_TABLE_NAME, all) of
+    try mnesia:table_info(SnapshotTable, all) of
         _ ->
             ok
     catch
-        exit:{aborted, {no_exists, ?SNAPSHOT_TABLE_NAME, all}} ->
+        exit:{aborted, {no_exists, SnapshotTable, all}} ->
             case
                 mnesia:create_table(
-                    ?SNAPSHOT_TABLE_NAME,
+                    SnapshotTable,
                     [
                         {attributes, record_info(fields, snapshot_record)},
                         {record_name, snapshot_record},
@@ -118,11 +118,11 @@ persist_events_in_tx(StreamId, [Event | Rest]) ->
             sequence = es_kernel_store:sequence(Event),
             event = Event
         },
-    case mnesia:read(?EVENT_TABLE_NAME, Id, read) of
+    case mnesia:read(event_table_name(), Id, read) of
         [_] ->
             mnesia:abort(duplicate_event);
         _ ->
-            ok = mnesia:write(?EVENT_TABLE_NAME, Record, write),
+            ok = mnesia:write(event_table_name(), Record, write),
             persist_events_in_tx(StreamId, Rest)
     end.
 
@@ -145,7 +145,7 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
                 qlc:q(
                     [
                         E#event_record.event
-                     || E <- mnesia:table(?EVENT_TABLE_NAME),
+                     || E <- mnesia:table(event_table_name()),
                         E#event_record.stream_id =:= StreamId,
                         E#event_record.sequence >= From,
                         E#event_record.sequence < To
@@ -172,7 +172,7 @@ store(Snapshot) ->
             timestamp = es_kernel_store:snapshot_timestamp(Snapshot),
             snapshot = Snapshot
         },
-        ok = mnesia:dirty_write(?SNAPSHOT_TABLE_NAME, Record),
+        ok = mnesia:dirty_write(snapshot_table_name(), Record),
         ok
     catch
         Class:Reason ->
@@ -183,7 +183,7 @@ store(Snapshot) ->
     StreamId :: stream_id(),
     Snapshot :: snapshot().
 load_latest(StreamId) ->
-    Fun = fun() -> mnesia:read(?SNAPSHOT_TABLE_NAME, StreamId, read) end,
+    Fun = fun() -> mnesia:read(snapshot_table_name(), StreamId, read) end,
     case mnesia:transaction(Fun) of
         {atomic, [#snapshot_record{snapshot = Snapshot}]} ->
             {ok, Snapshot};
@@ -192,3 +192,11 @@ load_latest(StreamId) ->
         {aborted, Reason} ->
             erlang:error(Reason)
     end.
+
+-spec event_table_name() -> atom().
+event_table_name() ->
+    application:get_env(es_store_mnesia, event_table_name, ?DEFAULT_EVENT_TABLE_NAME).
+
+-spec snapshot_table_name() -> atom().
+snapshot_table_name() ->
+    application:get_env(es_store_mnesia, snapshot_table_name, ?DEFAULT_SNAPSHOT_TABLE_NAME).
