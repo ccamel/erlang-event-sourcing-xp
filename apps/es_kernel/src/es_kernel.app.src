@@ -1,7 +1,8 @@
 {application, es_kernel, [
     {description, "Kernel application for event sourcing implementation in Erlang"},
     {vsn, "0.1.0"},
-    {registered, []},
+    {registered, [es_kernel_sup, es_kernel_aggregate_sup, es_kernel_mgr_aggregate]},
+    {mod, {es_kernel_app, []}},
     {applications, [kernel, stdlib]},
     {env, []},
     {modules, [
@@ -15,7 +16,11 @@
         es_kernel_store,
         es_kernel_mgr_aggregate,
         es_kernel_aggregate,
-        es_kernel_mgr_behaviour
+        es_kernel_aggregate_sup,
+        es_kernel_mgr_behaviour,
+        es_kernel_sup,
+        es_kernel_app,
+        es_kernel
     ]},
     {licenses, ["BSD 3-Clause"]},
     {links, []}

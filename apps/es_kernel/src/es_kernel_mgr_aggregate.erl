@@ -251,7 +251,8 @@ forward(Pid, Command) ->
 -doc """
 Starts an aggregate process for a given stream ID.
 
-Monitors the new process and returns its pid.
+Uses the es_kernel_aggregate_sup dynamic supervisor to start the aggregate,
+ensuring it is properly supervised. Monitors the new process and returns its pid.
 
 Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
 """.
@@ -269,7 +270,7 @@ when
     Result :: pid(),
     Reason :: term().
 start_aggregate(Aggregate, StoreContext, Id, Opts) ->
-    case es_kernel_aggregate:start_link(Aggregate, StoreContext, Id, Opts) of
+    case es_kernel_aggregate_sup:start_aggregate(Aggregate, StoreContext, Id, Opts) of
         {ok, Pid} ->
             erlang:monitor(process, Pid),
             {ok, Pid};

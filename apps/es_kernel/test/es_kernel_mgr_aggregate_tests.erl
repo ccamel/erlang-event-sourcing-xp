@@ -14,9 +14,27 @@ suite_test_() ->
     {foreach, fun setup/0, fun teardown/1, TestCases}.
 
 setup() ->
-    es_kernel_store:start(?ETS_STORE).
+    es_kernel_store:start(?ETS_STORE),
+    %% Start the aggregate supervisor needed by the manager
+    case whereis(es_kernel_aggregate_sup) of
+        undefined ->
+            {ok, _Pid} = es_kernel_aggregate_sup:start_link();
+        _Pid ->
+            ok
+    end,
+    ok.
 
 teardown(_) ->
+    %% Stop the aggregate supervisor
+    case whereis(es_kernel_aggregate_sup) of
+        undefined ->
+            ok;
+        Pid ->
+            unlink(Pid),
+            exit(Pid, shutdown),
+            %% Wait for it to terminate
+            timer:sleep(10)
+    end,
     es_kernel_store:stop(?ETS_STORE).
 
 %%%  Test cases
