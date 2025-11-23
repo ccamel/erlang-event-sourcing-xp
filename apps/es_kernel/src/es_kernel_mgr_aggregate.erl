@@ -98,7 +98,7 @@ extracted by the router module.
 - Pid is the pid of the manager process.
 - Command is the command to dispatch.
 
-Function returns `{ok, Result}` on success, or `{error, Reason}` if routing or execution fails.
+Returns `{ok, Result}` on success, or `{error, Reason}` if routing or execution fails.
 """.
 -spec dispatch(Pid, Command) -> {ok, Result} | {error, Reason} when
     Pid :: pid(),
@@ -135,16 +135,22 @@ init({Aggregate, StoreContext, Router, Opts}) ->
     }}.
 
 -spec handle_call(Command, From, State) ->
-    {reply, ok, State} | {reply, {error, Reason}, State}
+    {reply, {ok, Result} | {error, Reason}, State}
 when
     Command :: es_contract_command:t(),
     From :: {pid(), term()},
     State :: state(),
+    Result :: term(),
     Reason :: term().
 handle_call(Command, _From, #state{aggregate = Aggregate, router = Router} = State) ->
     case Router:extract_routing(Command) of
         {ok, {Aggregate, Id}} ->
-            ensure_and_dispatch(Aggregate, Id, Command, State);
+            case ensure_and_dispatch(Aggregate, Id, Command, State) of
+                {ok, Result, NewState} ->
+                    {reply, Result, NewState};
+                {error, Reason, NewState} ->
+                    {reply, {error, Reason}, NewState}
+            end;
         {ok, {WrongAgg, _Id}} when WrongAgg =/= Aggregate ->
             {reply, {error, wrong_aggregate}, State};
         {error, Reason} ->
@@ -193,14 +199,17 @@ Ensures an aggregate process exists for the stream ID and dispatches the command
 
 Starts a new aggregate if none exists, then forwards the command.
 
-Function returns `{reply, {ok, Result}, State}` or `{reply, {error, Reason}, State}`.
+Returns `{ok, Result, State}` or `{error, Reason, State}`.
 """.
--spec ensure_and_dispatch(Aggregate, Id, Command, State) -> {reply, Result, State} when
+-spec ensure_and_dispatch(Aggregate, Id, Command, State) ->
+    {ok, Result, State} | {error, Reason, State}
+when
     Aggregate :: module(),
     Id :: es_contract_event:stream_id(),
     Command :: es_contract_command:t(),
     Result :: term(),
-    State :: state().
+    State :: state(),
+    Reason :: term().
 ensure_and_dispatch(
     Aggregate,
     Id,
@@ -218,13 +227,13 @@ ensure_and_dispatch(
                 {ok, Pid} ->
                     Result = forward(Pid, Command),
                     NewPids = maps:put(Id, Pid, Pids),
-                    {reply, Result, State#state{pids = NewPids}};
+                    {ok, Result, State#state{pids = NewPids}};
                 {error, Reason} ->
-                    {reply, {error, Reason}, State}
+                    {error, Reason, State}
             end;
         Pid ->
             Result = forward(Pid, Command),
-            {reply, Result, State}
+            {ok, Result, State}
     end.
 
 -doc """
@@ -235,7 +244,7 @@ Function returns The result of the aggregate's dispatch function.
 -spec forward(Pid, Command) -> {ok, Result} | {error, Reason} when
     Pid :: pid(),
     Command :: es_contract_command:t(),
-    Result :: pid(),
+    Result :: term(),
     Reason :: term().
 forward(Pid, Command) ->
     es_kernel_aggregate:dispatch(Pid, Command).
@@ -247,7 +256,9 @@ Monitors the new process and returns its pid.
 
 Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
 """.
--spec start_aggregate(Aggregate, StoreContext, Id, Opts) -> {ok, Result} | {error, Reason} when
+-spec start_aggregate(Aggregate, StoreContext, Id, Opts) ->
+    {ok, Result} | {error, Reason}
+when
     Aggregate :: module(),
     StoreContext :: es_kernel_store:store_context(),
     Id :: es_contract_event:stream_id(),
