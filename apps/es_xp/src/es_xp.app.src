@@ -1,11 +1,11 @@
 {application, es_xp, [
-    {description, "An OTP application"},
+    {description, "Example XP application"},
     {vsn, "0.1.0"},
     {registered, []},
     {mod, {es_xp_app, []}},
-    {applications, [kernel, stdlib]},
+    {applications, [kernel, stdlib, es_store_ets, es_kernel]},
     {env, []},
-    {modules, []},
+    {modules, [bank_account_aggregate, es_xp_app, es_xp_sup]},
     {licenses, ["BSD 3-Clause"]},
     {links, []}
 ]}.

@@ -43,36 +43,28 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 
 This project is a work in progress, and I welcome any feedback or contributions. If you're interested in [Event Sourcing](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing), [Erlang/OTP](https://www.erlang.org/), or both, feel free to reach out!
 
-Start the Erlang [shell](https://www.erlang.org/docs/20/man/shell.html) and run the following commands to play with the example. The kernel now runs as an OTP application that boots a supervisor tree with a singleton aggregate manager; commands are dispatched through `es_kernel:dispatch/1`.
+Start the Erlang [shell](https://www.erlang.org/docs/20/man/shell.html) and run the following commands to play with the `es_xp` example application. `es_xp` depends on `es_store_ets` and `es_kernel`, so `application:ensure_all_started(es_xp)` brings up the full stack; commands are dispatched through `es_kernel:dispatch/1`.
 
 <!-- DEMO-START -->
 
 ```erlang
 %% Interactive demo showcasing the event sourcing engine.
 %%
-%% The example uses a simple "bank account" aggregate: a single stream
-%% of domain events representing deposits and withdrawals.
-%% Each command sent to the aggregate produces an event persisted
-%% through the in-memory ETS backend (used here for both events
-%% and snapshots). The event/snapshot stores must be started before
-%% booting the es_kernel application.
-
 %% Usage:
-%%     rebar3 shell < examples/demo_bank.script
+%%     rebar3 shell < apps/es_xp/examples/demo_bank.script
+%%
+%% This script configures es_kernel to use the in-memory ETS backend for
+%% both events and snapshots, then starts the es_xp application. es_xp
+%% depends on es_store_ets and es_kernel, so `application:ensure_all_started/1`
+%% brings up the full stack automatically.
 
-%% Configure the kernel to use ETS for both events and snapshots
+%% Explicitly set the store backends (override defaults if needed)
 application:load(es_kernel),
 application:set_env(es_kernel, event_store, es_store_ets),
 application:set_env(es_kernel, snapshot_store, es_store_ets),
 
-%% Start the configured stores (required for ETS table creation)
-io:format("~n[1] starting in-memory store (ETS)~n", []),
-ok = es_store_ets:start(),
-io:format(" -> ok~n", []),
-
-%% Boot the es_kernel OTP application (supervision tree + singleton manager)
-io:format("[2] starting es_kernel application~n", []),
-{ok, Started} = application:ensure_all_started(es_kernel),
+io:format("~n[1] starting es_xp application (and dependencies)~n", []),
+{ok, Started} = application:ensure_all_started(es_xp),
 io:format(" -> ~p~n", [Started]),
 
 AccountId = <<"bank-account-123">>,
@@ -90,13 +82,13 @@ Dispatch = fun(Type, Amount) ->
     es_kernel:dispatch(Command)
 end,
 
-io:format("[3] deposit $100~n", []),
+io:format("[2] deposit $100~n", []),
 io:format(" -> ~p~n", [Dispatch(deposit, 100)]),
 
-io:format("[4] withdraw $10~n", []),
+io:format("[3] withdraw $10~n", []),
 io:format(" -> ~p~n", [Dispatch(withdraw, 10)]),
 
-io:format("[5] withdraw $1000 (should fail)~n", []),
+io:format("[4] withdraw $1000 (should fail)~n", []),
 io:format(" -> ~p~n", [Dispatch(withdraw, 1000)]),
 
 ok.
@@ -116,7 +108,7 @@ This project is structured around the core principles of Event Sourcing:
 ### Kernel application & supervision
 
 - `es_kernel` ships as an OTP application. Start it with `application:ensure_all_started(es_kernel)` after configuring `event_store` and `snapshot_store` (defaults to `es_store_ets`).
-- Start the configured store backends first (e.g., `es_store_ets:start/0`) so tables/processes exist before aggregates boot.
+- Start the configured store backends first (e.g., `es_store_ets:start/0`) so tables/processes exist before aggregates boot. The `es_xp` example app handles this by depending on `es_store_ets` and `es_kernel` and starting them via `application:ensure_all_started(es_xp)`.
 - The top-level supervisor (`es_kernel_sup`) starts:
   - `es_kernel_aggregate_sup`: a dynamic supervisor that spawns `es_kernel_aggregate` processes on demand.
   - `es_kernel_mgr_aggregate`: a registered singleton that routes commands to aggregates and keeps track of live PIDs.
