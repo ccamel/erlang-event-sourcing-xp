@@ -32,9 +32,30 @@ setup() ->
         _Pid ->
             ok
     end,
+
+    %% Stop the manager if it's already running (from previous test)
+    case whereis(es_kernel_mgr_aggregate) of
+        undefined ->
+            ok;
+        MgrPid ->
+            unlink(MgrPid),
+            exit(MgrPid, kill),
+            timer:sleep(10)
+    end,
+
     StoreContext.
 
 teardown({EventStore, SnapshotStore}) ->
+    %% Stop the manager if running
+    case whereis(es_kernel_mgr_aggregate) of
+        undefined ->
+            ok;
+        MgrPid ->
+            unlink(MgrPid),
+            exit(MgrPid, kill),
+            timer:sleep(10)
+    end,
+
     %% Stop the aggregate supervisor
     case whereis(es_kernel_aggregate_sup) of
         undefined ->
@@ -55,9 +76,20 @@ teardown({EventStore, SnapshotStore}) ->
 
 %%%  Test cases
 
-agg_id(Pid, Id) ->
-    {state, _, _, _, _, #{Id := AggPid}} = sys:get_state(Pid),
+agg_id(Pid, Aggregate, Id) ->
+    Key = {Aggregate, Id},
+    {state, _, _, #{Key := AggPid}} = sys:get_state(Pid),
     AggPid.
+
+cmd(Type, Id, Payload) ->
+    es_contract_command:new(
+        bank_account_aggregate,
+        Type,
+        Id,
+        0,
+        #{},
+        Payload
+    ).
 
 -define(assertState(Pid, Id, ExpectedState, ExpectedSeq), begin
     StoreCtx = es_kernel_app:get_store_context(),
@@ -73,21 +105,21 @@ aggregate_behaviour() ->
 
     ?assertEqual(
         ok,
-        es_kernel_mgr_aggregate:dispatch(Pid, {bank, deposit, Id, 100})
+        es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 100}))
     ),
-    ?assertState(agg_id(Pid, Id), Id, #{balance := 100}, 1),
+    ?assertState(agg_id(Pid, bank_account_aggregate, Id), Id, #{balance := 100}, 1),
 
     ?assertEqual(
         ok,
-        es_kernel_mgr_aggregate:dispatch(Pid, {bank, deposit, Id, 100})
+        es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 100}))
     ),
-    ?assertState(agg_id(Pid, Id), Id, #{balance := 200}, 2),
+    ?assertState(agg_id(Pid, bank_account_aggregate, Id), Id, #{balance := 200}, 2),
 
     ?assertEqual(
         ok,
-        es_kernel_mgr_aggregate:dispatch(Pid, {bank, withdraw, Id, 50})
+        es_kernel_mgr_aggregate:dispatch(Pid, cmd(withdraw, Id, #{amount => 50}))
     ),
-    ?assertState(agg_id(Pid, Id), Id, #{balance := 150}, 3),
+    ?assertState(agg_id(Pid, bank_account_aggregate, Id), Id, #{balance := 150}, 3),
 
     ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
 
@@ -97,28 +129,29 @@ aggregate_passivation() ->
 
     ?assertEqual(
         ok,
-        es_kernel_mgr_aggregate:dispatch(Pid, {bank, deposit, Id, 100})
+        es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 100}))
     ),
     ?assertEqual(
         ok,
-        es_kernel_mgr_aggregate:dispatch(Pid, {bank, withdraw, Id, 25})
+        es_kernel_mgr_aggregate:dispatch(Pid, cmd(withdraw, Id, #{amount => 25}))
     ),
 
-    ?assertState(agg_id(Pid, Id), Id, #{balance := 75}, 2),
+    ?assertState(agg_id(Pid, bank_account_aggregate, Id), Id, #{balance := 75}, 2),
 
     % wait for the aggregate to be passivated
     timer:sleep(2000),
 
     % check aggregate is no more alive
-    {_, _, _, _, _, AggPids} = sys:get_state(Pid),
-    ?assertEqual(false, maps:is_key(Id, AggPids)),
+    {state, _, _, AggPids} = sys:get_state(Pid),
+    Key = {bank_account_aggregate, Id},
+    ?assertEqual(false, maps:is_key(Key, AggPids)),
 
     ?assertEqual(
         ok,
-        es_kernel_mgr_aggregate:dispatch(Pid, {bank, deposit, Id, 30})
+        es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 30}))
     ),
 
-    ?assertState(agg_id(Pid, Id), Id, #{balance := 105}, 3),
+    ?assertState(agg_id(Pid, bank_account_aggregate, Id), Id, #{balance := 105}, 3),
 
     ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
 
@@ -132,7 +165,7 @@ aggregate_invalid_command() ->
     ),
     ?assertEqual(
         {error, insufficient_funds},
-        es_kernel_mgr_aggregate:dispatch(Pid, {bank, withdraw, Id, 100})
+        es_kernel_mgr_aggregate:dispatch(Pid, cmd(withdraw, Id, #{amount => 100}))
     ),
 
     ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
@@ -141,9 +174,7 @@ start_mgr(Timeout) ->
     StoreContext = es_kernel_app:get_store_context(),
     {ok, Pid} =
         es_kernel_mgr_aggregate:start_link(
-            bank_account_aggregate,
             StoreContext,
-            bank_account_aggregate,
             #{timeout => Timeout}
         ),
     Pid.

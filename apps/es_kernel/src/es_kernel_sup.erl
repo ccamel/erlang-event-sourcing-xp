@@ -27,8 +27,8 @@ start_link() ->
 Initializes the supervisor with its child specifications.
 
 The supervisor uses a `one_for_one` strategy:
-- Only the es_kernel_aggregate_sup is started automatically
-- Aggregate managers are started dynamically via the public API
+- es_kernel_aggregate_sup: Dynamic supervisor for aggregate instances
+- es_kernel_mgr_aggregate: Singleton manager that routes commands to aggregates
 
 Function returns `{ok, {SupFlags, ChildSpecs}}`.
 """.
@@ -52,5 +52,17 @@ init([]) ->
             modules => [es_kernel_aggregate_sup]
         },
 
-    ChildSpecs = [AggregateSup],
+    %% Singleton aggregate manager
+    StoreContext = es_kernel_app:get_store_context(),
+    AggregateMgr =
+        #{
+            id => es_kernel_mgr_aggregate,
+            start => {es_kernel_mgr_aggregate, start_link, [StoreContext, #{}]},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [es_kernel_mgr_aggregate]
+        },
+
+    ChildSpecs = [AggregateSup, AggregateMgr],
     {ok, {SupFlags, ChildSpecs}}.

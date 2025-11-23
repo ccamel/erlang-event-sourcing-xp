@@ -20,7 +20,6 @@
         es_kernel_mgr_aggregate,
         es_kernel_aggregate,
         es_kernel_aggregate_sup,
-        es_kernel_mgr_behaviour,
         es_kernel_sup,
         es_kernel_app,
         es_kernel

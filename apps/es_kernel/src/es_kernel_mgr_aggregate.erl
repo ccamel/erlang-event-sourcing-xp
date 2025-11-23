@@ -1,11 +1,15 @@
 -module(es_kernel_mgr_aggregate).
 -moduledoc """
-This module implements a `gen_server` that manages event-sourcing aggregates.
+Singleton aggregate manager for the event sourcing kernel.
 
-It acts as a router and supervisor for aggregate processes, dispatching commands
-to the appropriate aggregate instance based on a stream ID. It ensures that each
-stream ID maps to a single aggregate process, starting new ones as needed and
-monitoring them for crashes.
+This module implements a `gen_server` that manages all event-sourcing aggregates
+across all domains. It acts as a universal router, dispatching commands to the
+appropriate aggregate instance based on domain (aggregate module) and stream ID
+extracted from the command. It ensures that each (domain, stream_id) pair maps
+to a single aggregate process, starting new ones as needed and monitoring them
+for crashes.
+
+The manager is registered as a singleton and started by the application supervisor.
 """.
 
 -behaviour(gen_server).
@@ -16,67 +20,44 @@ monitoring them for crashes.
     handle_call/3,
     handle_info/2,
     terminate/2,
-    start_link/4,
-    start_link/3,
+    start_link/2,
     stop/1,
     dispatch/2
 ]).
 
 -record(state, {
-    aggregate :: module(),
     store :: es_kernel_store:store_context(),
-    router :: module(),
     opts ::
         #{
             timeout => timeout(),
             now_fun => fun(() -> non_neg_integer())
         },
-    pids :: #{es_contract_event:stream_id() => pid()}
+    pids :: #{{module(), es_contract_event:stream_id()} => pid()}
 }).
 
 -opaque state() :: #state{}.
 -export_type([state/0]).
 
 -doc """
-Starts the aggregate manager with custom options.
+Starts the singleton aggregate manager with custom options.
 
-- Aggregate is the module implementing the aggregate logic.
 - StoreContext is a `{EventStore, SnapshotStore}` tuple.
-- Router is the module extracting routing info from commands.
 - Opts is the configuration options:
   - `timeout`: Timeout for operations (default: `infinity`).
   - `now_fun`: Function to get current timestamp (default: system time).
 
 Function returns `{ok, Pid}` on success, or an error tuple if the server fails to start.
+The manager is registered with name `es_kernel_mgr_aggregate`.
 """.
--spec start_link(Aggregate, StoreContext, Router, Opts) -> gen_server:start_ret() when
-    Aggregate :: module(),
+-spec start_link(StoreContext, Opts) -> gen_server:start_ret() when
     StoreContext :: es_kernel_store:store_context(),
-    Router :: module(),
     Opts ::
         #{
             timeout => timeout(),
             now_fun => fun(() -> non_neg_integer())
         }.
-start_link(Aggregate, StoreContext, Router, Opts) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, {Aggregate, StoreContext, Router, Opts}, []).
-
--doc """
-Starts the aggregate manager with the given aggregate, store, and router modules,
-using default options.
-
-- Aggregate is the module implementing the aggregate logic.
-- StoreContext follows the same `{EventStore, SnapshotStore}` convention.
-- Router is the module extracting routing info from commands.
-
-Function returns `{ok, Pid}` on success, or an error tuple if the server fails to start.
-""".
--spec start_link(Aggregate, StoreContext, Router) -> gen_server:start_ret() when
-    Aggregate :: module(),
-    StoreContext :: es_kernel_store:store_context(),
-    Router :: module().
-start_link(Aggregate, StoreContext, Router) ->
-    start_link(Aggregate, StoreContext, Router, #{}).
+start_link(StoreContext, Opts) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, {StoreContext, Opts}, []).
 
 -doc """
 Stops the aggregate manager.
@@ -92,70 +73,58 @@ stop(ServerRef) ->
 -doc """
 Dispatches a command to the appropriate aggregate instance.
 
-Routes the command via the manager to the aggregate process for the stream ID
-extracted by the router module.
+Routes the command to the aggregate process based on domain and stream_id.
 
-- Pid is the pid of the manager process.
+- ServerRef is the pid or registered name of the manager process.
 - Command is the command to dispatch.
 
-Returns `{ok, Result}` on success, or `{error, Reason}` if routing or execution fails.
+Returns `ok` on success, or `{error, Reason}` if routing or execution fails.
 """.
--spec dispatch(Pid, Command) -> {ok, Result} | {error, Reason} when
-    Pid :: pid(),
+-spec dispatch(ServerRef, Command) -> ok | {error, Reason} when
+    ServerRef :: gen_server:server_ref(),
     Command :: es_contract_command:t(),
-    Result :: term(),
     Reason :: term().
-dispatch(Pid, Command) ->
-    gen_server:call(Pid, Command).
+dispatch(ServerRef, Command) ->
+    gen_server:call(ServerRef, Command).
 
 -doc """
 Initializes the aggregate manager state.
 
-- Args is the tuple containing the aggregate, store, router modules, and options.
+- Args is the tuple containing the store and options.
 
 Function returns `{ok, State}` with an initialized state record.
 """.
--spec init({Aggregate, StoreContext, Router, Opts}) -> {ok, State} when
-    Aggregate :: module(),
+-spec init({StoreContext, Opts}) -> {ok, State} when
     StoreContext :: es_kernel_store:store_context(),
-    Router :: module(),
     Opts ::
         #{
             timeout => timeout(),
             now_fun => fun(() -> non_neg_integer())
         },
     State :: state().
-init({Aggregate, StoreContext, Router, Opts}) ->
+init({StoreContext, Opts}) ->
     {ok, #state{
-        aggregate = Aggregate,
         store = StoreContext,
-        router = Router,
         opts = Opts,
         pids = #{}
     }}.
 
 -spec handle_call(Command, From, State) ->
-    {reply, {ok, Result} | {error, Reason}, State}
+    {reply, ok | {error, Reason}, State}
 when
     Command :: es_contract_command:t(),
     From :: {pid(), term()},
     State :: state(),
-    Result :: term(),
     Reason :: term().
-handle_call(Command, _From, #state{aggregate = Aggregate, router = Router} = State) ->
-    case Router:extract_routing(Command) of
-        {ok, {Aggregate, Id}} ->
-            case ensure_and_dispatch(Aggregate, Id, Command, State) of
-                {ok, Result, NewState} ->
-                    {reply, Result, NewState};
-                {error, Reason, NewState} ->
-                    {reply, {error, Reason}, NewState}
-            end;
-        {ok, {WrongAgg, _Id}} when WrongAgg =/= Aggregate ->
-            {reply, {error, wrong_aggregate}, State};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end.
+handle_call(#{domain := Aggregate, stream_id := Id} = Command, _From, State) ->
+    case ensure_and_dispatch(Aggregate, Id, Command, State) of
+        {ok, Result, NewState} ->
+            {reply, Result, NewState};
+        {error, Reason, NewState} ->
+            {reply, {error, Reason}, NewState}
+    end;
+handle_call(_InvalidCommand, _From, State) ->
+    {reply, {error, invalid_command}, State}.
 
 -spec handle_cast(Command, State) -> {noreply, State} when
     Command :: es_contract_command:t(),
@@ -183,10 +152,10 @@ Function returns `{noreply, State}` with updated state.
     State :: state(),
     Pid :: pid().
 handle_info({'DOWN', _Ref, process, Pid, _Reason}, #state{pids = Pids} = State) ->
-    IdToRemove = maps:filter(fun(_, ThisPid) -> ThisPid =:= Pid end, Pids),
-    case maps:keys(IdToRemove) of
-        [Id] ->
-            NewPids = maps:remove(Id, Pids),
+    KeyToRemove = maps:filter(fun(_, ThisPid) -> ThisPid =:= Pid end, Pids),
+    case maps:keys(KeyToRemove) of
+        [Key] ->
+            NewPids = maps:remove(Key, Pids),
             {noreply, State#state{pids = NewPids}};
         [] ->
             {noreply, State}
@@ -195,7 +164,7 @@ handle_info(_Any, State) ->
     {noreply, State}.
 
 -doc """
-Ensures an aggregate process exists for the stream ID and dispatches the command.
+Ensures an aggregate process exists for the (domain, stream_id) pair and dispatches the command.
 
 Starts a new aggregate if none exists, then forwards the command.
 
@@ -207,7 +176,7 @@ when
     Aggregate :: module(),
     Id :: es_contract_event:stream_id(),
     Command :: es_contract_command:t(),
-    Result :: term(),
+    Result :: ok | {error, Reason},
     State :: state(),
     Reason :: term().
 ensure_and_dispatch(
@@ -221,12 +190,13 @@ ensure_and_dispatch(
     } =
         State
 ) ->
-    case maps:get(Id, Pids, undefined) of
+    Key = {Aggregate, Id},
+    case maps:get(Key, Pids, undefined) of
         undefined ->
             case start_aggregate(Aggregate, StoreContext, Id, Opts) of
                 {ok, Pid} ->
                     Result = forward(Pid, Command),
-                    NewPids = maps:put(Id, Pid, Pids),
+                    NewPids = maps:put(Key, Pid, Pids),
                     {ok, Result, State#state{pids = NewPids}};
                 {error, Reason} ->
                     {error, Reason, State}
@@ -239,7 +209,8 @@ ensure_and_dispatch(
 -doc """
 Forwards a command to an aggregate process.
 
-Function returns The result of the aggregate's execute function.
+Returns the result of the aggregate's `execute/2` function:
+`ok` on success or `{error, Reason}` on failure.
 """.
 -spec forward(Pid, Command) -> ok | {error, Reason} when
     Pid :: pid(),
