@@ -1,20 +1,17 @@
 -module(es_kernel_store).
 -moduledoc """
-Kernel API for the event sourcing system.
+Kernel API for event store operations.
 
 This module provides:
-- domain types (event, snapshot, sequence, stream_id, etc.)
-- constructors and accessors for these types (`new_event/...`, `id/1`, `sequence/1`,
-  `new_snapshot/...`, `snapshot_state/1`, etc.)
-- utility functions that operate on a pair of storage backends.
+- **Domain types**: event, snapshot, sequence, stream_id, etc.
+- **Constructors and accessors**: `new_event/...`, `new_snapshot/...`, field getters
+- **Storage operations**: wrappers around backend implementations
 
-A `store_context()` is represented as `{EventStore, SnapshotStore}`.
-Both modules may be the same if one backend implements both roles.
+A `store_context()` tuple `{EventStore, SnapshotStore}` identifies the backend modules.
+Both may be the same module if it implements both event and snapshot storage.
 """.
 
 -export([
-    start/1,
-    stop/1,
     append/3,
     fold/5,
     retrieve_events/3,
@@ -42,26 +39,6 @@ Both modules may be the same if one backend implements both roles.
 
 -type store_backend() :: module().
 -type store_context() :: {store_backend(), store_backend()}.
-
--spec start(store_context()) -> ok.
-start({EventModule, SnapshotModule}) ->
-    ensure_started(EventModule),
-    case SnapshotModule =:= EventModule of
-        true ->
-            ok;
-        false ->
-            ensure_started(SnapshotModule)
-    end.
-
--spec stop(store_context()) -> ok.
-stop({EventModule, SnapshotModule}) ->
-    case SnapshotModule =:= EventModule of
-        true ->
-            ensure_stopped(EventModule);
-        false ->
-            ensure_stopped(SnapshotModule),
-            ensure_stopped(EventModule)
-    end.
 
 -doc """
 Appends a list of events to the event store using the specified store module.
@@ -343,27 +320,3 @@ Returns the state stored in the snapshot.
 -spec snapshot_state(es_contract_snapshot:t()) -> es_contract_snapshot:state().
 snapshot_state(Snapshot) ->
     maps:get(state, Snapshot).
-
-%% @private
--spec ensure_started(module()) -> ok | no_return().
-ensure_started(Mod) ->
-    case Mod:start() of
-        ok ->
-            ok;
-        {error, Reason} ->
-            error({init_failed, Mod, Reason});
-        Other ->
-            error({unexpected_start_result, Mod, Other})
-    end.
-
-%% @private
--spec ensure_stopped(module()) -> ok | no_return().
-ensure_stopped(Mod) ->
-    case Mod:stop() of
-        ok ->
-            ok;
-        {error, Reason} ->
-            error({stop_failed, Mod, Reason});
-        Other ->
-            error({unexpected_stop_result, Mod, Other})
-    end.

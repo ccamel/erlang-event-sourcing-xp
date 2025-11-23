@@ -28,8 +28,6 @@ or `{error, Reason}` if startup fails.
     Pid :: pid(),
     Reason :: term().
 start(_StartType, _StartArgs) ->
-    StoreContext = get_store_context(),
-    ok = es_kernel_store:start(StoreContext),
     es_kernel_sup:start_link().
 
 -doc """
@@ -44,8 +42,6 @@ Function returns `ok`.
 """.
 -spec stop(State) -> ok when State :: term().
 stop(_State) ->
-    StoreContext = get_store_context(),
-    es_kernel_store:stop(StoreContext),
     ok.
 
 -doc """

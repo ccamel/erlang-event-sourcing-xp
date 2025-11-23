@@ -18,7 +18,12 @@ setup() ->
     application:set_env(es_kernel, snapshot_store, es_store_ets),
 
     StoreContext = es_kernel_app:get_store_context(),
-    es_kernel_store:start(StoreContext),
+    {EventStore, SnapshotStore} = StoreContext,
+    EventStore:start(),
+    case SnapshotStore =:= EventStore of
+        true -> ok;
+        false -> SnapshotStore:start()
+    end,
 
     %% Start the aggregate supervisor needed by the manager
     case whereis(es_kernel_aggregate_sup) of
@@ -29,7 +34,7 @@ setup() ->
     end,
     StoreContext.
 
-teardown(StoreContext) ->
+teardown({EventStore, SnapshotStore}) ->
     %% Stop the aggregate supervisor
     case whereis(es_kernel_aggregate_sup) of
         undefined ->
@@ -40,7 +45,13 @@ teardown(StoreContext) ->
             %% Wait for it to terminate
             timer:sleep(10)
     end,
-    es_kernel_store:stop(StoreContext).
+    case SnapshotStore =:= EventStore of
+        true ->
+            EventStore:stop();
+        false ->
+            SnapshotStore:stop(),
+            EventStore:stop()
+    end.
 
 %%%  Test cases
 

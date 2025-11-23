@@ -3,11 +3,10 @@
 Behaviour for **event store backends**.
 
 An event store backend is responsible for durable persistence and ordered retrieval
-of domain events. It defines how events are appended to a stream and how they can
-be replayed for state reconstruction.
+of domain events. It defines the functional capabilities required to persist and
+retrieve events, independent of lifecycle management concerns.
 
 Callbacks:
-- `start/0`, `stop/0` — manage the backend's lifecycle
 - `append/2` — append events to a stream, ensuring monotonic sequence numbers
 - `fold/4` — replay events in order and fold them with a user function
 
@@ -18,29 +17,10 @@ Implementations must guarantee:
 - **immutability**: persisted events must never be modified
 
 Typical implementations include in-memory stores (ETS) and relational databases.
+
+Note: Backend implementations may provide `start/0` and `stop/0` functions for
+lifecycle management, but these are not part of this behaviour contract.
 """.
-
--doc """
-Starts the event store, performing any necessary initialization.
-
-This callback is called to prepare the store for operation (e.g., setting up
-database connections, initializing in-memory structures). Implementations
-should be idempotent, allowing repeated calls without side effects.
-
-Returns `ok` on success. May throw an exception if initialization fails
-(e.g., resource unavailable).
-""".
--callback start() -> ok.
--doc """
-This callback function is used to stop the event store.
-
-The callback should perform any necessary cleanup of the event store.
-The function should be idempotent, allowing repeated calls without side effects.
-
-Returns `ok` on success. May throw an exception if cleanup fails
-(e.g., resource not found).
-""".
--callback stop() -> ok.
 -doc """
 Append events to an event stream.
 

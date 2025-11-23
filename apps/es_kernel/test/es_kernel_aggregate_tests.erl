@@ -19,11 +19,22 @@ setup() ->
     application:set_env(es_kernel, event_store, es_store_ets),
     application:set_env(es_kernel, snapshot_store, es_store_ets),
     StoreContext = es_kernel_app:get_store_context(),
-    es_kernel_store:start(StoreContext),
+    {EventStore, SnapshotStore} = StoreContext,
+    EventStore:start(),
+    case SnapshotStore =:= EventStore of
+        true -> ok;
+        false -> SnapshotStore:start()
+    end,
     StoreContext.
 
-teardown(StoreContext) ->
-    es_kernel_store:stop(StoreContext).
+teardown({EventStore, SnapshotStore}) ->
+    case SnapshotStore =:= EventStore of
+        true ->
+            EventStore:stop();
+        false ->
+            SnapshotStore:stop(),
+            EventStore:stop()
+    end.
 
 %%%  Test cases
 
