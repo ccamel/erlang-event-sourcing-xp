@@ -43,7 +43,16 @@ when
             snapshot_interval => non_neg_integer()
         }.
 start_aggregate(Aggregate, StoreContext, Id, Opts) ->
-    supervisor:start_child(?SERVER, [Aggregate, StoreContext, Id, Opts]).
+    ChildSpec =
+        #{
+            id => {es_kernel_aggregate, Aggregate, Id},
+            start => {es_kernel_aggregate, start_link, [Aggregate, StoreContext, Id, Opts]},
+            restart => temporary,
+            shutdown => 5000,
+            type => worker,
+            modules => [es_kernel_aggregate]
+        },
+    supervisor:start_child(?SERVER, ChildSpec).
 
 -doc """
 Initializes the supervisor with a dynamic strategy suitable for
@@ -53,20 +62,10 @@ on-demand aggregate processes.
 init([]) ->
     SupFlags =
         #{
-            strategy => simple_one_for_one,
+            strategy => one_for_one,
             intensity => 10,
             period => 5
         },
 
-    AggregateSpec =
-        #{
-            id => es_kernel_aggregate,
-            start => {es_kernel_aggregate, start_link, []},
-            restart => temporary,
-            shutdown => 5000,
-            type => worker,
-            modules => [es_kernel_aggregate]
-        },
-
-    ChildSpecs = [AggregateSpec],
+    ChildSpecs = [],
     {ok, {SupFlags, ChildSpecs}}.
