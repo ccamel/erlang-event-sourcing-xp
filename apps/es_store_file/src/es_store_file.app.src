@@ -1,0 +1,11 @@
+{application, es_store_file, [
+    {description, "File-backed backend for es_kernel (pedagogical)"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib, es_kernel]},
+    {env, []},
+    {modules, [es_store_file, es_store_file_app, es_store_file_sup]},
+    {mod, {es_store_file_app, []}},
+    {licenses, ["BSD 3-Clause"]},
+    {links, []}
+]}.
