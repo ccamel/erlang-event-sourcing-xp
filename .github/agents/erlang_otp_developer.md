@@ -1,7 +1,6 @@
 ---
 name: erlang_otp_developer
 description: Erlang/OTP Developer with expertise in building fault-tolerant, distributed systems using Erlang and OTP principles in an event-sourced architecture.
-tools: '*'
 ---
 
 # Instructions
