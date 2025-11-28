@@ -40,9 +40,8 @@ teardown({EventStore, SnapshotStore}) ->
 
 -define(assertState(Pid, Id, ExpectedState, ExpectedSeq), begin
     StoreCtx = es_kernel_app:get_store_context(),
-    StreamId = {bank_account_aggregate, Id},
     ?assertMatch(
-        {state, bank_account_aggregate, StoreCtx, StreamId, ExpectedState, ExpectedSeq, _, _, _, _},
+        {state, bank_account_aggregate, StoreCtx, Id, ExpectedState, ExpectedSeq, _, _, _, _},
         sys:get_state(Pid)
     )
 end).
@@ -87,12 +86,11 @@ aggregate_passivation() ->
 
     % start a new aggregate with the same id and check hydration
     StoreContext = es_kernel_app:get_store_context(),
-    StreamId = {bank_account_aggregate, Id},
     {ok, Pid2} =
         es_kernel_aggregate:start_link(
             bank_account_aggregate,
+            Id,
             StoreContext,
-            StreamId,
             #{timeout => 5000}
         ),
     ?assertState(Pid2, Id, #{balance := 75}, 2).
@@ -110,29 +108,25 @@ aggregate_invalid_command() ->
     ).
 
 start_test_account(Timeout) ->
-    %% Generate unique ID to avoid conflicts between tests
-    AggId = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
-    StreamId = {bank_account_aggregate, AggId},
+    AggId = integer_to_binary(erlang:unique_integer([monotonic, positive])),
     StoreContext = es_kernel_app:get_store_context(),
     {ok, Pid} =
         es_kernel_aggregate:start_link(
             bank_account_aggregate,
+            AggId,
             StoreContext,
-            StreamId,
             #{timeout => Timeout}
         ),
     {AggId, Pid}.
 
 start_test_account_with_snapshots(Timeout, SnapshotInterval) ->
-    %% Generate unique ID to avoid conflicts between tests
-    AggId = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
-    StreamId = {bank_account_aggregate, AggId},
+    AggId = integer_to_binary(erlang:unique_integer([monotonic, positive])),
     StoreContext = es_kernel_app:get_store_context(),
     {ok, Pid} =
         es_kernel_aggregate:start_link(
             bank_account_aggregate,
+            AggId,
             StoreContext,
-            StreamId,
             #{timeout => Timeout, snapshot_interval => SnapshotInterval}
         ),
     {AggId, Pid}.
@@ -171,8 +165,7 @@ aggregate_snapshot_creation() ->
     ?assertEqual(#{balance => 250}, es_kernel_store:snapshot_state(Snapshot2)).
 
 aggregate_snapshot_rehydration() ->
-    %% Generate unique ID to avoid conflicts between tests
-    AggId = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
+    AggId = integer_to_binary(erlang:unique_integer([monotonic, positive])),
     StreamId = {bank_account_aggregate, AggId},
 
     %% First, create an aggregate with snapshots
@@ -180,8 +173,8 @@ aggregate_snapshot_rehydration() ->
     {ok, Pid1} =
         es_kernel_aggregate:start_link(
             bank_account_aggregate,
+            AggId,
             StoreContext,
-            StreamId,
             #{timeout => 5000, snapshot_interval => 2}
         ),
 
@@ -208,8 +201,8 @@ aggregate_snapshot_rehydration() ->
     {ok, Pid2} =
         es_kernel_aggregate:start_link(
             bank_account_aggregate,
+            AggId,
             StoreContext,
-            StreamId,
             #{timeout => 5000}
         ),
 
@@ -218,8 +211,7 @@ aggregate_snapshot_rehydration() ->
 
 %% Test that a custom now_fun injected via options is used for event timestamps
 aggregate_custom_now_fun() ->
-    %% Unique ID
-    AggId = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
+    AggId = integer_to_binary(erlang:unique_integer([monotonic, positive])),
     StreamId = {bank_account_aggregate, AggId},
 
     %% Deterministic timestamp
@@ -230,8 +222,8 @@ aggregate_custom_now_fun() ->
     {ok, Pid} =
         es_kernel_aggregate:start_link(
             bank_account_aggregate,
+            AggId,
             StoreContext,
-            StreamId,
             #{timeout => 5000, now_fun => fun() -> Now end}
         ),
 

@@ -23,7 +23,7 @@
 -record(state, {
     aggregate :: module(),
     store :: es_kernel_store:store_context(),
-    id :: es_contract_event:stream_id(),
+    aggregate_id :: es_contract_command:aggregate_id(),
     state :: aggregate_state(),
     sequence = ?SEQUENCE_ZERO :: non_neg_integer(),
     timeout = ?INACTIVITY_TIMEOUT :: timeout(),
@@ -36,37 +36,37 @@
 -export_type([state/0]).
 
 -doc """
-Starts an aggregate process for a given aggregate module and stream.
+Starts an aggregate process for a given aggregate module and aggregate ID.
 
 - Aggregate is the module implementing the domain aggregate.
+- AggId is the aggregate identifier.
 - StoreContext is the `{EventStore, SnapshotStore}` context.
-- Id is the identifier for the aggregate instance.
 - Opts controls inactivity timeout, time source, and snapshot interval.
 """.
--spec start_link(Aggregate, StoreContext, Id, Opts) -> gen_server:start_ret() when
+-spec start_link(Aggregate, AggId, StoreContext, Opts) -> gen_server:start_ret() when
     Aggregate :: module(),
+    AggId :: es_contract_command:aggregate_id(),
     StoreContext :: es_kernel_store:store_context(),
-    Id :: es_contract_event:stream_id(),
     Opts ::
         #{
             timeout => timeout(),
             now_fun => fun(() -> non_neg_integer()),
             snapshot_interval => non_neg_integer()
         }.
-start_link(Aggregate, StoreContext, Id, Opts) ->
-    gen_server:start_link(?MODULE, {Aggregate, StoreContext, Id, Opts}, []).
+start_link(Aggregate, AggId, StoreContext, Opts) ->
+    gen_server:start_link(?MODULE, {Aggregate, AggId, StoreContext, Opts}, []).
 
 -doc """
 Starts an aggregate process with default options.
 """.
 -spec start_link(
     Aggregate :: module(),
-    StoreContext :: es_kernel_store:store_context(),
-    Id :: es_contract_event:stream_id()
+    AggId :: es_contract_command:aggregate_id(),
+    StoreContext :: es_kernel_store:store_context()
 ) ->
     gen_server:start_ret().
-start_link(Aggregate, StoreContext, Id) ->
-    start_link(Aggregate, StoreContext, Id, #{}).
+start_link(Aggregate, AggId, StoreContext) ->
+    start_link(Aggregate, AggId, StoreContext, #{}).
 
 -doc """
 Executes a command on an aggregate process.
@@ -89,22 +89,23 @@ passivation timer. Options control inactivity timeout, time source, and
 snapshot interval.
 """.
 -spec init(
-    {module(), es_kernel_store:store_context(), es_contract_event:stream_id(), #{
+    {module(), es_contract_command:aggregate_id(), es_kernel_store:store_context(), #{
         timeout => timeout(),
         now_fun => fun(() -> non_neg_integer()),
         snapshot_interval => non_neg_integer()
     }}
 ) ->
     {ok, state()}.
-init({Aggregate, StoreContext, Id, Opts}) ->
-    {State1, Sequence1} = rehydrate(Aggregate, StoreContext, Id),
+init({Aggregate, AggId, StoreContext, Opts}) ->
+    StreamId = {Aggregate, AggId},
+    {State1, Sequence1} = rehydrate(Aggregate, StoreContext, StreamId),
     Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
     SnapshotInterval = maps:get(snapshot_interval, Opts, 0),
     TimerRef = install_passivation(Timeout, undefined),
     {ok, #state{
         aggregate = Aggregate,
         store = StoreContext,
-        id = Id,
+        aggregate_id = AggId,
         state = State1,
         sequence = Sequence1,
         timeout = Timeout,
@@ -121,16 +122,16 @@ to rebuild the current state. Returns `{State, Sequence}` where
 `State` is the aggregate state and `Sequence` the last applied event
 sequence.
 """.
--spec rehydrate(Aggregate, StoreContext, Id) -> {State, Sequence} when
+-spec rehydrate(Aggregate, StoreContext, StreamId) -> {State, Sequence} when
     Aggregate :: module(),
     StoreContext :: es_kernel_store:store_context(),
-    Id :: es_contract_event:stream_id(),
+    StreamId :: es_contract_event:stream_id(),
     State :: aggregate_state(),
     Sequence :: non_neg_integer().
-rehydrate(Aggregate, StoreContext, Id) ->
+rehydrate(Aggregate, StoreContext, StreamId) ->
     State0 = Aggregate:init(),
     {StateFromSnapshot, SequenceFromSnapshot} =
-        case es_kernel_store:load_latest(StoreContext, Id) of
+        case es_kernel_store:load_latest(StoreContext, StreamId) of
             {ok, Snapshot} ->
                 SnapshotState = es_kernel_store:snapshot_state(Snapshot),
                 SnapshotSeq = es_kernel_store:snapshot_sequence(Snapshot),
@@ -149,7 +150,7 @@ rehydrate(Aggregate, StoreContext, Id) ->
         end,
     es_kernel_store:fold(
         StoreContext,
-        Id,
+        StreamId,
         FoldFun,
         {StateFromSnapshot, SequenceFromSnapshot},
         es_contract_range:new(SequenceFromSnapshot + 1, infinity)
@@ -247,20 +248,21 @@ process_command(
     #state{
         aggregate = Aggregate,
         store = StoreContext,
-        id = Id,
+        aggregate_id = AggId,
         state = State0,
         sequence = Sequence0,
         now_fun = NowFun
     },
     Command
 ) ->
+    StreamId = {Aggregate, AggId},
     CmdResult = Aggregate:handle_command(Command, State0),
     case CmdResult of
         {ok, []} ->
             {ok, {State0, Sequence0}};
         {ok, PayloadEvents} when is_list(PayloadEvents) ->
             ok = persist_events(
-                PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, NowFun}
+                PayloadEvents, {Aggregate, StoreContext, StreamId, Sequence0, NowFun}
             ),
             {State1, Sequence1} =
                 apply_events(PayloadEvents, {Aggregate, State0, Sequence0}),
@@ -294,12 +296,12 @@ apply_events(PayloadEvents, {Aggregate, State0, Sequence0}) ->
     {
         Aggregate :: module(),
         StoreContext :: es_kernel_store:store_context(),
-        Id :: es_contract_event:stream_id(),
+        StreamId :: es_contract_event:stream_id(),
         Sequence0 :: es_contract_event:sequence(),
         NowFun :: fun(() -> non_neg_integer())
     }
 ) -> ok.
-persist_events(PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, NowFun}) ->
+persist_events(PayloadEvents, {Aggregate, StoreContext, StreamId, Sequence0, NowFun}) ->
     {Events, _} =
         lists:foldl(
             fun(PayloadEvent, {Events, SequenceN}) ->
@@ -308,7 +310,7 @@ persist_events(PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, NowFun}) 
                 EventType = Aggregate:event_type(PayloadEvent),
                 Event =
                     es_kernel_store:new_event(
-                        Id,
+                        StreamId,
                         Aggregate,
                         EventType,
                         SequenceN1,
@@ -326,7 +328,7 @@ persist_events(PayloadEvents, {Aggregate, StoreContext, Id, Sequence0, NowFun}) 
         end,
         Events
     ),
-    es_kernel_store:append(StoreContext, Id, Events).
+    es_kernel_store:append(StoreContext, StreamId, Events).
 
 -doc """
 Saves a snapshot when a snapshot interval is configured and the current
@@ -343,19 +345,20 @@ maybe_save_snapshot(
         sequence = Sequence,
         store = StoreContext,
         aggregate = Aggregate,
-        id = Id,
+        aggregate_id = AggId,
         state = AggState,
         now_fun = NowFun
     }
 ) when Sequence rem Interval =:= 0 ->
+    StreamId = {Aggregate, AggId},
     Timestamp = NowFun(),
-    logger:info("Saving snapshot for ~p at sequence ~p", [Id, Sequence]),
-    Snapshot = es_kernel_store:new_snapshot(Aggregate, Id, Sequence, Timestamp, AggState),
+    logger:info("Saving snapshot for ~p at sequence ~p", [StreamId, Sequence]),
+    Snapshot = es_kernel_store:new_snapshot(Aggregate, StreamId, Sequence, Timestamp, AggState),
     case es_kernel_store:store(StoreContext, Snapshot) of
         ok ->
             ok;
         {warning, Reason} ->
-            logger:warning("Snapshot save failed for ~p at seq ~p: ~p", [Id, Sequence, Reason]),
+            logger:warning("Snapshot save failed for ~p at seq ~p: ~p", [StreamId, Sequence, Reason]),
             ok
     end;
 maybe_save_snapshot(_) ->
