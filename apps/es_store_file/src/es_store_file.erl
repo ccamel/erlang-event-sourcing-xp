@@ -201,9 +201,9 @@ locate_stream_file(Dir, Suffix, Ext) ->
             {error, {ambiguous_stream, Paths}}
     end.
 
--spec stream_basename(atom(), binary()) -> nonempty_string().
-stream_basename(Domain, StreamId) ->
-    sanitize(Domain) ++ "_" ++ sanitize(StreamId).
+-spec stream_basename(atom(), stream_id()) -> nonempty_string().
+stream_basename(Domain, {_Domain, AggId}) ->
+    sanitize(Domain) ++ "_" ++ sanitize(AggId).
 
 -spec events_dir() -> file:filename().
 events_dir() ->
@@ -229,7 +229,9 @@ root_dir() ->
 ensure_dir(Dir) ->
     filelib:ensure_dir(filename:join(Dir, ".keep")).
 
--spec sanitize(atom() | binary() | string()) -> string().
+-spec sanitize(atom() | binary() | string() | stream_id()) -> string().
+sanitize({Domain, AggId}) ->
+    sanitize(Domain) ++ "_" ++ sanitize(AggId);
 sanitize(Value) when is_atom(Value) ->
     sanitize_component(atom_to_list(Value));
 sanitize(Value) when is_binary(Value) ->

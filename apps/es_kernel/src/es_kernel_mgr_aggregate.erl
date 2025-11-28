@@ -111,8 +111,9 @@ when
     From :: {pid(), term()},
     State :: state(),
     Reason :: term().
-handle_call(#{domain := Aggregate, stream_id := Id} = Command, _From, State) ->
-    case ensure_and_dispatch(Aggregate, Id, Command, State) of
+handle_call(#{domain := Aggregate, aggregate_id := AggId} = Command, _From, State) ->
+    StreamId = {Aggregate, AggId},
+    case ensure_and_dispatch(Aggregate, StreamId, Command, State) of
         {ok, Result, NewState} ->
             {reply, Result, NewState};
         {error, Reason, NewState} ->

@@ -12,7 +12,7 @@
 
 -export_type([
     domain/0,
-    stream_id/0,
+    aggregate_id/0,
     sequence/0,
     type/0,
     metadata_key/0,
@@ -32,8 +32,12 @@
 -doc "Domain identifier, representing a bounded context.".
 -type domain() :: atom().
 
--doc "Stream identifier, uniquely identifying the target aggregate stream.".
--type stream_id() :: binary().
+-doc """
+Aggregate identifier, uniquely identifying an aggregate instance.
+
+Can be any term (UUID, binary, integer, etc.).
+""".
+-type aggregate_id() :: term().
 
 -doc "Sequence of the command when batching operations (optional semantic).".
 -type sequence() :: non_neg_integer().
@@ -67,34 +71,34 @@ A command represents an intent to change the state of an aggregate in a specific
 It consists of:
 - `domain`: The domain this command belongs to
 - `type`: The type of command to execute
-- `stream_id`: Identifier of the target aggregate stream
+- `aggregate_id`: Identifier of the target aggregate instance
 - `sequence`: Optional sequencing information for idempotency/correlation
 - `metadata`: Additional contextual information (user, timestamp, correlation ID, etc.)
 - `tags`: Labels for categorization or routing
-- `payload`: The actual command data (self-sufficient, includes aggregate ID(s))
+- `payload`: The actual command data
 """.
 -type t() :: #{
     domain := domain(),
     type := type(),
-    stream_id := stream_id(),
+    aggregate_id := aggregate_id(),
     sequence := sequence(),
     metadata := metadata(),
     tags := tags(),
     payload := payload()
 }.
 
--type key() :: {domain(), stream_id(), sequence()}.
+-type key() :: {domain(), aggregate_id(), sequence()}.
 
 %%--------------------------------------------------------------------
 %% Functions
 %%--------------------------------------------------------------------
 
--spec new(domain(), type(), stream_id(), sequence(), metadata(), payload()) -> t().
-new(Domain, Type, StreamId, Sequence, Metadata, Payload) ->
+-spec new(domain(), type(), aggregate_id(), sequence(), metadata(), payload()) -> t().
+new(Domain, Type, AggregateId, Sequence, Metadata, Payload) ->
     #{
         domain => Domain,
         type => Type,
-        stream_id => StreamId,
+        aggregate_id => AggregateId,
         sequence => Sequence,
         metadata => Metadata,
         tags => [],
@@ -102,8 +106,8 @@ new(Domain, Type, StreamId, Sequence, Metadata, Payload) ->
     }.
 
 -spec key(t()) -> key().
-key(#{domain := D, stream_id := S, sequence := Seq}) ->
-    {D, S, Seq}.
+key(#{domain := D, aggregate_id := AggId, sequence := Seq}) ->
+    {D, AggId, Seq}.
 
 -spec with_metadata(metadata(), t()) -> t().
 with_metadata(Meta, Command) when is_map(Command) ->

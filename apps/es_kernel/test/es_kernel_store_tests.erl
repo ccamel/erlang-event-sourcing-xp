@@ -4,6 +4,8 @@
 
 -define(ETS_STORE_CONTEXT, {es_store_ets, es_store_ets}).
 -define(MNESIA_STORE_CONTEXT, {es_store_mnesia, es_store_mnesia}).
+-define(STREAM_A, {user, <<"account-A">>}).
+-define(STREAM_B, {user, <<"account-B">>}).
 
 suite_test_() ->
     Stores = [?MNESIA_STORE_CONTEXT, ?ETS_STORE_CONTEXT],
@@ -62,7 +64,7 @@ persist_single_event(Store) ->
     Timestamp = erlang:system_time(),
     Event =
         es_kernel_store:new_event(
-            stream_A,
+            ?STREAM_A,
             user,
             user_registered,
             1,
@@ -70,11 +72,11 @@ persist_single_event(Store) ->
             {"John Doe"}
         ),
 
-    ?assertMatch(ok, es_kernel_store:append(Store, stream_A, [Event])),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, [Event])),
     ?assertMatch(
         [Event],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_contract_range:new(0, infinity)
+            Store, ?STREAM_A, es_contract_range:new(0, infinity)
         )
     ),
     stop_store(Store).
@@ -86,7 +88,7 @@ persist_2_streams_event(Store) ->
     EventStreamA =
         [
             es_kernel_store:new_event(
-                stream_A,
+                ?STREAM_A,
                 user,
                 user_registered,
                 1,
@@ -97,7 +99,7 @@ persist_2_streams_event(Store) ->
     EventStreamB =
         [
             es_kernel_store:new_event(
-                stream_B,
+                ?STREAM_B,
                 user,
                 user_registered,
                 1,
@@ -106,19 +108,19 @@ persist_2_streams_event(Store) ->
             )
         ],
 
-    ?assertMatch(ok, es_kernel_store:append(Store, stream_A, EventStreamA)),
-    ?assertMatch(ok, es_kernel_store:append(Store, stream_B, EventStreamB)),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, EventStreamA)),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_B, EventStreamB)),
 
     ?assertMatch(
         EventStreamA,
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_contract_range:new(0, infinity)
+            Store, ?STREAM_A, es_contract_range:new(0, infinity)
         )
     ),
     ?assertMatch(
         EventStreamB,
         es_kernel_store:retrieve_events(
-            Store, stream_B, es_contract_range:new(0, infinity)
+            Store, ?STREAM_B, es_contract_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, stop_store(Store)).
@@ -129,7 +131,7 @@ fetch_streams_event(Store) ->
     Events =
         [
             es_kernel_store:new_event(
-                stream_A,
+                ?STREAM_A,
                 user,
                 user_registered,
                 1,
@@ -137,17 +139,17 @@ fetch_streams_event(Store) ->
                 {"Jon Doe"}
             ),
             es_kernel_store:new_event(
-                stream_A,
+                ?STREAM_A,
                 user,
                 user_updated,
                 2,
                 Timestamp,
                 {"John Doe"}
             ),
-            es_kernel_store:new_event(stream_A, user, user_deleted, 3, Timestamp, {})
+            es_kernel_store:new_event(?STREAM_A, user, user_deleted, 3, Timestamp, {})
         ],
 
-    ?assertMatch(ok, es_kernel_store:append(Store, stream_A, Events)),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, Events)),
     ?assertMatch(
         [],
         es_kernel_store:retrieve_events(
@@ -157,13 +159,13 @@ fetch_streams_event(Store) ->
     ?assertMatch(
         [],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_contract_range:new(0, 1)
+            Store, ?STREAM_A, es_contract_range:new(0, 1)
         )
     ),
     ?assertMatch(
         [],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_contract_range:new(1, 1)
+            Store, ?STREAM_A, es_contract_range:new(1, 1)
         )
     ),
 
@@ -173,31 +175,31 @@ fetch_streams_event(Store) ->
     ?assertMatch(
         [Event1],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_contract_range:new(1, 2)
+            Store, ?STREAM_A, es_contract_range:new(1, 2)
         )
     ),
     ?assertMatch(
         [Event2],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_contract_range:new(2, 3)
+            Store, ?STREAM_A, es_contract_range:new(2, 3)
         )
     ),
     ?assertMatch(
         [Event2, Event3],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_contract_range:new(2, 4)
+            Store, ?STREAM_A, es_contract_range:new(2, 4)
         )
     ),
     ?assertMatch(
         [Event2],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_contract_range:new(2, 3)
+            Store, ?STREAM_A, es_contract_range:new(2, 3)
         )
     ),
     ?assertMatch(
         Events,
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_contract_range:new(0, infinity)
+            Store, ?STREAM_A, es_contract_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, stop_store(Store)).
@@ -207,7 +209,7 @@ wrong_stream_id(Store) ->
     Timestamp = erlang:system_time(),
     Event =
         es_kernel_store:new_event(
-            stream_A,
+            ?STREAM_A,
             user,
             user_registered,
             1,
@@ -217,19 +219,19 @@ wrong_stream_id(Store) ->
 
     ?assertException(
         error,
-        {badarg, stream_A},
-        es_kernel_store:append(Store, stream_B, [Event])
+        {badarg, ?STREAM_A},
+        es_kernel_store:append(Store, ?STREAM_B, [Event])
     ),
     ?assertMatch(
         [],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_contract_range:new(0, infinity)
+            Store, ?STREAM_A, es_contract_range:new(0, infinity)
         )
     ),
     ?assertMatch(
         [],
         es_kernel_store:retrieve_events(
-            Store, stream_B, es_contract_range:new(0, infinity)
+            Store, ?STREAM_B, es_contract_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, stop_store(Store)).
@@ -239,7 +241,7 @@ duplicate_event(Store) ->
     Timestamp = erlang:system_time(),
     Event =
         es_kernel_store:new_event(
-            stream_A,
+            ?STREAM_A,
             user,
             user_registered,
             1,
@@ -247,22 +249,22 @@ duplicate_event(Store) ->
             {"John Doe"}
         ),
 
-    ?assertMatch(ok, es_kernel_store:append(Store, stream_A, [Event])),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, [Event])),
     ?assertException(
         error,
         duplicate_event,
-        es_kernel_store:append(Store, stream_A, [Event])
+        es_kernel_store:append(Store, ?STREAM_A, [Event])
     ),
     ?assertMatch(
         [Event],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_contract_range:new(0, infinity)
+            Store, ?STREAM_A, es_contract_range:new(0, infinity)
         )
     ),
     Events =
         [
             es_kernel_store:new_event(
-                stream_B,
+                ?STREAM_B,
                 user,
                 user_registered,
                 1,
@@ -270,7 +272,7 @@ duplicate_event(Store) ->
                 {"Jon Doe"}
             ),
             es_kernel_store:new_event(
-                stream_B,
+                ?STREAM_B,
                 user,
                 user_updated,
                 2,
@@ -278,7 +280,7 @@ duplicate_event(Store) ->
                 {"John Doe"}
             ),
             es_kernel_store:new_event(
-                stream_B,
+                ?STREAM_B,
                 user,
                 user_registered,
                 1,
@@ -290,12 +292,12 @@ duplicate_event(Store) ->
     ?assertException(
         error,
         duplicate_event,
-        es_kernel_store:append(Store, stream_B, Events)
+        es_kernel_store:append(Store, ?STREAM_B, Events)
     ),
     ?assertMatch(
         [],
         es_kernel_store:retrieve_events(
-            Store, stream_B, es_contract_range:new(0, infinity)
+            Store, ?STREAM_B, es_contract_range:new(0, infinity)
         )
     ),
     ?assertEqual(ok, stop_store(Store)).
@@ -304,7 +306,7 @@ snapshot_not_found(Store) ->
     ?assertMatch(ok, start_store(Store)),
     ?assertMatch(
         {error, not_found},
-        es_kernel_store:load_latest(Store, stream_A)
+        es_kernel_store:load_latest(Store, ?STREAM_A)
     ),
     ?assertEqual(ok, stop_store(Store)).
 
@@ -315,11 +317,11 @@ save_and_retrieve_snapshot(Store) ->
     Sequence = 5,
     Domain = user,
 
-    Snapshot = es_kernel_store:new_snapshot(Domain, stream_A, Sequence, Timestamp, State),
+    Snapshot = es_kernel_store:new_snapshot(Domain, ?STREAM_A, Sequence, Timestamp, State),
     ?assertMatch(ok, es_kernel_store:store(Store, Snapshot)),
 
-    {ok, RetrievedSnapshot} = es_kernel_store:load_latest(Store, stream_A),
-    ?assertEqual(stream_A, es_kernel_store:snapshot_stream_id(RetrievedSnapshot)),
+    {ok, RetrievedSnapshot} = es_kernel_store:load_latest(Store, ?STREAM_A),
+    ?assertEqual(?STREAM_A, es_kernel_store:snapshot_stream_id(RetrievedSnapshot)),
     ?assertEqual(Domain, es_kernel_store:snapshot_domain(RetrievedSnapshot)),
     ?assertEqual(Sequence, es_kernel_store:snapshot_sequence(RetrievedSnapshot)),
     ?assertEqual(Timestamp, es_kernel_store:snapshot_timestamp(RetrievedSnapshot)),
@@ -335,7 +337,7 @@ overwrite_snapshot(Store) ->
     Domain = user,
 
     Snapshot1 = es_kernel_store:new_snapshot(
-        Domain, stream_A, Sequence1, Timestamp1, State1
+        Domain, ?STREAM_A, Sequence1, Timestamp1, State1
     ),
     ?assertMatch(ok, es_kernel_store:store(Store, Snapshot1)),
 
@@ -345,12 +347,12 @@ overwrite_snapshot(Store) ->
     Sequence2 = 10,
 
     Snapshot2 = es_kernel_store:new_snapshot(
-        Domain, stream_A, Sequence2, Timestamp2, State2
+        Domain, ?STREAM_A, Sequence2, Timestamp2, State2
     ),
     ?assertMatch(ok, es_kernel_store:store(Store, Snapshot2)),
 
     %% Should retrieve the latest snapshot
-    {ok, RetrievedSnapshot} = es_kernel_store:load_latest(Store, stream_A),
+    {ok, RetrievedSnapshot} = es_kernel_store:load_latest(Store, ?STREAM_A),
     ?assertEqual(Sequence2, es_kernel_store:snapshot_sequence(RetrievedSnapshot)),
     ?assertEqual(State2, es_kernel_store:snapshot_state(RetrievedSnapshot)),
 
@@ -363,26 +365,26 @@ composite_store_supports_mixed_backends() ->
     Timestamp = erlang:system_time(),
     Event =
         es_kernel_store:new_event(
-            stream_A,
+            ?STREAM_A,
             user,
             user_registered,
             1,
             Timestamp,
             {"John Doe"}
         ),
-    ?assertMatch(ok, es_kernel_store:append(Store, stream_A, [Event])),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, [Event])),
     ?assertMatch(
         [Event],
         es_kernel_store:retrieve_events(
-            Store, stream_A, es_contract_range:new(0, infinity)
+            Store, ?STREAM_A, es_contract_range:new(0, infinity)
         )
     ),
 
-    Snapshot = es_kernel_store:new_snapshot(user, stream_A, 1, Timestamp, #{
+    Snapshot = es_kernel_store:new_snapshot(user, ?STREAM_A, 1, Timestamp, #{
         balance => 100
     }),
     ?assertMatch(ok, es_kernel_store:store(Store, Snapshot)),
-    {ok, RetrievedSnapshot} = es_kernel_store:load_latest(Store, stream_A),
+    {ok, RetrievedSnapshot} = es_kernel_store:load_latest(Store, ?STREAM_A),
     ?assertEqual(1, es_kernel_store:snapshot_sequence(RetrievedSnapshot)),
     ?assertEqual(#{balance => 100}, es_kernel_store:snapshot_state(RetrievedSnapshot)),
 
@@ -398,7 +400,7 @@ snapshot_save_error(?ETS_STORE_CONTEXT = Store) ->
     Sequence = 5,
     Domain = user,
 
-    Snapshot = es_kernel_store:new_snapshot(Domain, stream_A, Sequence, Timestamp, State),
+    Snapshot = es_kernel_store:new_snapshot(Domain, ?STREAM_A, Sequence, Timestamp, State),
     Result = es_kernel_store:store(Store, Snapshot),
 
     %% Should return a warning tuple, not throw an exception
@@ -414,7 +416,7 @@ snapshot_save_error(?MNESIA_STORE_CONTEXT = Store) ->
     Sequence = 5,
     Domain = user,
 
-    Snapshot = es_kernel_store:new_snapshot(Domain, stream_A, Sequence, Timestamp, State),
+    Snapshot = es_kernel_store:new_snapshot(Domain, ?STREAM_A, Sequence, Timestamp, State),
 
     %% Normal save should still return ok
     ?assertMatch(ok, es_kernel_store:store(Store, Snapshot)),

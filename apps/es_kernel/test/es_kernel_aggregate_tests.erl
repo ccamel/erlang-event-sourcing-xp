@@ -40,8 +40,9 @@ teardown({EventStore, SnapshotStore}) ->
 
 -define(assertState(Pid, Id, ExpectedState, ExpectedSeq), begin
     StoreCtx = es_kernel_app:get_store_context(),
+    StreamId = {bank_account_aggregate, Id},
     ?assertMatch(
-        {state, bank_account_aggregate, StoreCtx, Id, ExpectedState, ExpectedSeq, _, _, _, _},
+        {state, bank_account_aggregate, StoreCtx, StreamId, ExpectedState, ExpectedSeq, _, _, _, _},
         sys:get_state(Pid)
     )
 end).
@@ -86,11 +87,12 @@ aggregate_passivation() ->
 
     % start a new aggregate with the same id and check hydration
     StoreContext = es_kernel_app:get_store_context(),
+    StreamId = {bank_account_aggregate, Id},
     {ok, Pid2} =
         es_kernel_aggregate:start_link(
             bank_account_aggregate,
             StoreContext,
-            Id,
+            StreamId,
             #{timeout => 5000}
         ),
     ?assertState(Pid2, Id, #{balance := 75}, 2).
@@ -109,29 +111,31 @@ aggregate_invalid_command() ->
 
 start_test_account(Timeout) ->
     %% Generate unique ID to avoid conflicts between tests
-    Id = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
+    AggId = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
+    StreamId = {bank_account_aggregate, AggId},
     StoreContext = es_kernel_app:get_store_context(),
     {ok, Pid} =
         es_kernel_aggregate:start_link(
             bank_account_aggregate,
             StoreContext,
-            Id,
+            StreamId,
             #{timeout => Timeout}
         ),
-    {Id, Pid}.
+    {AggId, Pid}.
 
 start_test_account_with_snapshots(Timeout, SnapshotInterval) ->
     %% Generate unique ID to avoid conflicts between tests
-    Id = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
+    AggId = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
+    StreamId = {bank_account_aggregate, AggId},
     StoreContext = es_kernel_app:get_store_context(),
     {ok, Pid} =
         es_kernel_aggregate:start_link(
             bank_account_aggregate,
             StoreContext,
-            Id,
+            StreamId,
             #{timeout => Timeout, snapshot_interval => SnapshotInterval}
         ),
-    {Id, Pid}.
+    {AggId, Pid}.
 
 aggregate_snapshot_creation() ->
     {Id, Pid} = start_test_account_with_snapshots(5000, 3),
@@ -144,9 +148,10 @@ aggregate_snapshot_creation() ->
 
     %% Snapshot should be saved at sequence 3 (3 % 3 == 0)
     StoreContext = es_kernel_app:get_store_context(),
+    StreamId = {bank_account_aggregate, Id},
     {ok, Snapshot} = es_kernel_store:load_latest(
         StoreContext,
-        Id
+        StreamId
     ),
     ?assertEqual(3, es_kernel_store:snapshot_sequence(Snapshot)),
     ?assertEqual(#{balance => 125}, es_kernel_store:snapshot_state(Snapshot)),
@@ -160,14 +165,15 @@ aggregate_snapshot_creation() ->
     %% Snapshot should now be at sequence 6 (6 % 3 == 0)
     {ok, Snapshot2} = es_kernel_store:load_latest(
         StoreContext,
-        Id
+        StreamId
     ),
     ?assertEqual(6, es_kernel_store:snapshot_sequence(Snapshot2)),
     ?assertEqual(#{balance => 250}, es_kernel_store:snapshot_state(Snapshot2)).
 
 aggregate_snapshot_rehydration() ->
     %% Generate unique ID to avoid conflicts between tests
-    Id = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
+    AggId = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
+    StreamId = {bank_account_aggregate, AggId},
 
     %% First, create an aggregate with snapshots
     StoreContext = es_kernel_app:get_store_context(),
@@ -175,25 +181,25 @@ aggregate_snapshot_rehydration() ->
         es_kernel_aggregate:start_link(
             bank_account_aggregate,
             StoreContext,
-            Id,
+            StreamId,
             #{timeout => 5000, snapshot_interval => 2}
         ),
 
     %% Process commands to create events and snapshots
-    ?assertEqual(ok, es_kernel_aggregate:execute(Pid1, cmd(deposit, Id, #{amount => 100}))),
-    ?assertEqual(ok, es_kernel_aggregate:execute(Pid1, cmd(deposit, Id, #{amount => 200}))),
-    ?assertState(Pid1, Id, #{balance := 300}, 2),
+    ?assertEqual(ok, es_kernel_aggregate:execute(Pid1, cmd(deposit, AggId, #{amount => 100}))),
+    ?assertEqual(ok, es_kernel_aggregate:execute(Pid1, cmd(deposit, AggId, #{amount => 200}))),
+    ?assertState(Pid1, AggId, #{balance := 300}, 2),
 
     %% Snapshot should exist at sequence 2
     {ok, _Snapshot} = es_kernel_store:load_latest(
         StoreContext,
-        Id
+        StreamId
     ),
 
     %% Add more events after snapshot
-    ?assertEqual(ok, es_kernel_aggregate:execute(Pid1, cmd(withdraw, Id, #{amount => 50}))),
-    ?assertEqual(ok, es_kernel_aggregate:execute(Pid1, cmd(deposit, Id, #{amount => 150}))),
-    ?assertState(Pid1, Id, #{balance := 400}, 4),
+    ?assertEqual(ok, es_kernel_aggregate:execute(Pid1, cmd(withdraw, AggId, #{amount => 50}))),
+    ?assertEqual(ok, es_kernel_aggregate:execute(Pid1, cmd(deposit, AggId, #{amount => 150}))),
+    ?assertState(Pid1, AggId, #{balance := 400}, 4),
 
     %% Stop the aggregate
     gen_server:stop(Pid1),
@@ -203,17 +209,18 @@ aggregate_snapshot_rehydration() ->
         es_kernel_aggregate:start_link(
             bank_account_aggregate,
             StoreContext,
-            Id,
+            StreamId,
             #{timeout => 5000}
         ),
 
     %% Should have rehydrated to sequence 4 by loading snapshot at 2 and replaying events 3,4
-    ?assertState(Pid2, Id, #{balance := 400}, 4).
+    ?assertState(Pid2, AggId, #{balance := 400}, 4).
 
 %% Test that a custom now_fun injected via options is used for event timestamps
 aggregate_custom_now_fun() ->
     %% Unique ID
-    Id = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
+    AggId = list_to_binary("bank-account-" ++ integer_to_list(erlang:unique_integer([positive]))),
+    StreamId = {bank_account_aggregate, AggId},
 
     %% Deterministic timestamp
     Now = 1_234_567_890,
@@ -224,16 +231,16 @@ aggregate_custom_now_fun() ->
         es_kernel_aggregate:start_link(
             bank_account_aggregate,
             StoreContext,
-            Id,
+            StreamId,
             #{timeout => 5000, now_fun => fun() -> Now end}
         ),
 
     %% Execute a command that will persist an event
-    ?assertEqual(ok, es_kernel_aggregate:execute(Pid, cmd(deposit, Id, #{amount => 42}))),
+    ?assertEqual(ok, es_kernel_aggregate:execute(Pid, cmd(deposit, AggId, #{amount => 42}))),
 
     %% Retrieve persisted events and assert the timestamp matches the injected Now
     Events = es_kernel_store:retrieve_events(
-        StoreContext, Id, es_contract_range:new(0, infinity)
+        StoreContext, StreamId, es_contract_range:new(0, infinity)
     ),
     ?assertEqual(1, length(Events)),
     [Event] = Events,

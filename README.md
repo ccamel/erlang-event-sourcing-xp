@@ -292,7 +292,7 @@ Setting `snapshot_interval => 0` (the default) disables automatic snapshotting.
 
 ### Aggregate Manager
 
-The _aggregate manager_ is a [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) started by `es_kernel_sup` and registered as `es_kernel_mgr_aggregate`. It routes `es_contract_command:t()` to the right aggregate process (keyed by `{domain, stream_id}`), spins up instances via the dynamic supervisor, and monitors them to keep its registry clean. The store context is taken from the `es_kernel` application environment, and the public entrypoint `es_kernel:dispatch/1` forwards to this singleton.
+The _aggregate manager_ is a [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) started by `es_kernel_sup` and registered as `es_kernel_mgr_aggregate`. It routes `es_contract_command:t()` to the right aggregate process, spins up instances via the dynamic supervisor, and monitors them to keep its registry clean. The store context is taken from the `es_kernel` application environment, and the public entrypoint `es_kernel:dispatch/1` forwards to this singleton.
 
 The manager is responsible for:
 
@@ -304,7 +304,7 @@ The manager is responsible for:
 
 The aggregate manager maintains a mapping of `{AggregateModule, StreamId}` to aggregate process PIDs. When a command is received (typically via `es_kernel:dispatch/1`):
 
-1. It pattern matches the `domain` and `stream_id` from the command map.
+1. It extracts the `stream_id` (which is a tuple `{domain, aggregate_id}`) from the command map.
 2. The internal `pids` map is checked for an existing aggregate instance.
 3. If none exists, the manager asks `es_kernel_aggregate_sup` to start the aggregate, monitors the new PID, and stores it in the registry.
 4. The command is forwarded to the aggregate via `es_kernel_aggregate:execute/2`.

@@ -77,7 +77,8 @@ teardown({EventStore, SnapshotStore}) ->
 %%%  Test cases
 
 agg_id(Pid, Aggregate, Id) ->
-    Key = {Aggregate, Id},
+    StreamId = {Aggregate, Id},
+    Key = {Aggregate, StreamId},
     {state, _, _, #{Key := AggPid}} = sys:get_state(Pid),
     AggPid.
 
@@ -93,8 +94,9 @@ cmd(Type, Id, Payload) ->
 
 -define(assertState(Pid, Id, ExpectedState, ExpectedSeq), begin
     StoreCtx = es_kernel_app:get_store_context(),
+    StreamId = {bank_account_aggregate, Id},
     ?assertMatch(
-        {state, bank_account_aggregate, StoreCtx, Id, ExpectedState, ExpectedSeq, _, _, _, _},
+        {state, bank_account_aggregate, StoreCtx, StreamId, ExpectedState, ExpectedSeq, _, _, _, _},
         sys:get_state(Pid)
     )
 end).
