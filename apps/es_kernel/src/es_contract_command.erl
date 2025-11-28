@@ -2,7 +2,7 @@
 
 -export([
     new/6,
-    key/1,
+    target/1,
     with_metadata/2,
     put_metadata/3,
     with_tags/2,
@@ -22,7 +22,7 @@
     tags/0,
     payload/0,
     t/0,
-    key/0
+    target/0
 ]).
 
 %%--------------------------------------------------------------------
@@ -88,12 +88,12 @@ It consists of:
 }.
 
 -doc """
-Composite key uniquely identifying a command target.
+Command target identifier.
 
-The key is a tuple of the Domain and the AggregateId that identifies
-which aggregate this command targets.
+The target is a tuple of the Domain and the AggregateId that identifies
+which aggregate this command is addressed to.
 """.
--type key() :: {domain(), aggregate_id()}.
+-type target() :: {domain(), aggregate_id()}.
 
 %%--------------------------------------------------------------------
 %% Functions
@@ -111,8 +111,8 @@ new(Domain, Type, AggregateId, Sequence, Metadata, Payload) ->
         payload => Payload
     }.
 
--spec key(t()) -> key().
-key(#{domain := D, aggregate_id := AggId}) ->
+-spec target(t()) -> target().
+target(#{domain := D, aggregate_id := AggId}) ->
     {D, AggId}.
 
 -spec with_metadata(metadata(), t()) -> t().
