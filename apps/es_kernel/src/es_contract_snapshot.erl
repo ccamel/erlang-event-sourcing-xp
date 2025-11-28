@@ -68,10 +68,11 @@ A snapshot represents a point-in-time capture of an aggregate's state. It consis
 
 -doc """
 Composite key uniquely identifying a snapshot.
-The key is a tuple of the Domain, the StreamId and the Sequence that uniquely identifies
+
+The key is a tuple of the StreamId and the Sequence that uniquely identifies
 a snapshot within the entire snapshot store.
 """.
--type key() :: {domain(), stream_id(), sequence()}.
+-type key() :: {stream_id(), sequence()}.
 
 %%--------------------------------------------------------------------
 %% Functions
@@ -88,8 +89,8 @@ new(Domain, StreamId, Sequence, Metadata, State) ->
     }.
 
 -spec key(t()) -> key().
-key(#{stream_id := {D, _} = S, sequence := Seq}) ->
-    {D, S, Seq}.
+key(#{stream_id := S, sequence := Seq}) ->
+    {S, Seq}.
 
 -spec with_metadata(metadata(), t()) -> t().
 with_metadata(Meta, Snap) when is_map(Snap) ->

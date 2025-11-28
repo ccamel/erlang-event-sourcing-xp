@@ -92,10 +92,10 @@ An event represents a fact that something has happened in the system. It consist
 -doc """
 Composite key uniquely identifying an event.
 
-The key is a tuple of the Domain, the StreamId and the Sequence that uniquely identifies
+The key is a tuple of the StreamId and the Sequence that uniquely identifies
 an event within the entire event store.
 """.
--type key() :: {domain(), stream_id(), sequence()}.
+-type key() :: {stream_id(), sequence()}.
 
 %%--------------------------------------------------------------------
 %% Functions
@@ -114,8 +114,8 @@ new(Domain, Type, StreamId, Sequence, Metadata, Payload) ->
     }.
 
 -spec key(t()) -> key().
-key(#{stream_id := {D, _} = S, sequence := Seq}) ->
-    {D, S, Seq}.
+key(#{stream_id := S, sequence := Seq}) ->
+    {S, Seq}.
 
 -spec with_metadata(metadata(), t()) -> t().
 with_metadata(Meta, Event) when is_map(Event) ->

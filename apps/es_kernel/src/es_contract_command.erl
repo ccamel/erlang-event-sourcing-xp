@@ -87,7 +87,13 @@ It consists of:
     payload := payload()
 }.
 
--type key() :: {domain(), aggregate_id(), sequence()}.
+-doc """
+Composite key uniquely identifying a command target.
+
+The key is a tuple of the Domain and the AggregateId that identifies
+which aggregate this command targets.
+""".
+-type key() :: {domain(), aggregate_id()}.
 
 %%--------------------------------------------------------------------
 %% Functions
@@ -106,8 +112,8 @@ new(Domain, Type, AggregateId, Sequence, Metadata, Payload) ->
     }.
 
 -spec key(t()) -> key().
-key(#{domain := D, aggregate_id := AggId, sequence := Seq}) ->
-    {D, AggId, Seq}.
+key(#{domain := D, aggregate_id := AggId}) ->
+    {D, AggId}.
 
 -spec with_metadata(metadata(), t()) -> t().
 with_metadata(Meta, Command) when is_map(Command) ->
