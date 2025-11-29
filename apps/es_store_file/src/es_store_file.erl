@@ -142,7 +142,10 @@ store(Snapshot) ->
         ),
         Path = snapshot_file_path(BaseName),
         ensure_dir(snapshots_dir()),
-        file:write_file(Path, serialize_to_line(Snapshot), [])
+        case file:write_file(Path, serialize_to_line(Snapshot), []) of
+            ok -> ok;
+            {error, Error} -> {warning, {write_error, Error}}
+        end
     catch
         Class:Reason ->
             {warning, {Class, Reason}}
