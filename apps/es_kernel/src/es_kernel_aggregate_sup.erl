@@ -30,10 +30,10 @@ The caller controls when aggregate processes are created or recreated.
 If a child process crashes, it is not restarted automatically; calling
 `start_aggregate/4` again is the way to start a new aggregate process.
 """.
--spec start_aggregate(Aggregate, AggId, StoreContext, Opts) ->
+-spec start_aggregate(AggregateType, AggId, StoreContext, Opts) ->
     supervisor:startchild_ret()
 when
-    Aggregate :: module(),
+    AggregateType :: es_contract_event:aggregate_type(),
     AggId :: es_contract_command:aggregate_id(),
     StoreContext :: es_kernel_store:store_context(),
     Opts ::
@@ -42,11 +42,11 @@ when
             now_fun => fun(() -> non_neg_integer()),
             snapshot_interval => non_neg_integer()
         }.
-start_aggregate(Aggregate, AggId, StoreContext, Opts) ->
+start_aggregate(AggregateType, AggId, StoreContext, Opts) ->
     ChildSpec =
         #{
-            id => {es_kernel_aggregate, Aggregate, AggId},
-            start => {es_kernel_aggregate, start_link, [Aggregate, AggId, StoreContext, Opts]},
+            id => {es_kernel_aggregate, AggregateType, AggId},
+            start => {es_kernel_aggregate, start_link, [AggregateType, AggId, StoreContext, Opts]},
             restart => temporary,
             shutdown => 5000,
             type => worker,

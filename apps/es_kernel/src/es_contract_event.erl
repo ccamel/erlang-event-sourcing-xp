@@ -11,7 +11,7 @@
 ]).
 
 -export_type([
-    domain/0,
+    aggregate_type/0,
     stream_id/0,
     sequence/0,
     type/0,
@@ -29,8 +29,8 @@
 %% Types
 %%--------------------------------------------------------------------
 
--doc "Domain identifier, representing a bounded context.".
--type domain() :: atom().
+-doc "Aggregate type identifier, specifying which kind of aggregate this event belongs to.".
+-type aggregate_type() :: atom().
 
 -doc """
 Aggregate identifier, uniquely identifying an aggregate instance.
@@ -42,10 +42,10 @@ Can be any term (UUID, binary, integer, etc.).
 -doc """
 Stream identifier, uniquely identifying an event stream.
 
-A stream is identified by a tuple of {Domain, AggregateId}, ensuring no collisions
-across different domains and aggregate instances.
+A stream is identified by a tuple of {AggregateType, AggregateId}, ensuring no collisions
+across different aggregate types and instances.
 """.
--type stream_id() :: {domain(), aggregate_id()}.
+-type stream_id() :: {aggregate_type(), aggregate_id()}.
 
 -doc "Sequence number of the event within its stream, starting from 0.".
 -type sequence() :: non_neg_integer().
@@ -75,7 +75,7 @@ The payload is the actual domain data that describes what changed in the system.
 Event data structure.
 
 An event represents a fact that something has happened in the system. It consists of:
-- `domain`: The domain this event belongs to
+- `aggregate_type`: The aggregate type this event belongs to
 - `type`: The type of event that occurred
 - `stream_id`: Identifier of the stream this event belongs to
 - `sequence`: Position of this event in the stream (0-based)
@@ -84,7 +84,7 @@ An event represents a fact that something has happened in the system. It consist
 - `payload`: The actual event data describing what changed
 """.
 -type t() :: #{
-    domain := domain(),
+    aggregate_type := aggregate_type(),
     type := type(),
     stream_id := stream_id(),
     sequence := sequence(),
@@ -105,10 +105,10 @@ an event within the entire event store.
 %% Functions
 %%--------------------------------------------------------------------
 
--spec new(domain(), type(), stream_id(), sequence(), metadata(), payload()) -> t().
-new(Domain, Type, StreamId, Sequence, Metadata, Payload) ->
+-spec new(aggregate_type(), type(), stream_id(), sequence(), metadata(), payload()) -> t().
+new(AggregateType, Type, StreamId, Sequence, Metadata, Payload) ->
     #{
-        domain => Domain,
+        aggregate_type => AggregateType,
         type => Type,
         stream_id => StreamId,
         sequence => Sequence,

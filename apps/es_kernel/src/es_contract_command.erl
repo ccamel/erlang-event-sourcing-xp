@@ -11,7 +11,7 @@
 ]).
 
 -export_type([
-    domain/0,
+    aggregate_type/0,
     aggregate_id/0,
     sequence/0,
     type/0,
@@ -29,8 +29,8 @@
 %% Types
 %%--------------------------------------------------------------------
 
--doc "Domain identifier, representing a bounded context.".
--type domain() :: atom().
+-doc "Aggregate type identifier, specifying which kind of aggregate this command targets.".
+-type aggregate_type() :: atom().
 
 -doc """
 Aggregate identifier, uniquely identifying an aggregate instance.
@@ -58,18 +58,15 @@ Can be any term (UUID, binary, integer, etc.).
 
 -doc """
 Command payload containing the command-specific data.
-
-The payload is self-sufficient and contains all necessary information to execute
-the command, including the aggregate identifier(s) it applies to.
 """.
 -type payload() :: term().
 
 -doc """
 Command data structure.
 
-A command represents an intent to change the state of an aggregate in a specific domain.
+A command represents an intent to change the state of an aggregate of a specific type.
 It consists of:
-- `domain`: The domain this command belongs to
+- `aggregate_type`: The aggregate type this command targets
 - `type`: The type of command to execute
 - `aggregate_id`: Identifier of the target aggregate instance
 - `sequence`: Optional sequencing information for idempotency/correlation
@@ -78,7 +75,7 @@ It consists of:
 - `payload`: The actual command data
 """.
 -type t() :: #{
-    domain := domain(),
+    aggregate_type := aggregate_type(),
     type := type(),
     aggregate_id := aggregate_id(),
     sequence := sequence(),
@@ -90,19 +87,19 @@ It consists of:
 -doc """
 Command target identifier.
 
-The target is a tuple of the Domain and the AggregateId that identifies
+The target is a tuple of the AggregateType and the AggregateId that identifies
 which aggregate this command is addressed to.
 """.
--type target() :: {domain(), aggregate_id()}.
+-type target() :: {aggregate_type(), aggregate_id()}.
 
 %%--------------------------------------------------------------------
 %% Functions
 %%--------------------------------------------------------------------
 
--spec new(domain(), type(), aggregate_id(), sequence(), metadata(), payload()) -> t().
-new(Domain, Type, AggregateId, Sequence, Metadata, Payload) ->
+-spec new(aggregate_type(), type(), aggregate_id(), sequence(), metadata(), payload()) -> t().
+new(AggregateType, Type, AggregateId, Sequence, Metadata, Payload) ->
     #{
-        domain => Domain,
+        aggregate_type => AggregateType,
         type => Type,
         aggregate_id => AggregateId,
         sequence => Sequence,
@@ -112,8 +109,8 @@ new(Domain, Type, AggregateId, Sequence, Metadata, Payload) ->
     }.
 
 -spec target(t()) -> target().
-target(#{domain := D, aggregate_id := AggId}) ->
-    {D, AggId}.
+target(#{aggregate_type := AggType, aggregate_id := AggId}) ->
+    {AggType, AggId}.
 
 -spec with_metadata(metadata(), t()) -> t().
 with_metadata(Meta, Command) when is_map(Command) ->

@@ -63,7 +63,7 @@ AccountId = <<"123">>,
 Dispatch = fun(Type, Amount) ->
     Command =
         es_contract_command:new(
-            bank_account_aggregate,
+            bank_account,
             Type,
             AccountId,
             0,
@@ -296,19 +296,20 @@ The _aggregate manager_ is a [gen_server](https://www.erlang.org/doc/apps/stdlib
 
 The manager is responsible for:
 
-- Routing commands to the appropriate aggregate process across all domains.
+- Routing commands to the appropriate aggregate process across all aggregate types.
 - Starting aggregate instances on demand through `es_kernel_aggregate_sup`.
 - Monitoring aggregate processes (for passivation or crashes) and cleaning up registry entries when they terminate.
 
 #### How it works
 
-The aggregate manager maintains a mapping of `{AggregateModule, StreamId}` to aggregate process PIDs. When a command is received (typically via `es_kernel:dispatch/1`):
+The aggregate manager maintains a mapping of `{AggregateType, AggregateId}` to aggregate process PIDs. When a command is received (typically via `es_kernel:dispatch/1`):
 
-1. It extracts the `stream_id` (which is a tuple `{domain, aggregate_id}`) from the command map.
-2. The internal `pids` map is checked for an existing aggregate instance.
-3. If none exists, the manager asks `es_kernel_aggregate_sup` to start the aggregate, monitors the new PID, and stores it in the registry.
-4. The command is forwarded to the aggregate via `es_kernel_aggregate:execute/2`.
-5. When an aggregate terminates (passivation or crash), the monitor `'DOWN'` message removes it from the registry so a new command will recreate it if needed.
+1. It extracts the `aggregate_type` and `aggregate_id` from the command map.
+2. The `aggregate_type` is resolved to its implementing module via `es_kernel_registry`.
+3. The internal `pids` map is checked for an existing aggregate instance.
+4. If none exists, the manager asks `es_kernel_aggregate_sup` to start the aggregate, monitors the new PID, and stores it in the registry.
+5. The command is forwarded to the aggregate via `es_kernel_aggregate:execute/2`.
+6. When an aggregate terminates (passivation or crash), the monitor `'DOWN'` message removes it from the registry so a new command will recreate it if needed.
 
 ```mermaid
 flowchart LR

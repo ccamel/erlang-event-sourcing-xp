@@ -16,7 +16,7 @@ clean API.
 Dispatches a command to the appropriate aggregate instance.
 
 The command is routed to the singleton aggregate manager, which extracts
-the domain (aggregate module) and stream ID from the command, then forwards
+the aggregate type (aggregate module) and aggregate ID from the command, then forwards
 it to the correct aggregate process.
 
 - Command is the command to dispatch.

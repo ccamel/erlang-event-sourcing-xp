@@ -49,8 +49,8 @@ stop() ->
     Events :: [event()].
 append(_StreamId, []) ->
     ok;
-append(StreamId, [First | _] = Events) ->
-    BaseName = stream_basename(es_kernel_store:domain(First), StreamId),
+append(StreamId, [#{aggregate_type := AggregateType} | _] = Events) ->
+    BaseName = stream_basename(AggregateType, StreamId),
     Path = event_file_path(BaseName),
     ensure_dir(events_dir()),
     ensure_unique(Path, Events),
@@ -74,7 +74,8 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
             Filtered = [
                 E
              || E <- Events,
-                within_range(es_kernel_store:sequence(E), From, To)
+                #{sequence := Seq} <- [E],
+                within_range(Seq, From, To)
             ],
             lists:foldl(FoldFun, InitialAcc, Filtered);
         {error, not_found} ->
@@ -87,9 +88,11 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
 ensure_unique(Path, Events) ->
     case read_terms(Path) of
         {ok, Existing} ->
-            ExistingIds = sets:from_list([es_kernel_store:id(E) || E <- Existing]),
+            ExistingIds = sets:from_list([es_contract_event:key(E) || E <- Existing]),
             case
-                lists:any(fun(E) -> sets:is_element(es_kernel_store:id(E), ExistingIds) end, Events)
+                lists:any(
+                    fun(E) -> sets:is_element(es_contract_event:key(E), ExistingIds) end, Events
+                )
             of
                 true ->
                     erlang:error(duplicate_event);
@@ -134,12 +137,9 @@ read_events_for_stream(StreamId) ->
 -spec store(Snapshot) -> ok | {warning, Reason} when
     Snapshot :: snapshot(),
     Reason :: term().
-store(Snapshot) ->
+store(#{aggregate_type := AggregateType, stream_id := StreamId} = Snapshot) ->
     try
-        BaseName = stream_basename(
-            es_kernel_store:snapshot_domain(Snapshot),
-            es_kernel_store:snapshot_stream_id(Snapshot)
-        ),
+        BaseName = stream_basename(AggregateType, StreamId),
         Path = snapshot_file_path(BaseName),
         ensure_dir(snapshots_dir()),
         case file:write_file(Path, serialize_to_line(Snapshot), []) of

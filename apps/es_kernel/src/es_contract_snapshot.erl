@@ -9,7 +9,7 @@
 ]).
 
 -export_type([
-    domain/0,
+    aggregate_type/0,
     stream_id/0,
     sequence/0,
     metadata_key/0,
@@ -24,8 +24,8 @@
 %% Types
 %%--------------------------------------------------------------------
 
--doc "Domain identifier, representing a bounded context.".
--type domain() :: atom().
+-doc "Aggregate type identifier, specifying which kind of aggregate this snapshot belongs to.".
+-type aggregate_type() :: atom().
 
 -doc """
 Aggregate identifier, uniquely identifying an aggregate instance (can be UUID, binary, etc.).
@@ -35,10 +35,10 @@ Aggregate identifier, uniquely identifying an aggregate instance (can be UUID, b
 -doc """
 Stream identifier, uniquely identifying an event stream.
 
-A stream is identified by a tuple of {Domain, AggregateId}, ensuring no collisions
-across different domains and aggregate instances.
+A stream is identified by a tuple of {AggregateType, AggregateId}, ensuring no collisions
+across different aggregate types and instances.
 """.
--type stream_id() :: {domain(), aggregate_id()}.
+-type stream_id() :: {aggregate_type(), aggregate_id()}.
 
 -doc "Sequence number of the event within its stream, starting from 0.".
 -type sequence() :: non_neg_integer().
@@ -54,14 +54,14 @@ across different domains and aggregate instances.
 -doc """
 Snapshot data structure.
 A snapshot represents a point-in-time capture of an aggregate's state. It consists of:
-- `domain`: The domain this snapshot belongs to
+- `aggregate_type`: The aggregate type this snapshot belongs to
 - `stream_id`: Identifier of the stream this snapshot is for
 - `sequence`: Position in the event stream up to which the snapshot reflects
 - `metadata`: Additional contextual information (timestamp, etc.)
 - `state`: The actual aggregate state at that point in time
 """.
 -type t() :: #{
-    domain := domain(),
+    aggregate_type := aggregate_type(),
     stream_id := stream_id(),
     sequence := sequence(),
     metadata := metadata(),
@@ -80,10 +80,10 @@ a snapshot within the entire snapshot store.
 %% Functions
 %%--------------------------------------------------------------------
 
--spec new(domain(), stream_id(), sequence(), metadata(), state()) -> t().
-new(Domain, StreamId, Sequence, Metadata, State) ->
+-spec new(aggregate_type(), stream_id(), sequence(), metadata(), state()) -> t().
+new(AggregateType, StreamId, Sequence, Metadata, State) ->
     #{
-        domain => Domain,
+        aggregate_type => AggregateType,
         stream_id => StreamId,
         sequence => Sequence,
         metadata => Metadata,

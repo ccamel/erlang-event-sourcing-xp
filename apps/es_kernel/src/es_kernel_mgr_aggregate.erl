@@ -3,9 +3,9 @@
 Singleton aggregate manager for the event sourcing kernel.
 
 This module implements a `gen_server` that manages all event-sourced
-aggregates across domains. It routes commands to aggregate processes
-based on the `domain` and `stream_id` carried by the command and
-ensures that each `{domain, stream_id}` pair is handled by at most one
+aggregates. It routes commands to aggregate processes based on the
+`aggregate_type` and `aggregate_id` carried by the command and
+ensures that each `{aggregate_type, aggregate_id}` pair is handled by at most one
 aggregate process at a time.
 
 The manager is registered as a singleton and started by the application
@@ -111,8 +111,8 @@ when
     From :: {pid(), term()},
     State :: state(),
     Reason :: term().
-handle_call(#{domain := Aggregate, aggregate_id := AggId} = Command, _From, State) ->
-    case ensure_and_dispatch(Aggregate, AggId, Command, State) of
+handle_call(#{aggregate_type := AggregateType, aggregate_id := AggId} = Command, _From, State) ->
+    case ensure_and_dispatch(AggregateType, AggId, Command, State) of
         {ok, Result, NewState} ->
             {reply, Result, NewState};
         {error, Reason, NewState} ->
@@ -165,17 +165,17 @@ or register the aggregate process.
 
 Returns `{ok, Result, State}` or `{error, Reason, State}`.
 """.
--spec ensure_and_dispatch(Aggregate, AggId, Command, State) ->
+-spec ensure_and_dispatch(AggregateType, AggId, Command, State) ->
     {ok, Result, State} | {error, Reason, State}
 when
-    Aggregate :: module(),
+    AggregateType :: es_contract_event:aggregate_type(),
     AggId :: es_contract_command:aggregate_id(),
     Command :: es_contract_command:t(),
     Result :: ok | {error, Reason},
     State :: state(),
     Reason :: term().
 ensure_and_dispatch(
-    Aggregate,
+    AggregateType,
     AggId,
     Command,
     #state{
@@ -185,10 +185,10 @@ ensure_and_dispatch(
     } =
         State
 ) ->
-    Target = {Aggregate, AggId},
+    Target = {AggregateType, AggId},
     case maps:get(Target, Pids, undefined) of
         undefined ->
-            case start_aggregate(Aggregate, AggId, StoreContext, Opts) of
+            case start_aggregate(AggregateType, AggId, StoreContext, Opts) of
                 {ok, Pid} ->
                     Result = forward(Pid, Command),
                     NewPids = maps:put(Target, Pid, Pids),
@@ -222,10 +222,10 @@ ensuring it is properly supervised. Monitors the new process and returns its pid
 
 Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
 """.
--spec start_aggregate(Aggregate, AggId, StoreContext, Opts) ->
+-spec start_aggregate(AggregateType, AggId, StoreContext, Opts) ->
     {ok, Result} | {error, Reason}
 when
-    Aggregate :: module(),
+    AggregateType :: es_contract_event:aggregate_type(),
     AggId :: es_contract_command:aggregate_id(),
     StoreContext :: es_kernel_store:store_context(),
     Opts ::
@@ -236,8 +236,8 @@ when
         },
     Result :: pid(),
     Reason :: term().
-start_aggregate(Aggregate, AggId, StoreContext, Opts) ->
-    case es_kernel_aggregate_sup:start_aggregate(Aggregate, AggId, StoreContext, Opts) of
+start_aggregate(AggregateType, AggId, StoreContext, Opts) ->
+    case es_kernel_aggregate_sup:start_aggregate(AggregateType, AggId, StoreContext, Opts) of
         {ok, Pid} ->
             erlang:monitor(process, Pid),
             {ok, Pid};
