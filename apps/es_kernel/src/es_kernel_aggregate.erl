@@ -319,11 +319,10 @@ apply_events(PayloadEvents, {AggregateModule, State0, Sequence0}) ->
     }
 ) -> ok.
 persist_events(PayloadEvents, {AggregateModule, StoreContext, StreamId, Sequence0, NowFun}) ->
-    %% Extract aggregate_type from StreamId (which is {aggregate_type, aggregate_id})
     {AggregateType, _AggregateId} = StreamId,
     {Events, _} =
-        lists:foldl(
-            fun(PayloadEvent, {Events, SequenceN}) ->
+        lists:mapfoldl(
+            fun(PayloadEvent, SequenceN) ->
                 Now = NowFun(),
                 SequenceN1 = SequenceN + 1,
                 EventType = AggregateModule:event_type(PayloadEvent),
@@ -336,9 +335,9 @@ persist_events(PayloadEvents, {AggregateModule, StoreContext, StreamId, Sequence
                         Now,
                         PayloadEvent
                     ),
-                {[Event | Events], SequenceN1}
+                {Event, SequenceN1}
             end,
-            {[], Sequence0},
+            Sequence0,
             PayloadEvents
         ),
     lists:foreach(
