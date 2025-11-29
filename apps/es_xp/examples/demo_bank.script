@@ -1,0 +1,44 @@
+%% Interactive demo showcasing the event sourcing engine.
+%%
+%% Usage:
+%%     rebar3 shell < apps/es_xp/examples/demo_bank.script
+%%
+%% This script configures es_kernel to use the in-memory ETS backend for
+%% both events and snapshots, then starts the es_xp application. es_xp
+%% depends on es_store_ets and es_kernel, so `application:ensure_all_started/1`
+%% brings up the full stack automatically.
+
+%% Explicitly set the store backends (override defaults if needed)
+application:load(es_kernel),
+application:set_env(es_kernel, event_store, es_store_ets),
+application:set_env(es_kernel, snapshot_store, es_store_ets),
+
+io:format("~n[1] starting es_xp application (and dependencies)~n", []),
+{ok, Started} = application:ensure_all_started(es_xp),
+io:format(" -> ~p~n", [Started]),
+
+AccountId = <<"123">>,
+
+Dispatch = fun(Type, Amount) ->
+    Command =
+        es_contract_command:new(
+            bank_account_aggregate,
+            Type,
+            AccountId,
+            0,
+            #{},
+            #{amount => Amount}
+        ),
+    es_kernel:dispatch(Command)
+end,
+
+io:format("[2] deposit $100~n", []),
+io:format(" -> ~p~n", [Dispatch(deposit, 100)]),
+
+io:format("[3] withdraw $10~n", []),
+io:format(" -> ~p~n", [Dispatch(withdraw, 10)]),
+
+io:format("[4] withdraw $1000 (should fail)~n", []),
+io:format(" -> ~p~n", [Dispatch(withdraw, 1000)]),
+
+ok.

@@ -32,8 +32,20 @@
 -doc "Domain identifier, representing a bounded context.".
 -type domain() :: atom().
 
--doc "Stream identifier, uniquely identifying an event stream within a domain.".
--type stream_id() :: binary().
+-doc """
+Aggregate identifier, uniquely identifying an aggregate instance.
+
+Can be any term (UUID, binary, integer, etc.).
+""".
+-type aggregate_id() :: term().
+
+-doc """
+Stream identifier, uniquely identifying an event stream.
+
+A stream is identified by a tuple of {Domain, AggregateId}, ensuring no collisions
+across different domains and aggregate instances.
+""".
+-type stream_id() :: {domain(), aggregate_id()}.
 
 -doc "Sequence number of the event within its stream, starting from 0.".
 -type sequence() :: non_neg_integer().
@@ -84,10 +96,10 @@ An event represents a fact that something has happened in the system. It consist
 -doc """
 Composite key uniquely identifying an event.
 
-The key is a tuple of the Domain, the StreamId and the Sequence that uniquely identifies
+The key is a tuple of the StreamId and the Sequence that uniquely identifies
 an event within the entire event store.
 """.
--type key() :: {domain(), stream_id(), sequence()}.
+-type key() :: {stream_id(), sequence()}.
 
 %%--------------------------------------------------------------------
 %% Functions
@@ -106,8 +118,8 @@ new(Domain, Type, StreamId, Sequence, Metadata, Payload) ->
     }.
 
 -spec key(t()) -> key().
-key(#{domain := D, stream_id := S, sequence := Seq}) ->
-    {D, S, Seq}.
+key(#{stream_id := S, sequence := Seq}) ->
+    {S, Seq}.
 
 -spec with_metadata(metadata(), t()) -> t().
 with_metadata(Meta, Event) when is_map(Event) ->

@@ -6,7 +6,8 @@
     {applications, [kernel, stdlib]},
     {env, [
         {event_store, es_store_ets},
-        {snapshot_store, es_store_ets}
+        {snapshot_store, es_store_ets},
+        {snapshot_interval, 0}
     ]},
     {modules, [
         es_contract_aggregate,

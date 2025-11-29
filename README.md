@@ -30,52 +30,35 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 - **Snapshots** — automatic checkpointing at configurable intervals to avoid replaying entire streams.
 - **Passivation** — idle aggregates are shut down cleanly and will rehydrate from the store on the next command.
 
-### Backend roadmap
-
-| Backend                                                                     | Status     | Icon                                                                                                                               | Capabilities | Highlights                                                                                     | Ideal use cases                                                                                   |
-| --------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [ETS](https://www.erlang.org/doc/apps/stdlib/ets.html)       | ✅ Ready   | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png" alt="ets-logo">     | Events + snapshots | In-memory tables backed by the BEAM VM, blazing-fast reads/writes, zero external dependencies. | Local development, benchmarks, ephemeral environments where latency matters more than durability. |
-| [Mnesia](https://www.erlang.org/docs/29/apps/mnesia/mnesia.html) | ✅ Ready   | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png" alt="mnesia-logo">     | Events + snapshots | Distributed, transactional, and replicated storage built into Erlang/OTP.                      | Clusters that need lightweight distribution without introducing an external database.             |
-| [PostgreSQL](https://www.postgresql.org/)                                   | 🛠️ Planned | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/postgresql.png" alt="postgresql-logo"> | Events + snapshots | Durable SQL store with strong transactional guarantees and easy horizontal scaling.            | Production setups that already rely on Postgres or need rock-solid consistency.                   |
-| [MongoDB](https://www.mongodb.com/)                                         | 🛠️ Planned | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/mongodb.png" alt="mongodb-logo">    | Events + snapshots | Flexible document database with built-in replication and sharding.                             | Event streams that benefit from schemaless payload storage or multi-region clusters.              |
-
 ## Let's play
 
 This project is a work in progress, and I welcome any feedback or contributions. If you're interested in [Event Sourcing](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing), [Erlang/OTP](https://www.erlang.org/), or both, feel free to reach out!
 
-Start the Erlang [shell](https://www.erlang.org/docs/20/man/shell.html) and run the following commands to play with the example. The kernel now runs as an OTP application that boots a supervisor tree with a singleton aggregate manager; commands are dispatched through `es_kernel:dispatch/1`.
+Start the Erlang [shell](https://www.erlang.org/docs/20/man/shell.html) and run the following commands to play with the `es_xp` example application. `es_xp` depends on `es_store_ets` and `es_kernel`, so `application:ensure_all_started(es_xp)` brings up the full stack; commands are dispatched through `es_kernel:dispatch/1`.
 
 <!-- DEMO-START -->
 
 ```erlang
 %% Interactive demo showcasing the event sourcing engine.
 %%
-%% The example uses a simple "bank account" aggregate: a single stream
-%% of domain events representing deposits and withdrawals.
-%% Each command sent to the aggregate produces an event persisted
-%% through the in-memory ETS backend (used here for both events
-%% and snapshots). The event/snapshot stores must be started before
-%% booting the es_kernel application.
-
 %% Usage:
-%%     rebar3 shell < examples/demo_bank.script
+%%     rebar3 shell < apps/es_xp/examples/demo_bank.script
+%%
+%% This script configures es_kernel to use the in-memory ETS backend for
+%% both events and snapshots, then starts the es_xp application. es_xp
+%% depends on es_store_ets and es_kernel, so `application:ensure_all_started/1`
+%% brings up the full stack automatically.
 
-%% Configure the kernel to use ETS for both events and snapshots
+%% Explicitly set the store backends (override defaults if needed)
 application:load(es_kernel),
 application:set_env(es_kernel, event_store, es_store_ets),
 application:set_env(es_kernel, snapshot_store, es_store_ets),
 
-%% Start the configured stores (required for ETS table creation)
-io:format("~n[1] starting in-memory store (ETS)~n", []),
-ok = es_store_ets:start(),
-io:format(" -> ok~n", []),
-
-%% Boot the es_kernel OTP application (supervision tree + singleton manager)
-io:format("[2] starting es_kernel application~n", []),
-{ok, Started} = application:ensure_all_started(es_kernel),
+io:format("~n[1] starting es_xp application (and dependencies)~n", []),
+{ok, Started} = application:ensure_all_started(es_xp),
 io:format(" -> ~p~n", [Started]),
 
-AccountId = <<"bank-account-123">>,
+AccountId = <<"123">>,
 
 Dispatch = fun(Type, Amount) ->
     Command =
@@ -90,13 +73,13 @@ Dispatch = fun(Type, Amount) ->
     es_kernel:dispatch(Command)
 end,
 
-io:format("[3] deposit $100~n", []),
+io:format("[2] deposit $100~n", []),
 io:format(" -> ~p~n", [Dispatch(deposit, 100)]),
 
-io:format("[4] withdraw $10~n", []),
+io:format("[3] withdraw $10~n", []),
 io:format(" -> ~p~n", [Dispatch(withdraw, 10)]),
 
-io:format("[5] withdraw $1000 (should fail)~n", []),
+io:format("[4] withdraw $1000 (should fail)~n", []),
 io:format(" -> ~p~n", [Dispatch(withdraw, 1000)]),
 
 ok.
@@ -116,82 +99,91 @@ This project is structured around the core principles of Event Sourcing:
 ### Kernel application & supervision
 
 - `es_kernel` ships as an OTP application. Start it with `application:ensure_all_started(es_kernel)` after configuring `event_store` and `snapshot_store` (defaults to `es_store_ets`).
-- Start the configured store backends first (e.g., `es_store_ets:start/0`) so tables/processes exist before aggregates boot.
+- Start the configured store backends first (e.g., `es_store_ets:start/0`) so tables/processes exist before aggregates boot. The `es_xp` example app handles this by depending on `es_store_ets` and `es_kernel` and starting them via `application:ensure_all_started(es_xp)`.
 - The top-level supervisor (`es_kernel_sup`) starts:
   - `es_kernel_aggregate_sup`: a dynamic supervisor that spawns `es_kernel_aggregate` processes on demand.
   - `es_kernel_mgr_aggregate`: a registered singleton that routes commands to aggregates and keeps track of live PIDs.
 - Commands are dispatched through the public API `es_kernel:dispatch/1`, which forwards to the registered manager.
 
-### Event store
+### Store abstraction
 
-The event store is a core component in this experiment, designed as a customizable `behaviour` that any `module` can implement to handle event storage. Its primary responsibilities include storing and retrieving events.
+The store layer separates domain logic from persistence concerns through two behaviour contracts: `es_contract_event_store` for event persistence and `es_contract_snapshot_store` for snapshot optimization. Backends implement these behaviours, and aggregates interact with stores through the unified `es_kernel_store` API.
+
+#### Event Store
+
+The event store is the heart of event sourcing persistence, designed as a `behaviour` (`es_contract_event_store`) that backends implement. It guarantees **ordering** (events replayed in sequence), **atomicity** (all-or-nothing persistence), and **immutability** (events never modified).
+
+**Required Callbacks:**
 
 ```erlang
-% Initializes the event store
--callback start() -> {ok, initialized | already_initialized} | {error, term()}.
+% Appends events to a stream with monotonic sequence ordering
+-callback append(StreamId, Events) -> ok
+    when StreamId :: es_contract_event:stream_id(),
+         Events :: [es_contract_event:t()].
 
-% Shuts down the event store.
--callback stop() -> {ok} | {error, term()}.
-
-% Appends a list of events for a given stream.
--callback append(StreamId, Events) -> ok | {error, term()}
-    when StreamId :: stream_id(),
-         Events :: [event()].
-
-% Folds events from a stream using a provided function
--callback fold(StreamId, FoldFun, InitialAcc, Range) -> Acc1
-    when StreamId :: stream_id(),
-         FoldFun :: fun((Event :: event(), AccIn) -> AccOut),
-         InitialAcc :: term(),
+% Replays events in sequence order, applying a fold function
+-callback fold(StreamId, Fun, Acc0, Range) -> Acc1
+    when StreamId :: es_contract_event:stream_id(),
+         Fun :: fun((Event :: es_contract_event:t(), AccIn) -> AccOut),
+         Acc0 :: term(),
          Range :: es_contract_range:range(),
          Acc1 :: term(),
          AccIn :: term(),
          AccOut :: term().
 ```
 
-#### Snapshot Support
+#### Snapshot Store
 
-The event store supports snapshotting to optimize aggregate rehydration. Instead of replaying all events from the beginning, aggregates can:
+Snapshots provide optional **performance optimization** by checkpointing aggregate state, avoiding full event replay from stream start. They remain secondary to events, which are always the source of truth.
 
-1. Load the latest snapshot (if available)
-2. Replay only events that occurred after the snapshot
-3. Automatically create new snapshots at configurable intervals
-
-**Snapshot Callbacks:**
+**Required Callbacks:**
 
 ```erlang
-% Store a snapshot of aggregate state
--callback store(Snapshot) -> ok when Snapshot :: snapshot().
+% Persists a snapshot; returns warning instead of crashing on failure
+-callback store(Snapshot) -> ok | {warning, Reason}
+    when Snapshot :: es_contract_snapshot:t(),
+         Reason :: term().
 
-% Load the latest snapshot for a stream
--callback load_latest(StreamId) -> {ok, Snapshot} | {error, not_found}.
+% Retrieves the most recent snapshot for a stream
+-callback load_latest(StreamId) -> {ok, Snapshot} | {error, not_found}
+    when StreamId :: es_contract_snapshot:stream_id(),
+         Snapshot :: es_contract_snapshot:t().
 ```
 
-The snapshot record contains all necessary fields (domain, stream_id, sequence, timestamp, state), making the API consistent with event persistence where events are passed as complete records.
+**How Snapshots Work:**
+
+1. **On aggregate startup**: `load_latest/1` fetches the most recent snapshot (if available)
+2. **Replay optimization**: Only events _after_ the snapshot sequence are replayed via `fold/4`
+3. **Automatic checkpointing**: When `snapshot_interval` is configured (e.g., `10`), snapshots save at sequence multiples (10, 20, 30...)
 
 **Configuring Snapshots:**
 
+Set `snapshot_interval` per aggregate or globally via `es_kernel` application environment:
+
 ```erlang
-% Start aggregate with snapshot every 10 events
-es_kernel_aggregate:start_link(
-    Module,
-    Store,
-    Id,
-    #{snapshot_interval => 10}
-).
+% Global default in sys.config
+{es_kernel, [{snapshot_interval, 10}]}
+
+% Or programmatically
+application:set_env(es_kernel, snapshot_interval, 10)
 ```
 
-When `snapshot_interval` is set to a positive integer, a snapshot is automatically saved whenever the aggregate's sequence number is a multiple of that interval.
+Setting `snapshot_interval => 0` (default) disables automatic snapshotting.
 
 #### Additional future features
 
 - Support event subscriptions for real-time updates.
 - Implement snapshot retention policies (e.g., keep only last N snapshots).
 
-#### Current Implementation
+#### Backend roadmap
 
-- [Mnesia](https://www.erlang.org/doc/apps/mnesia/mnesia.html)
-- [ETS](https://www.erlang.org/doc/apps/stdlib/ets.html)
+| Backend                                                                     | Status     | Icon                                                                                                                               | Capabilities | Highlights                                                                                     | Ideal use cases                                                                                   |
+| --------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [ETS](https://www.erlang.org/doc/apps/stdlib/ets.html)       | ✅ Ready   | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png" alt="ets-logo">     | Events + snapshots | In-memory tables backed by the BEAM VM, blazing-fast reads/writes, zero external dependencies. | Local development, benchmarks, ephemeral environments where latency matters more than durability. |
+| File (pedagogical)                                                          | ✅ Ready   | 📁                                                                                                                                  | Events + snapshots | Plain files (one Erlang term per line) under a configurable root dir, zero dependencies.        | Learning/teaching runs where you want to peek at persisted state without external services.       |
+| [Mnesia](https://www.erlang.org/docs/29/apps/mnesia/mnesia.html) | ✅ Ready   | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png" alt="mnesia-logo">     | Events + snapshots | Distributed, transactional, and replicated storage built into Erlang/OTP.                      | Clusters that need lightweight distribution without introducing an external database.             |
+| [PostgreSQL](https://www.postgresql.org/)                                   | 🛠️ Planned | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/postgresql.png" alt="postgresql-logo"> | Events + snapshots | Durable SQL store with strong transactional guarantees and easy horizontal scaling.            | Production setups that already rely on Postgres or need rock-solid consistency.                   |
+| [MongoDB](https://www.mongodb.com/)                                         | 🛠️ Planned | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/mongodb.png" alt="mongodb-logo">    | Events + snapshots | Flexible document database with built-in replication and sharding.                             | Event streams that benefit from schemaless payload storage or multi-region clusters.              |
 
 ### Aggregate
 
@@ -300,7 +292,7 @@ Setting `snapshot_interval => 0` (the default) disables automatic snapshotting.
 
 ### Aggregate Manager
 
-The _aggregate manager_ is a [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) started by `es_kernel_sup` and registered as `es_kernel_mgr_aggregate`. It routes `es_contract_command:t()` to the right aggregate process (keyed by `{domain, stream_id}`), spins up instances via the dynamic supervisor, and monitors them to keep its registry clean. The store context is taken from the `es_kernel` application environment, and the public entrypoint `es_kernel:dispatch/1` forwards to this singleton.
+The _aggregate manager_ is a [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) started by `es_kernel_sup` and registered as `es_kernel_mgr_aggregate`. It routes `es_contract_command:t()` to the right aggregate process, spins up instances via the dynamic supervisor, and monitors them to keep its registry clean. The store context is taken from the `es_kernel` application environment, and the public entrypoint `es_kernel:dispatch/1` forwards to this singleton.
 
 The manager is responsible for:
 
@@ -312,7 +304,7 @@ The manager is responsible for:
 
 The aggregate manager maintains a mapping of `{AggregateModule, StreamId}` to aggregate process PIDs. When a command is received (typically via `es_kernel:dispatch/1`):
 
-1. It pattern matches the `domain` and `stream_id` from the command map.
+1. It extracts the `stream_id` (which is a tuple `{domain, aggregate_id}`) from the command map.
 2. The internal `pids` map is checked for an existing aggregate instance.
 3. If none exists, the manager asks `es_kernel_aggregate_sup` to start the aggregate, monitors the new PID, and stores it in the registry.
 4. The command is forwarded to the aggregate via `es_kernel_aggregate:execute/2`.

@@ -4,7 +4,8 @@
     {registered, []},
     {applications, [kernel, stdlib, mnesia, es_kernel]},
     {env, []},
-    {modules, [es_store_mnesia]},
+    {modules, [es_store_mnesia, es_store_mnesia_app, es_store_mnesia_sup]},
+    {mod, {es_store_mnesia_app, []}},
     {licenses, ["BSD 3-Clause"]},
     {links, []}
 ]}.

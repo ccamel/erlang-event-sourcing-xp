@@ -77,8 +77,8 @@ teardown({EventStore, SnapshotStore}) ->
 %%%  Test cases
 
 agg_id(Pid, Aggregate, Id) ->
-    Key = {Aggregate, Id},
-    {state, _, _, #{Key := AggPid}} = sys:get_state(Pid),
+    Target = {Aggregate, Id},
+    {state, _, _, #{Target := AggPid}} = sys:get_state(Pid),
     AggPid.
 
 cmd(Type, Id, Payload) ->
@@ -101,7 +101,7 @@ end).
 
 aggregate_behaviour() ->
     Pid = start_mgr(5000),
-    Id = <<"bank-account-123">>,
+    Id = <<"123">>,
 
     ?assertEqual(
         ok,
@@ -125,7 +125,7 @@ aggregate_behaviour() ->
 
 aggregate_passivation() ->
     Pid = start_mgr(1000),
-    Id = <<"bank-account-123">>,
+    Id = <<"123">>,
 
     ?assertEqual(
         ok,
@@ -157,7 +157,7 @@ aggregate_passivation() ->
 
 aggregate_invalid_command() ->
     Pid = start_mgr(5000),
-    Id = <<"bank-account-123">>,
+    Id = <<"123">>,
 
     ?assertEqual(
         {error, invalid_command},

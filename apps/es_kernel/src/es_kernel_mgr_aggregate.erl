@@ -30,9 +30,10 @@ supervisor.
     opts ::
         #{
             timeout => timeout(),
-            now_fun => fun(() -> non_neg_integer())
+            now_fun => fun(() -> non_neg_integer()),
+            snapshot_interval => non_neg_integer()
         },
-    pids :: #{{module(), es_contract_event:stream_id()} => pid()}
+    pids :: #{es_contract_command:target() => pid()}
 }).
 
 -opaque state() :: #state{}.
@@ -54,7 +55,8 @@ The manager is registered with name `es_kernel_mgr_aggregate`.
     Opts ::
         #{
             timeout => timeout(),
-            now_fun => fun(() -> non_neg_integer())
+            now_fun => fun(() -> non_neg_integer()),
+            snapshot_interval => non_neg_integer()
         }.
 start_link(StoreContext, Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, {StoreContext, Opts}, []).
@@ -91,7 +93,8 @@ Initializes the aggregate manager state from the store context and options.
     Opts ::
         #{
             timeout => timeout(),
-            now_fun => fun(() -> non_neg_integer())
+            now_fun => fun(() -> non_neg_integer()),
+            snapshot_interval => non_neg_integer()
         },
     State :: state().
 init({StoreContext, Opts}) ->
@@ -108,8 +111,8 @@ when
     From :: {pid(), term()},
     State :: state(),
     Reason :: term().
-handle_call(#{domain := Aggregate, stream_id := Id} = Command, _From, State) ->
-    case ensure_and_dispatch(Aggregate, Id, Command, State) of
+handle_call(#{domain := Aggregate, aggregate_id := AggId} = Command, _From, State) ->
+    case ensure_and_dispatch(Aggregate, AggId, Command, State) of
         {ok, Result, NewState} ->
             {reply, Result, NewState};
         {error, Reason, NewState} ->
@@ -154,23 +157,26 @@ handle_info(_Any, State) ->
     {noreply, State}.
 
 -doc """
-Ensures an aggregate process exists for the `{domain, stream_id}` pair
+Ensures an aggregate process exists for the command target
 and dispatches the command, starting a new process if needed.
+
+The target is extracted from the command and used as a key to look up
+or register the aggregate process.
 
 Returns `{ok, Result, State}` or `{error, Reason, State}`.
 """.
--spec ensure_and_dispatch(Aggregate, Id, Command, State) ->
+-spec ensure_and_dispatch(Aggregate, AggId, Command, State) ->
     {ok, Result, State} | {error, Reason, State}
 when
     Aggregate :: module(),
-    Id :: es_contract_event:stream_id(),
+    AggId :: es_contract_command:aggregate_id(),
     Command :: es_contract_command:t(),
     Result :: ok | {error, Reason},
     State :: state(),
     Reason :: term().
 ensure_and_dispatch(
     Aggregate,
-    Id,
+    AggId,
     Command,
     #state{
         store = StoreContext,
@@ -179,13 +185,13 @@ ensure_and_dispatch(
     } =
         State
 ) ->
-    Key = {Aggregate, Id},
-    case maps:get(Key, Pids, undefined) of
+    Target = {Aggregate, AggId},
+    case maps:get(Target, Pids, undefined) of
         undefined ->
-            case start_aggregate(Aggregate, StoreContext, Id, Opts) of
+            case start_aggregate(Aggregate, AggId, StoreContext, Opts) of
                 {ok, Pid} ->
                     Result = forward(Pid, Command),
-                    NewPids = maps:put(Key, Pid, Pids),
+                    NewPids = maps:put(Target, Pid, Pids),
                     {ok, Result, State#state{pids = NewPids}};
                 {error, Reason} ->
                     {error, Reason, State}
@@ -216,21 +222,22 @@ ensuring it is properly supervised. Monitors the new process and returns its pid
 
 Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
 """.
--spec start_aggregate(Aggregate, StoreContext, Id, Opts) ->
+-spec start_aggregate(Aggregate, AggId, StoreContext, Opts) ->
     {ok, Result} | {error, Reason}
 when
     Aggregate :: module(),
+    AggId :: es_contract_command:aggregate_id(),
     StoreContext :: es_kernel_store:store_context(),
-    Id :: es_contract_event:stream_id(),
     Opts ::
         #{
             timeout => timeout(),
-            now_fun => fun(() -> non_neg_integer())
+            now_fun => fun(() -> non_neg_integer()),
+            snapshot_interval => non_neg_integer()
         },
     Result :: pid(),
     Reason :: term().
-start_aggregate(Aggregate, StoreContext, Id, Opts) ->
-    case es_kernel_aggregate_sup:start_aggregate(Aggregate, StoreContext, Id, Opts) of
+start_aggregate(Aggregate, AggId, StoreContext, Opts) ->
+    case es_kernel_aggregate_sup:start_aggregate(Aggregate, AggId, StoreContext, Opts) of
         {ok, Pid} ->
             erlang:monitor(process, Pid),
             {ok, Pid};
