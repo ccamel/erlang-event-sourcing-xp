@@ -7,7 +7,8 @@ suite_test_() ->
         [
             {"aggregate_behaviour", fun aggregate_behaviour/0},
             {"aggregate_passivation", fun aggregate_passivation/0},
-            {"aggregate_invalid_command", fun aggregate_invalid_command/0}
+            {"aggregate_invalid_command", fun aggregate_invalid_command/0},
+            {"aggregate_survives_dead_worker", fun aggregate_survives_dead_worker/0}
         ],
     {foreach, fun setup/0, fun teardown/1, TestCases}.
 
@@ -170,6 +171,32 @@ aggregate_invalid_command() ->
         {error, insufficient_funds},
         es_kernel_mgr_aggregate:dispatch(Pid, cmd(withdraw, Id, #{amount => 100}))
     ),
+
+    ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
+
+aggregate_survives_dead_worker() ->
+    Pid = start_mgr(5000),
+    Id = <<"123">>,
+
+    ?assertEqual(
+        ok,
+        es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 100}))
+    ),
+    AggPid = agg_id(Pid, bank_account, Id),
+    exit(AggPid, kill),
+
+    %% Dispatch while the cached pid is dead: should not crash manager and should return an error
+    ?assertMatch(
+        {error, {aggregate_down, _}},
+        es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 10}))
+    ),
+
+    %% Next dispatch should start a fresh aggregate and succeed (rehydrated to previous balance)
+    ?assertEqual(
+        ok,
+        es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 20}))
+    ),
+    ?assertState(agg_id(Pid, bank_account, Id), Id, #{balance := 120}, 2),
 
     ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
 

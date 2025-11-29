@@ -92,12 +92,14 @@ This is a convenience wrapper around fold/5 that collects all events into a list
     Range :: es_contract_range:range(),
     Result :: [es_contract_event:t()].
 retrieve_events(StoreContext, StreamId, Range) ->
-    fold(
-        StoreContext,
-        StreamId,
-        fun(Event, Acc) -> Acc ++ [Event] end,
-        [],
-        Range
+    lists:reverse(
+        fold(
+            StoreContext,
+            StreamId,
+            fun(Event, Acc) -> [Event | Acc] end,
+            [],
+            Range
+        )
     ).
 
 -doc """

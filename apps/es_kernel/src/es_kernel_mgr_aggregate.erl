@@ -77,6 +77,8 @@ Dispatches a command to the appropriate aggregate instance.
 - Command is the command to dispatch.
 
 Returns `ok` on success, or `{error, Reason}` if routing or execution fails.
+If the target aggregate dies during the call, returns `{error, {aggregate_down, Reason}}`
+and evicts the stale PID so a subsequent dispatch will start a fresh aggregate.
 """.
 -spec dispatch(ServerRef, Command) -> ok | {error, Reason} when
     ServerRef :: gen_server:server_ref(),
@@ -198,7 +200,13 @@ ensure_and_dispatch(
             end;
         Pid ->
             Result = forward(Pid, Command),
-            {ok, Result, State}
+            case Result of
+                {error, {aggregate_down, _}} ->
+                    NewPids = maps:remove(Target, Pids),
+                    {ok, Result, State#state{pids = NewPids}};
+                _ ->
+                    {ok, Result, State}
+            end
     end.
 
 -doc """
@@ -206,13 +214,20 @@ Forwards a command to an aggregate process.
 
 Returns the result of the aggregate's `execute/2` function:
 `ok` on success or `{error, Reason}` on failure.
+
+If the target process dies before replying, returns `{error, {aggregate_down, Reason}}`.
 """.
 -spec forward(Pid, Command) -> ok | {error, Reason} when
     Pid :: pid(),
     Command :: es_contract_command:t(),
     Reason :: term().
 forward(Pid, Command) ->
-    es_kernel_aggregate:execute(Pid, Command).
+    try es_kernel_aggregate:execute(Pid, Command) of
+        Result -> Result
+    catch
+        exit:Reason ->
+            {error, {aggregate_down, Reason}}
+    end.
 
 -doc """
 Starts an aggregate process for a given stream ID.
