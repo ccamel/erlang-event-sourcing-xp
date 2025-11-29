@@ -16,6 +16,8 @@ setup() ->
     application:load(es_kernel),
     application:set_env(es_kernel, event_store, es_store_ets),
     application:set_env(es_kernel, snapshot_store, es_store_ets),
+    %% Register aggregate type mapping for tests
+    es_kernel_registry:register(bank_account, bank_account_aggregate),
 
     StoreContext = es_kernel_app:get_store_context(),
     {EventStore, SnapshotStore} = StoreContext,
@@ -76,14 +78,14 @@ teardown({EventStore, SnapshotStore}) ->
 
 %%%  Test cases
 
-agg_id(Pid, Aggregate, Id) ->
-    Target = {Aggregate, Id},
+agg_id(Pid, AggregateType, Id) ->
+    Target = {AggregateType, Id},
     {state, _, _, #{Target := AggPid}} = sys:get_state(Pid),
     AggPid.
 
 cmd(Type, Id, Payload) ->
     es_contract_command:new(
-        bank_account_aggregate,
+        bank_account,
         Type,
         Id,
         0,
@@ -94,7 +96,8 @@ cmd(Type, Id, Payload) ->
 -define(assertState(Pid, Id, ExpectedState, ExpectedSeq), begin
     StoreCtx = es_kernel_app:get_store_context(),
     ?assertMatch(
-        {state, bank_account_aggregate, StoreCtx, Id, ExpectedState, ExpectedSeq, _, _, _, _},
+        {state, bank_account, bank_account_aggregate, StoreCtx, Id, ExpectedState, ExpectedSeq, _,
+            _, _, _},
         sys:get_state(Pid)
     )
 end).
@@ -107,19 +110,19 @@ aggregate_behaviour() ->
         ok,
         es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 100}))
     ),
-    ?assertState(agg_id(Pid, bank_account_aggregate, Id), Id, #{balance := 100}, 1),
+    ?assertState(agg_id(Pid, bank_account, Id), Id, #{balance := 100}, 1),
 
     ?assertEqual(
         ok,
         es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 100}))
     ),
-    ?assertState(agg_id(Pid, bank_account_aggregate, Id), Id, #{balance := 200}, 2),
+    ?assertState(agg_id(Pid, bank_account, Id), Id, #{balance := 200}, 2),
 
     ?assertEqual(
         ok,
         es_kernel_mgr_aggregate:dispatch(Pid, cmd(withdraw, Id, #{amount => 50}))
     ),
-    ?assertState(agg_id(Pid, bank_account_aggregate, Id), Id, #{balance := 150}, 3),
+    ?assertState(agg_id(Pid, bank_account, Id), Id, #{balance := 150}, 3),
 
     ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
 
@@ -136,14 +139,14 @@ aggregate_passivation() ->
         es_kernel_mgr_aggregate:dispatch(Pid, cmd(withdraw, Id, #{amount => 25}))
     ),
 
-    ?assertState(agg_id(Pid, bank_account_aggregate, Id), Id, #{balance := 75}, 2),
+    ?assertState(agg_id(Pid, bank_account, Id), Id, #{balance := 75}, 2),
 
     % wait for the aggregate to be passivated
     timer:sleep(2000),
 
     % check aggregate is no more alive
     {state, _, _, AggPids} = sys:get_state(Pid),
-    Key = {bank_account_aggregate, Id},
+    Key = {bank_account, Id},
     ?assertEqual(false, maps:is_key(Key, AggPids)),
 
     ?assertEqual(
@@ -151,7 +154,7 @@ aggregate_passivation() ->
         es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 30}))
     ),
 
-    ?assertState(agg_id(Pid, bank_account_aggregate, Id), Id, #{balance := 105}, 3),
+    ?assertState(agg_id(Pid, bank_account, Id), Id, #{balance := 105}, 3),
 
     ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
 

@@ -50,7 +50,7 @@ stop() ->
 append(_StreamId, []) ->
     ok;
 append(StreamId, [First | _] = Events) ->
-    BaseName = stream_basename(es_kernel_store:domain(First), StreamId),
+    BaseName = stream_basename(es_kernel_store:snapshot_aggregate_type(First), StreamId),
     Path = event_file_path(BaseName),
     ensure_dir(events_dir()),
     ensure_unique(Path, Events),
@@ -137,7 +137,7 @@ read_events_for_stream(StreamId) ->
 store(Snapshot) ->
     try
         BaseName = stream_basename(
-            es_kernel_store:snapshot_domain(Snapshot),
+            es_kernel_store:snapshot_aggregate_type(Snapshot),
             es_kernel_store:snapshot_stream_id(Snapshot)
         ),
         Path = snapshot_file_path(BaseName),

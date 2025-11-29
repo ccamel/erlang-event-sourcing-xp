@@ -21,7 +21,8 @@
 -type aggregate_state() :: es_contract_aggregate:aggregate_state().
 
 -record(state, {
-    aggregate :: module(),
+    aggregate_type :: es_contract_event:aggregate_type(),
+    aggregate_module :: es_kernel_registry:aggregate_module(),
     store :: es_kernel_store:store_context(),
     aggregate_id :: es_contract_command:aggregate_id(),
     state :: aggregate_state(),
@@ -36,15 +37,17 @@
 -export_type([state/0]).
 
 -doc """
-Starts an aggregate process for a given aggregate module and aggregate ID.
+Starts an aggregate process for a given aggregate type and aggregate ID.
 
-- Aggregate is the module implementing the domain aggregate.
+- AggregateType is the conceptual aggregate type (e.g., bank_account).
 - AggId is the aggregate identifier.
 - StoreContext is the `{EventStore, SnapshotStore}` context.
 - Opts controls inactivity timeout, time source, and snapshot interval.
+
+The aggregate type will be resolved to the implementing module in init/1.
 """.
--spec start_link(Aggregate, AggId, StoreContext, Opts) -> gen_server:start_ret() when
-    Aggregate :: module(),
+-spec start_link(AggregateType, AggId, StoreContext, Opts) -> gen_server:start_ret() when
+    AggregateType :: es_contract_event:aggregate_type(),
     AggId :: es_contract_command:aggregate_id(),
     StoreContext :: es_kernel_store:store_context(),
     Opts ::
@@ -53,20 +56,20 @@ Starts an aggregate process for a given aggregate module and aggregate ID.
             now_fun => fun(() -> non_neg_integer()),
             snapshot_interval => non_neg_integer()
         }.
-start_link(Aggregate, AggId, StoreContext, Opts) ->
-    gen_server:start_link(?MODULE, {Aggregate, AggId, StoreContext, Opts}, []).
+start_link(AggregateType, AggId, StoreContext, Opts) ->
+    gen_server:start_link(?MODULE, {AggregateType, AggId, StoreContext, Opts}, []).
 
 -doc """
 Starts an aggregate process with default options.
 """.
 -spec start_link(
-    Aggregate :: module(),
+    AggregateType :: es_contract_event:aggregate_type(),
     AggId :: es_contract_command:aggregate_id(),
     StoreContext :: es_kernel_store:store_context()
 ) ->
     gen_server:start_ret().
-start_link(Aggregate, AggId, StoreContext) ->
-    start_link(Aggregate, AggId, StoreContext, #{}).
+start_link(AggregateType, AggId, StoreContext) ->
+    start_link(AggregateType, AggId, StoreContext, #{}).
 
 -doc """
 Executes a command on an aggregate process.
@@ -85,25 +88,38 @@ execute(Pid, Command) ->
 Initializes the aggregate process.
 
 Rehydrates the aggregate state from the store and installs the
-passivation timer. Options control inactivity timeout, time source, and
-snapshot interval.
+passivation timer. Resolves the aggregate_type to its implementing module.
+Options control inactivity timeout, time source, and snapshot interval.
 """.
 -spec init(
-    {module(), es_contract_command:aggregate_id(), es_kernel_store:store_context(), #{
+    {AggregateType, AggregateId, StoreContext, Opts}
+) -> {ok, state()} when
+    AggregateType :: es_contract_event:aggregate_type(),
+    AggregateId :: es_contract_command:aggregate_id(),
+    StoreContext :: es_kernel_store:store_context(),
+    Opts :: #{
         timeout => timeout(),
         now_fun => fun(() -> non_neg_integer()),
         snapshot_interval => non_neg_integer()
-    }}
-) ->
-    {ok, state()}.
-init({Aggregate, AggId, StoreContext, Opts}) ->
-    StreamId = {Aggregate, AggId},
-    {State1, Sequence1} = rehydrate(Aggregate, StoreContext, StreamId),
+    }.
+init({AggregateType, AggId, StoreContext, Opts}) ->
+    AggregateModule =
+        case es_kernel_registry:lookup_module(AggregateType) of
+            {ok, Module} ->
+                Module;
+            {error, not_found} ->
+                %% Fallback: assume aggregate_type is the module name
+                AggregateType
+        end,
+
+    StreamId = {AggregateType, AggId},
+    {State1, Sequence1} = rehydrate(AggregateModule, StoreContext, StreamId),
     Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
     SnapshotInterval = maps:get(snapshot_interval, Opts, 0),
     TimerRef = install_passivation(Timeout, undefined),
     {ok, #state{
-        aggregate = Aggregate,
+        aggregate_type = AggregateType,
+        aggregate_module = AggregateModule,
         store = StoreContext,
         aggregate_id = AggId,
         state = State1,
@@ -122,14 +138,14 @@ to rebuild the current state. Returns `{State, Sequence}` where
 `State` is the aggregate state and `Sequence` the last applied event
 sequence.
 """.
--spec rehydrate(Aggregate, StoreContext, StreamId) -> {State, Sequence} when
-    Aggregate :: module(),
+-spec rehydrate(AggregateModule, StoreContext, StreamId) -> {State, Sequence} when
+    AggregateModule :: es_kernel_registry:aggregate_module(),
     StoreContext :: es_kernel_store:store_context(),
     StreamId :: es_contract_event:stream_id(),
     State :: aggregate_state(),
     Sequence :: non_neg_integer().
-rehydrate(Aggregate, StoreContext, StreamId) ->
-    State0 = Aggregate:init(),
+rehydrate(AggregateModule, StoreContext, StreamId) ->
+    State0 = AggregateModule:init(),
     {StateFromSnapshot, SequenceFromSnapshot} =
         case es_kernel_store:load_latest(StoreContext, StreamId) of
             {ok, Snapshot} ->
@@ -142,7 +158,7 @@ rehydrate(Aggregate, StoreContext, StreamId) ->
     FoldFun =
         fun(Event, {StateAcc, _SeqAcc}) ->
             {
-                Aggregate:apply_event(
+                AggregateModule:apply_event(
                     es_kernel_store:payload(Event), StateAcc
                 ),
                 es_kernel_store:sequence(Event)
@@ -246,7 +262,8 @@ either `{ok, {State, Sequence}}` or `{error, Reason}`.
     Reason :: term().
 process_command(
     #state{
-        aggregate = Aggregate,
+        aggregate_type = AggregateType,
+        aggregate_module = AggregateModule,
         store = StoreContext,
         aggregate_id = AggId,
         state = State0,
@@ -255,17 +272,17 @@ process_command(
     },
     Command
 ) ->
-    StreamId = {Aggregate, AggId},
-    CmdResult = Aggregate:handle_command(Command, State0),
+    StreamId = {AggregateType, AggId},
+    CmdResult = AggregateModule:handle_command(Command, State0),
     case CmdResult of
         {ok, []} ->
             {ok, {State0, Sequence0}};
         {ok, PayloadEvents} when is_list(PayloadEvents) ->
             ok = persist_events(
-                PayloadEvents, {Aggregate, StoreContext, StreamId, Sequence0, NowFun}
+                PayloadEvents, {AggregateModule, StoreContext, StreamId, Sequence0, NowFun}
             ),
             {State1, Sequence1} =
-                apply_events(PayloadEvents, {Aggregate, State0, Sequence0}),
+                apply_events(PayloadEvents, {AggregateModule, State0, Sequence0}),
             {ok, {State1, Sequence1}};
         {error, Reason} ->
             {error, Reason}
@@ -274,16 +291,16 @@ process_command(
 -spec apply_events(
     PayloadEvents :: [es_contract_event:payload()],
     {
-        Aggregate :: module(),
+        AggregateModule :: es_kernel_registry:aggregate_module(),
         State :: aggregate_state(),
         Sequence0 :: es_contract_event:sequence()
     }
 ) ->
     {State :: aggregate_state(), Sequence :: es_contract_event:sequence()}.
-apply_events(PayloadEvents, {Aggregate, State0, Sequence0}) ->
+apply_events(PayloadEvents, {AggregateModule, State0, Sequence0}) ->
     lists:foldl(
         fun(Event, {StateN, SequenceN}) ->
-            StateN1 = Aggregate:apply_event(Event, StateN),
+            StateN1 = AggregateModule:apply_event(Event, StateN),
             SequenceN1 = SequenceN + 1,
             {StateN1, SequenceN1}
         end,
@@ -294,24 +311,26 @@ apply_events(PayloadEvents, {Aggregate, State0, Sequence0}) ->
 -spec persist_events(
     PayloadEvents :: [es_contract_event:payload()],
     {
-        Aggregate :: module(),
+        AggregateModule :: es_kernel_registry:aggregate_module(),
         StoreContext :: es_kernel_store:store_context(),
         StreamId :: es_contract_event:stream_id(),
         Sequence0 :: es_contract_event:sequence(),
         NowFun :: fun(() -> non_neg_integer())
     }
 ) -> ok.
-persist_events(PayloadEvents, {Aggregate, StoreContext, StreamId, Sequence0, NowFun}) ->
+persist_events(PayloadEvents, {AggregateModule, StoreContext, StreamId, Sequence0, NowFun}) ->
+    %% Extract aggregate_type from StreamId (which is {aggregate_type, aggregate_id})
+    {AggregateType, _AggregateId} = StreamId,
     {Events, _} =
         lists:foldl(
             fun(PayloadEvent, {Events, SequenceN}) ->
                 Now = NowFun(),
                 SequenceN1 = SequenceN + 1,
-                EventType = Aggregate:event_type(PayloadEvent),
+                EventType = AggregateModule:event_type(PayloadEvent),
                 Event =
                     es_kernel_store:new_event(
                         StreamId,
-                        Aggregate,
+                        AggregateType,
                         EventType,
                         SequenceN1,
                         Now,
@@ -344,16 +363,16 @@ maybe_save_snapshot(
         snapshot_interval = Interval,
         sequence = Sequence,
         store = StoreContext,
-        aggregate = Aggregate,
+        aggregate_type = AggregateType,
         aggregate_id = AggId,
         state = AggState,
         now_fun = NowFun
     }
 ) when Sequence rem Interval =:= 0 ->
-    StreamId = {Aggregate, AggId},
+    StreamId = {AggregateType, AggId},
     Timestamp = NowFun(),
     logger:info("Saving snapshot for ~p at sequence ~p", [StreamId, Sequence]),
-    Snapshot = es_kernel_store:new_snapshot(Aggregate, StreamId, Sequence, Timestamp, AggState),
+    Snapshot = es_kernel_store:new_snapshot(AggregateType, StreamId, Sequence, Timestamp, AggState),
     case es_kernel_store:store(StoreContext, Snapshot) of
         ok ->
             ok;

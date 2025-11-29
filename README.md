@@ -63,7 +63,7 @@ AccountId = <<"123">>,
 Dispatch = fun(Type, Amount) ->
     Command =
         es_contract_command:new(
-            bank_account_aggregate,
+            bank_account,
             Type,
             AccountId,
             0,
