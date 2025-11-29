@@ -58,7 +58,7 @@ io:format("~n[1] starting es_xp application (and dependencies)~n", []),
 {ok, Started} = application:ensure_all_started(es_xp),
 io:format(" -> ~p~n", [Started]),
 
-AccountId = <<"bank-account-123">>,
+AccountId = <<"123">>,
 
 Dispatch = fun(Type, Amount) ->
     Command =
