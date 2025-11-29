@@ -33,7 +33,9 @@
 -type domain() :: atom().
 
 -doc """
-Aggregate identifier, uniquely identifying an aggregate instance (can be UUID, binary, etc.).
+Aggregate identifier, uniquely identifying an aggregate instance.
+
+Can be any term (UUID, binary, integer, etc.).
 """.
 -type aggregate_id() :: term().
 

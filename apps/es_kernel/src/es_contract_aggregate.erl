@@ -30,6 +30,17 @@ Function shall return The initial aggregate state.
 -callback init() -> aggregate_state().
 
 -doc """
+Return the event type identifier for a given domain event payload.
+
+This callback is responsible for mapping a payload to its canonical event type
+(e.g. `user_created`, `user_deleted`). It must return a valid
+`es_contract_event:type()` for the payload.
+""".
+-callback event_type(Event) -> Type when
+    Event :: es_contract_event:payload(),
+    Type :: es_contract_event:type().
+
+-doc """
 Handle a domain command.
 
 This function is responsible for validating and transforming a command
