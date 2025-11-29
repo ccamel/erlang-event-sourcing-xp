@@ -148,20 +148,16 @@ rehydrate(AggregateModule, StoreContext, StreamId) ->
     State0 = AggregateModule:init(),
     {StateFromSnapshot, SequenceFromSnapshot} =
         case es_kernel_store:load_latest(StoreContext, StreamId) of
-            {ok, Snapshot} ->
-                SnapshotState = es_kernel_store:snapshot_state(Snapshot),
-                SnapshotSeq = es_kernel_store:snapshot_sequence(Snapshot),
+            {ok, #{state := SnapshotState, sequence := SnapshotSeq}} ->
                 {SnapshotState, SnapshotSeq};
             {error, not_found} ->
                 {State0, ?SEQUENCE_ZERO}
         end,
     FoldFun =
-        fun(Event, {StateAcc, _SeqAcc}) ->
+        fun(#{payload := Payload, sequence := Seq}, {StateAcc, _SeqAcc}) ->
             {
-                AggregateModule:apply_event(
-                    es_kernel_store:payload(Event), StateAcc
-                ),
-                es_kernel_store:sequence(Event)
+                AggregateModule:apply_event(Payload, StateAcc),
+                Seq
             }
         end,
     es_kernel_store:fold(

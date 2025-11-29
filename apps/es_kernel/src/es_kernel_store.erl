@@ -18,21 +18,8 @@ Both may be the same module if it implements both event and snapshot storage.
     store/2,
     load_latest/2,
     new_snapshot/5,
-    snapshot_stream_id/1,
-    snapshot_aggregate_type/1,
-    snapshot_sequence/1,
-    snapshot_timestamp/1,
-    snapshot_state/1,
-    id/1,
-    type/1,
-    stream_id/1,
-    sequence/1,
-    timestamp/1,
-    tags/1,
-    metadata/1,
-    payload/1,
-    aggregate_type/1,
-    new_event/8, new_event/6
+    new_event/8,
+    new_event/6
 ]).
 
 -export_type([store_context/0]).
@@ -54,8 +41,8 @@ atomic persistence and maintains sequence ordering.
 append({EventModule, _}, StreamId, Events) when is_list(Events) ->
     %% Validate that all events target the same StreamId
     ok = lists:foreach(
-        fun(Event) ->
-            case stream_id(Event) of
+        fun(#{stream_id := EventStreamId}) ->
+            case EventStreamId of
                 StreamId ->
                     ok;
                 WrongStreamId ->
@@ -66,7 +53,7 @@ append({EventModule, _}, StreamId, Events) when is_list(Events) ->
     ),
 
     %% Detect duplicates (same event id twice in the batch)
-    SeenIds = [id(E) || E <- Events],
+    SeenIds = [es_contract_event:key(E) || E <- Events],
     case length(SeenIds) =:= length(lists:usort(SeenIds)) of
         true ->
             ok;
@@ -166,70 +153,6 @@ new_event(StreamId, AggregateType, Type, Sequence, Timestamp, Payload) ->
     new_event(StreamId, AggregateType, Type, Sequence, [], Timestamp, #{}, Payload).
 
 -doc """
-Returns the unique identifier of the event as `{AggregateType, StreamId, Sequence}`.
-""".
--spec id(Event :: es_contract_event:t()) -> es_contract_event:key().
-id(Event) ->
-    es_contract_event:key(Event).
-
--doc """
-Returns the event aggregate type.
-""".
--spec aggregate_type(es_contract_event:t()) -> es_contract_event:aggregate_type().
-aggregate_type(Event) ->
-    maps:get(aggregate_type, Event).
-
--doc """
-Returns the event type.
-""".
--spec type(es_contract_event:t()) -> es_contract_event:type().
-type(Event) ->
-    maps:get(type, Event).
-
--doc """
-Returns the identifier of the event stream to which this event belongs.
-""".
--spec stream_id(es_contract_event:t()) -> es_contract_event:stream_id().
-stream_id(Event) ->
-    maps:get(stream_id, Event).
-
--doc """
-Returns the sequence number of this event within its stream.
-""".
--spec sequence(es_contract_event:t()) -> es_contract_event:sequence().
-sequence(Event) ->
-    maps:get(sequence, Event).
-
--doc """
-Retrieves a list of tags associated with this event.
-""".
--spec tags(es_contract_event:t()) -> es_contract_event:tags().
-tags(Event) ->
-    maps:get(tags, Event).
-
--doc """
-Returns the timestamp marking when this event occurred. The timestamp is stored
-in the event metadata under the `timestamp` key.
-""".
--spec timestamp(es_contract_event:t()) -> non_neg_integer().
-timestamp(Event) ->
-    maps:get(timestamp, metadata(Event)).
-
--doc """
-Retrieves arbitrary metadata associated with this event.
-""".
--spec metadata(es_contract_event:t()) -> es_contract_event:metadata().
-metadata(Event) ->
-    maps:get(metadata, Event).
-
--doc """
-Retrieves the payload containing the domain-specific data of this event.
-""".
--spec payload(es_contract_event:t()) -> es_contract_event:payload().
-payload(Event) ->
-    maps:get(payload, Event).
-
--doc """
 Creates a new snapshot record.
 
 - AggregateType is the aggregate type (aggregate module) to which the stream belongs.
@@ -285,38 +208,3 @@ events that occurred after the snapshot's sequence number.
     Snapshot :: es_contract_snapshot:t().
 load_latest({_, SnapshotModule}, StreamId) ->
     SnapshotModule:load_latest(StreamId).
-
--doc """
-Returns the stream identifier of the snapshot.
-""".
--spec snapshot_stream_id(es_contract_snapshot:t()) -> es_contract_event:stream_id().
-snapshot_stream_id(Snapshot) ->
-    maps:get(stream_id, Snapshot).
-
--doc """
-Returns the aggregate type of the snapshot.
-""".
--spec snapshot_aggregate_type(es_contract_snapshot:t()) -> es_contract_event:aggregate_type().
-snapshot_aggregate_type(Snapshot) ->
-    maps:get(aggregate_type, Snapshot).
-
--doc """
-Returns the sequence number of the snapshot (last event included).
-""".
--spec snapshot_sequence(es_contract_snapshot:t()) -> es_contract_event:sequence().
-snapshot_sequence(Snapshot) ->
-    maps:get(sequence, Snapshot).
-
--doc """
-Returns the timestamp when the snapshot was created.
-""".
--spec snapshot_timestamp(es_contract_snapshot:t()) -> non_neg_integer().
-snapshot_timestamp(Snapshot) ->
-    maps:get(timestamp, maps:get(metadata, Snapshot)).
-
--doc """
-Returns the state stored in the snapshot.
-""".
--spec snapshot_state(es_contract_snapshot:t()) -> es_contract_snapshot:state().
-snapshot_state(Snapshot) ->
-    maps:get(state, Snapshot).

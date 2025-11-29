@@ -25,8 +25,7 @@ stop() ->
     end.
 
 -spec store(es_contract_snapshot:t()) -> ok.
-store(Snapshot) ->
-    StreamId = es_kernel_store:snapshot_stream_id(Snapshot),
+store(#{stream_id := StreamId} = Snapshot) ->
     ets:insert(?TABLE, {StreamId, Snapshot}),
     ok.
 

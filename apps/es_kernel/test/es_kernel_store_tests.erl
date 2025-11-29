@@ -321,11 +321,18 @@ save_and_retrieve_snapshot(Store) ->
     ?assertMatch(ok, es_kernel_store:store(Store, Snapshot)),
 
     {ok, RetrievedSnapshot} = es_kernel_store:load_latest(Store, ?STREAM_A),
-    ?assertEqual(?STREAM_A, es_kernel_store:snapshot_stream_id(RetrievedSnapshot)),
-    ?assertEqual(Domain, es_kernel_store:snapshot_aggregate_type(RetrievedSnapshot)),
-    ?assertEqual(Sequence, es_kernel_store:snapshot_sequence(RetrievedSnapshot)),
-    ?assertEqual(Timestamp, es_kernel_store:snapshot_timestamp(RetrievedSnapshot)),
-    ?assertEqual(State, es_kernel_store:snapshot_state(RetrievedSnapshot)),
+    #{
+        stream_id := RetrStreamId,
+        aggregate_type := RetrAggType,
+        sequence := RetrSeq,
+        metadata := #{timestamp := RetrTs},
+        state := RetrState
+    } = RetrievedSnapshot,
+    ?assertEqual(?STREAM_A, RetrStreamId),
+    ?assertEqual(Domain, RetrAggType),
+    ?assertEqual(Sequence, RetrSeq),
+    ?assertEqual(Timestamp, RetrTs),
+    ?assertEqual(State, RetrState),
 
     ?assertEqual(ok, stop_store(Store)).
 
@@ -353,8 +360,9 @@ overwrite_snapshot(Store) ->
 
     %% Should retrieve the latest snapshot
     {ok, RetrievedSnapshot} = es_kernel_store:load_latest(Store, ?STREAM_A),
-    ?assertEqual(Sequence2, es_kernel_store:snapshot_sequence(RetrievedSnapshot)),
-    ?assertEqual(State2, es_kernel_store:snapshot_state(RetrievedSnapshot)),
+    #{sequence := RetrSeq2, state := RetrState2} = RetrievedSnapshot,
+    ?assertEqual(Sequence2, RetrSeq2),
+    ?assertEqual(State2, RetrState2),
 
     ?assertEqual(ok, stop_store(Store)).
 
@@ -385,8 +393,9 @@ composite_store_supports_mixed_backends() ->
     }),
     ?assertMatch(ok, es_kernel_store:store(Store, Snapshot)),
     {ok, RetrievedSnapshot} = es_kernel_store:load_latest(Store, ?STREAM_A),
-    ?assertEqual(1, es_kernel_store:snapshot_sequence(RetrievedSnapshot)),
-    ?assertEqual(#{balance => 100}, es_kernel_store:snapshot_state(RetrievedSnapshot)),
+    #{sequence := CompositeSeq, state := CompositeState} = RetrievedSnapshot,
+    ?assertEqual(1, CompositeSeq),
+    ?assertEqual(#{balance => 100}, CompositeState),
 
     ?assertEqual(ok, stop_store(Store)).
 

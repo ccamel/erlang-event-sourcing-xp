@@ -106,21 +106,23 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
 
 event_to_record(Event) ->
     #event_record{
-        key = es_kernel_store:id(Event),
-        stream_id = es_kernel_store:stream_id(Event),
-        sequence = es_kernel_store:sequence(Event),
+        key = es_contract_event:key(Event),
+        stream_id = maps:get(stream_id, Event),
+        sequence = maps:get(sequence, Event),
         event = Event
     }.
 
 -spec store(Snapshot) -> ok | {warning, Reason} when
     Snapshot :: snapshot(),
     Reason :: term().
-store(Snapshot) ->
+store(
+    #{stream_id := StreamId, sequence := Sequence, metadata := #{timestamp := Timestamp}} = Snapshot
+) ->
     try
         Record = #snapshot_record{
-            stream_id = es_kernel_store:snapshot_stream_id(Snapshot),
-            sequence = es_kernel_store:snapshot_sequence(Snapshot),
-            timestamp = es_kernel_store:snapshot_timestamp(Snapshot),
+            stream_id = StreamId,
+            sequence = Sequence,
+            timestamp = Timestamp,
             snapshot = Snapshot
         },
         true = ets:insert(snapshot_table_name(), Record),

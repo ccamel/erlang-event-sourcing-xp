@@ -150,8 +150,9 @@ aggregate_snapshot_creation() ->
         StoreContext,
         StreamId
     ),
-    ?assertEqual(3, es_kernel_store:snapshot_sequence(Snapshot)),
-    ?assertEqual(#{balance => 125}, es_kernel_store:snapshot_state(Snapshot)),
+    #{sequence := SnapshotSeq1, state := SnapshotState1} = Snapshot,
+    ?assertEqual(3, SnapshotSeq1),
+    ?assertEqual(#{balance => 125}, SnapshotState1),
 
     %% Continue with more commands
     ?assertEqual(ok, es_kernel_aggregate:execute(Pid, cmd(deposit, Id, #{amount => 75}))),
@@ -164,8 +165,9 @@ aggregate_snapshot_creation() ->
         StoreContext,
         StreamId
     ),
-    ?assertEqual(6, es_kernel_store:snapshot_sequence(Snapshot2)),
-    ?assertEqual(#{balance => 250}, es_kernel_store:snapshot_state(Snapshot2)).
+    #{sequence := SnapshotSeq2, state := SnapshotState2} = Snapshot2,
+    ?assertEqual(6, SnapshotSeq2),
+    ?assertEqual(#{balance => 250}, SnapshotState2).
 
 aggregate_snapshot_rehydration() ->
     AggId = integer_to_binary(erlang:unique_integer([monotonic, positive])),
@@ -238,5 +240,5 @@ aggregate_custom_now_fun() ->
         StoreContext, StreamId, es_contract_range:new(0, infinity)
     ),
     ?assertEqual(1, length(Events)),
-    [Event] = Events,
-    ?assertEqual(Now, es_kernel_store:timestamp(Event)).
+    [#{metadata := #{timestamp := EventTimestamp}}] = Events,
+    ?assertEqual(Now, EventTimestamp).

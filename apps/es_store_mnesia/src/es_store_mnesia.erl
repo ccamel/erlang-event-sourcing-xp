@@ -99,31 +99,30 @@ stop() ->
 -spec append(StreamId, Events) -> ok when
     StreamId :: stream_id(),
     Events :: [event()].
-append(StreamId, Events) ->
-    case mnesia:transaction(fun() -> persist_events_in_tx(StreamId, Events) end) of
+append(_, Events) ->
+    case mnesia:transaction(fun() -> persist_events_in_tx(Events) end) of
         {atomic, _Result} ->
             ok;
         {aborted, Reason} ->
             erlang:error(Reason)
     end.
 
-persist_events_in_tx(_, []) ->
+persist_events_in_tx([]) ->
     ok;
-persist_events_in_tx(StreamId, [Event | Rest]) ->
-    Id = es_kernel_store:id(Event),
-    Record =
-        #event_record{
-            key = Id,
-            stream_id = es_kernel_store:stream_id(Event),
-            sequence = es_kernel_store:sequence(Event),
-            event = Event
-        },
+persist_events_in_tx([#{stream_id := StreamId, sequence := Seq} = Event | Rest]) ->
+    Id = es_contract_event:key(Event),
+    Record = #event_record{
+        key = Id,
+        stream_id = StreamId,
+        sequence = Seq,
+        event = Event
+    },
     case mnesia:read(event_table_name(), Id, read) of
         [_] ->
             mnesia:abort(duplicate_event);
         _ ->
             ok = mnesia:write(event_table_name(), Record, write),
-            persist_events_in_tx(StreamId, Rest)
+            persist_events_in_tx(Rest)
     end.
 
 -spec fold(StreamId, Fun, Acc0, Range) -> Acc1 when
@@ -164,12 +163,14 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
 -spec store(Snapshot) -> ok | {warning, Reason} when
     Snapshot :: snapshot(),
     Reason :: term().
-store(Snapshot) ->
+store(
+    #{stream_id := StreamId, sequence := Sequence, metadata := #{timestamp := Timestamp}} = Snapshot
+) ->
     try
         Record = #snapshot_record{
-            stream_id = es_kernel_store:snapshot_stream_id(Snapshot),
-            sequence = es_kernel_store:snapshot_sequence(Snapshot),
-            timestamp = es_kernel_store:snapshot_timestamp(Snapshot),
+            stream_id = StreamId,
+            sequence = Sequence,
+            timestamp = Timestamp,
             snapshot = Snapshot
         },
         ok = mnesia:dirty_write(snapshot_table_name(), Record),
