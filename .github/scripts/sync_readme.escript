@@ -6,7 +6,7 @@
 %% between <!-- DEMO-START --> and <!-- DEMO-END --> markers.
 
 main([]) ->
-    main(["README.md", "examples/demo_bank.script"]);
+    main(["README.md", "apps/es_xp/examples/demo_bank.script"]);
 main([ReadmePath, ScriptPath]) ->
     {ok, ReadmeBin} = file:read_file(ReadmePath),
     {ok, ScriptBin} = file:read_file(ScriptPath),
