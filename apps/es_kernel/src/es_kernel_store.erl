@@ -19,12 +19,11 @@ Both may be the same module if it implements both event and snapshot storage.
     load_latest/2,
     new_snapshot/5,
     snapshot_stream_id/1,
-    snapshot_domain/1,
+    snapshot_aggregate_type/1,
     snapshot_sequence/1,
     snapshot_timestamp/1,
     snapshot_state/1,
     id/1,
-    domain/1,
     type/1,
     stream_id/1,
     sequence/1,
@@ -32,6 +31,7 @@ Both may be the same module if it implements both event and snapshot storage.
     tags/1,
     metadata/1,
     payload/1,
+    aggregate_type/1,
     new_event/8, new_event/6
 ]).
 
@@ -117,7 +117,7 @@ retrieve_events(StoreContext, StreamId, Range) ->
 Creates a new event map.
 
 - StreamId is the unique identifier for the stream.
-- Domain is the domain to which the event belongs.
+- AggregateType is the aggregate type to which the event belongs.
 - Type is the type of the event.
 - Sequence is the sequence number of the event in the stream.
 - Tags is a list of tags associated with the event.
@@ -130,7 +130,7 @@ can access it uniformly through metadata.
 """.
 -spec new_event(
     StreamId :: es_contract_event:stream_id(),
-    Domain :: es_contract_event:domain(),
+    AggregateType :: es_contract_event:aggregate_type(),
     Type :: es_contract_event:type(),
     Seq :: es_contract_event:sequence(),
     Tags :: es_contract_event:tags(),
@@ -139,9 +139,9 @@ can access it uniformly through metadata.
     Payload :: es_contract_event:payload()
 ) ->
     es_contract_event:t().
-new_event(StreamId, Domain, Type, Sequence, Tags, Timestamp, Metadata, Payload) ->
+new_event(StreamId, AggregateType, Type, Sequence, Tags, Timestamp, Metadata, Payload) ->
     Event0 = es_contract_event:new(
-        Domain,
+        AggregateType,
         Type,
         StreamId,
         Sequence,
@@ -155,29 +155,29 @@ Creates a new event, defaulting tags to `[]` and metadata to `#{}`.
 """.
 -spec new_event(
     StreamId :: es_contract_event:stream_id(),
-    Domain :: es_contract_event:domain(),
+    AggregateType :: es_contract_event:aggregate_type(),
     Type :: es_contract_event:type(),
     Sequence :: es_contract_event:sequence(),
     Timestamp :: non_neg_integer(),
     Payload :: es_contract_event:payload()
 ) ->
     es_contract_event:t().
-new_event(StreamId, Domain, Type, Sequence, Timestamp, Payload) ->
-    new_event(StreamId, Domain, Type, Sequence, [], Timestamp, #{}, Payload).
+new_event(StreamId, AggregateType, Type, Sequence, Timestamp, Payload) ->
+    new_event(StreamId, AggregateType, Type, Sequence, [], Timestamp, #{}, Payload).
 
 -doc """
-Returns the unique identifier of the event as `{Domain, StreamId, Sequence}`.
+Returns the unique identifier of the event as `{AggregateType, StreamId, Sequence}`.
 """.
 -spec id(Event :: es_contract_event:t()) -> es_contract_event:key().
 id(Event) ->
     es_contract_event:key(Event).
 
 -doc """
-Returns the event domain.
+Returns the event aggregate type.
 """.
--spec domain(es_contract_event:t()) -> es_contract_event:domain().
-domain(Event) ->
-    maps:get(domain, Event).
+-spec aggregate_type(es_contract_event:t()) -> es_contract_event:aggregate_type().
+aggregate_type(Event) ->
+    maps:get(aggregate_type, Event).
 
 -doc """
 Returns the event type.
@@ -232,7 +232,7 @@ payload(Event) ->
 -doc """
 Creates a new snapshot record.
 
-- Domain is the domain (aggregate module) to which the stream belongs.
+- AggregateType is the aggregate type (aggregate module) to which the stream belongs.
 - StreamId is the unique identifier for the stream.
 - Sequence is the sequence number of the last event included in the snapshot.
 - Timestamp is the timestamp when the snapshot was created.
@@ -240,16 +240,16 @@ Creates a new snapshot record.
 
 The timestamp is stored inside the snapshot metadata under the `timestamp` key.
 """.
--spec new_snapshot(Domain, StreamId, Sequence, Timestamp, State) -> Snapshot when
-    Domain :: es_contract_event:domain(),
+-spec new_snapshot(AggregateType, StreamId, Sequence, Timestamp, State) -> Snapshot when
+    AggregateType :: es_contract_event:aggregate_type(),
     StreamId :: es_contract_event:stream_id(),
     Sequence :: es_contract_event:sequence(),
     Timestamp :: non_neg_integer(),
     State :: es_contract_snapshot:state(),
     Snapshot :: es_contract_snapshot:t().
-new_snapshot(Domain, StreamId, Sequence, Timestamp, State) ->
+new_snapshot(AggregateType, StreamId, Sequence, Timestamp, State) ->
     Metadata = #{timestamp => Timestamp},
-    es_contract_snapshot:new(Domain, StreamId, Sequence, Metadata, State).
+    es_contract_snapshot:new(AggregateType, StreamId, Sequence, Metadata, State).
 
 -doc """
 Stores a snapshot using the specified store module.
@@ -294,11 +294,11 @@ snapshot_stream_id(Snapshot) ->
     maps:get(stream_id, Snapshot).
 
 -doc """
-Returns the domain of the snapshot.
+Returns the aggregate type of the snapshot.
 """.
--spec snapshot_domain(es_contract_snapshot:t()) -> es_contract_event:domain().
-snapshot_domain(Snapshot) ->
-    maps:get(domain, Snapshot).
+-spec snapshot_aggregate_type(es_contract_snapshot:t()) -> es_contract_event:aggregate_type().
+snapshot_aggregate_type(Snapshot) ->
+    maps:get(aggregate_type, Snapshot).
 
 -doc """
 Returns the sequence number of the snapshot (last event included).

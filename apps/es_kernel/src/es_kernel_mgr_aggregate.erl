@@ -3,9 +3,9 @@
 Singleton aggregate manager for the event sourcing kernel.
 
 This module implements a `gen_server` that manages all event-sourced
-aggregates across domains. It routes commands to aggregate processes
-based on the `domain` and `stream_id` carried by the command and
-ensures that each `{domain, stream_id}` pair is handled by at most one
+aggregates. It routes commands to aggregate processes based on the
+`aggregate_type` and `aggregate_id` carried by the command and
+ensures that each `{aggregate_type, aggregate_id}` pair is handled by at most one
 aggregate process at a time.
 
 The manager is registered as a singleton and started by the application
@@ -111,7 +111,7 @@ when
     From :: {pid(), term()},
     State :: state(),
     Reason :: term().
-handle_call(#{domain := Aggregate, aggregate_id := AggId} = Command, _From, State) ->
+handle_call(#{aggregate_type := Aggregate, aggregate_id := AggId} = Command, _From, State) ->
     case ensure_and_dispatch(Aggregate, AggId, Command, State) of
         {ok, Result, NewState} ->
             {reply, Result, NewState};

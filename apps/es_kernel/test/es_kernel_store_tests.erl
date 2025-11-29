@@ -322,7 +322,7 @@ save_and_retrieve_snapshot(Store) ->
 
     {ok, RetrievedSnapshot} = es_kernel_store:load_latest(Store, ?STREAM_A),
     ?assertEqual(?STREAM_A, es_kernel_store:snapshot_stream_id(RetrievedSnapshot)),
-    ?assertEqual(Domain, es_kernel_store:snapshot_domain(RetrievedSnapshot)),
+    ?assertEqual(Domain, es_kernel_store:snapshot_aggregate_type(RetrievedSnapshot)),
     ?assertEqual(Sequence, es_kernel_store:snapshot_sequence(RetrievedSnapshot)),
     ?assertEqual(Timestamp, es_kernel_store:snapshot_timestamp(RetrievedSnapshot)),
     ?assertEqual(State, es_kernel_store:snapshot_state(RetrievedSnapshot)),
