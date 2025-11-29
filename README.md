@@ -305,10 +305,11 @@ The manager is responsible for:
 The aggregate manager maintains a mapping of `{AggregateType, AggregateId}` to aggregate process PIDs. When a command is received (typically via `es_kernel:dispatch/1`):
 
 1. It extracts the `aggregate_type` and `aggregate_id` from the command map.
-2. The internal `pids` map is checked for an existing aggregate instance.
-3. If none exists, the manager asks `es_kernel_aggregate_sup` to start the aggregate, monitors the new PID, and stores it in the registry.
-4. The command is forwarded to the aggregate via `es_kernel_aggregate:execute/2`.
-5. When an aggregate terminates (passivation or crash), the monitor `'DOWN'` message removes it from the registry so a new command will recreate it if needed.
+2. The `aggregate_type` is resolved to its implementing module via `es_kernel_registry`.
+3. The internal `pids` map is checked for an existing aggregate instance.
+4. If none exists, the manager asks `es_kernel_aggregate_sup` to start the aggregate, monitors the new PID, and stores it in the registry.
+5. The command is forwarded to the aggregate via `es_kernel_aggregate:execute/2`.
+6. When an aggregate terminates (passivation or crash), the monitor `'DOWN'` message removes it from the registry so a new command will recreate it if needed.
 
 ```mermaid
 flowchart LR

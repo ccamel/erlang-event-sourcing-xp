@@ -58,9 +58,6 @@ Can be any term (UUID, binary, integer, etc.).
 
 -doc """
 Command payload containing the command-specific data.
-
-The payload is self-sufficient and contains all necessary information to execute
-the command, including the aggregate identifier(s) it applies to.
 """.
 -type payload() :: term().
 
