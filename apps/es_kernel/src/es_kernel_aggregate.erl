@@ -358,7 +358,9 @@ maybe_save_snapshot(
         ok ->
             ok;
         {warning, Reason} ->
-            logger:warning("Snapshot save failed for ~p at seq ~p: ~p", [StreamId, Sequence, Reason]),
+            logger:warning(
+                "Snapshot save failed for ~p at seq ~p: ~p", [StreamId, Sequence, Reason]
+            ),
             ok
     end;
 maybe_save_snapshot(_) ->

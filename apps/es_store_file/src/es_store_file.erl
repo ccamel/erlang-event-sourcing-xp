@@ -49,7 +49,7 @@ stop() ->
     Events :: [event()].
 append(_StreamId, []) ->
     ok;
-append(StreamId, Events = [First | _]) ->
+append(StreamId, [First | _] = Events) ->
     BaseName = stream_basename(es_kernel_store:domain(First), StreamId),
     Path = event_file_path(BaseName),
     ensure_dir(events_dir()),

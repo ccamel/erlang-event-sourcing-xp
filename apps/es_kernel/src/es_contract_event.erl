@@ -32,7 +32,9 @@
 -doc "Domain identifier, representing a bounded context.".
 -type domain() :: atom().
 
--doc "Aggregate identifier, uniquely identifying an aggregate instance (can be UUID, binary, etc.).".
+-doc """
+Aggregate identifier, uniquely identifying an aggregate instance (can be UUID, binary, etc.).
+""".
 -type aggregate_id() :: term().
 
 -doc """
