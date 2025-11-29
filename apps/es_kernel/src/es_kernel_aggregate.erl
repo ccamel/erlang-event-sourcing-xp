@@ -108,7 +108,11 @@ init({AggregateType, AggId, StoreContext, Opts}) ->
             {ok, Module} ->
                 Module;
             {error, not_found} ->
-                %% Fallback: assume aggregate_type is the module name
+                logger:warning(
+                    "No registry entry for aggregate_type ~p, "
+                    "falling back to using type as module name",
+                    [AggregateType]
+                ),
                 AggregateType
         end,
 
