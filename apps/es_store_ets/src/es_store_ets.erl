@@ -72,37 +72,55 @@ stop() ->
     ets:delete(snapshot_table_name()),
     ok.
 
--spec append(StreamId, Events) -> ok when
+-spec append(StreamId, Events) -> ok | {error, Reason} when
     StreamId :: stream_id(),
-    Events :: [event()].
+    Events :: [event()],
+    Reason :: term().
 append(_, Events) ->
     Records = lists:map(fun event_to_record/1, Events),
     case ets:insert_new(event_table_name(), Records) of
         true ->
             ok;
         false ->
-            erlang:error(duplicate_event)
+            {error, duplicate_event}
     end.
 
--spec fold(StreamId, Fun, Acc0, Range) -> Acc1 when
+-spec fold(StreamId, Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
     StreamId :: stream_id(),
-    Fun :: fun((Event :: event(), AccIn) -> AccOut),
+    Fun :: fun(
+        (
+            Event :: event(),
+            Sequence :: sequence(),
+            AccIn
+        ) -> AccOut
+    ),
     Acc0 :: term(),
     Range :: es_contract_range:range(),
     Acc1 :: term(),
     AccIn :: term(),
-    AccOut :: term().
+    AccOut :: term(),
+    Reason :: term().
 fold(StreamId, FoldFun, InitialAcc, Range) when
-    is_function(FoldFun, 2)
+    is_function(FoldFun, 3)
 ->
-    From = es_contract_range:lower_bound(Range),
-    To = es_contract_range:upper_bound(Range),
+    try
+        From = es_contract_range:lower_bound(Range),
+        To = es_contract_range:upper_bound(Range),
 
-    Pattern = {event_record, '_', StreamId, '$1', '$2'},
-    Guard = [{'>=', '$1', From}, {'<', '$1', To}],
-    MatchSpec = [{Pattern, Guard, ['$2']}],
-    ResultEvents = ets:select(event_table_name(), MatchSpec),
-    lists:foldl(FoldFun, InitialAcc, ResultEvents).
+        Pattern = {event_record, '_', StreamId, '$1', '$2'},
+        Guard = [{'>=', '$1', From}, {'<', '$1', To}],
+        MatchSpec = [{Pattern, Guard, [{{'$1', '$2'}}]}],
+        ResultPairs = ets:select(event_table_name(), MatchSpec),
+        Result = lists:foldl(
+            fun({Seq, Event}, Acc) -> FoldFun(Event, Seq, Acc) end,
+            InitialAcc,
+            ResultPairs
+        ),
+        {ok, Result}
+    catch
+        Class:Reason:Stacktrace ->
+            {error, {Class, Reason, Stacktrace}}
+    end.
 
 event_to_record(Event) ->
     #event_record{

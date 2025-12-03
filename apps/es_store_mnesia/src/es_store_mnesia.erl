@@ -96,15 +96,16 @@ start() ->
 stop() ->
     ok.
 
--spec append(StreamId, Events) -> ok when
+-spec append(StreamId, Events) -> ok | {error, Reason} when
     StreamId :: stream_id(),
-    Events :: [event()].
+    Events :: [event()],
+    Reason :: term().
 append(_, Events) ->
     case mnesia:transaction(fun() -> persist_events_in_tx(Events) end) of
         {atomic, _Result} ->
             ok;
         {aborted, Reason} ->
-            erlang:error(Reason)
+            {error, Reason}
     end.
 
 persist_events_in_tx([]) ->
@@ -125,16 +126,23 @@ persist_events_in_tx([#{stream_id := StreamId, sequence := Seq} = Event | Rest])
             persist_events_in_tx(Rest)
     end.
 
--spec fold(StreamId, Fun, Acc0, Range) -> Acc1 when
+-spec fold(StreamId, Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
     StreamId :: stream_id(),
-    Fun :: fun((Event :: event(), AccIn) -> AccOut),
+    Fun :: fun(
+        (
+            Event :: event(),
+            Sequence :: sequence(),
+            AccIn
+        ) -> AccOut
+    ),
     Acc0 :: term(),
     Range :: es_contract_range:range(),
     Acc1 :: term(),
     AccIn :: term(),
-    AccOut :: term().
+    AccOut :: term(),
+    Reason :: term().
 fold(StreamId, FoldFun, InitialAcc, Range) when
-    is_function(FoldFun, 2)
+    is_function(FoldFun, 3)
 ->
     From = es_contract_range:lower_bound(Range),
     To = es_contract_range:upper_bound(Range),
@@ -143,7 +151,7 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
             qlc:e(
                 qlc:q(
                     [
-                        E#event_record.event
+                        {E#event_record.sequence, E#event_record.event}
                      || E <- mnesia:table(event_table_name()),
                         E#event_record.stream_id =:= StreamId,
                         E#event_record.sequence >= From,
@@ -154,10 +162,15 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
             )
         end,
     case mnesia:transaction(FunQuery) of
-        {atomic, Events} ->
-            lists:foldl(FoldFun, InitialAcc, Events);
+        {atomic, EventPairs} ->
+            Result = lists:foldl(
+                fun({Seq, Event}, Acc) -> FoldFun(Event, Seq, Acc) end,
+                InitialAcc,
+                EventPairs
+            ),
+            {ok, Result};
         {aborted, Reason} ->
-            erlang:error(Reason)
+            {error, Reason}
     end.
 
 -spec store(Snapshot) -> ok | {warning, Reason} when

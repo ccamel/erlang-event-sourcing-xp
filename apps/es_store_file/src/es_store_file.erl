@@ -44,28 +44,43 @@ start() ->
 stop() ->
     ok.
 
--spec append(StreamId, Events) -> ok when
+-spec append(StreamId, Events) -> ok | {error, Reason} when
     StreamId :: stream_id(),
-    Events :: [event()].
+    Events :: [event()],
+    Reason :: term().
 append(_StreamId, []) ->
     ok;
 append(StreamId, [#{aggregate_type := AggregateType} | _] = Events) ->
     BaseName = stream_basename(AggregateType, StreamId),
     Path = event_file_path(BaseName),
     ensure_dir(events_dir()),
-    ensure_unique(Path, Events),
-    persist_events(Path, Events).
+    case ensure_unique(Path, Events) of
+        ok ->
+            case persist_events(Path, Events) of
+                ok -> ok;
+                {error, Reason} -> {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
--spec fold(StreamId, Fun, Acc0, Range) -> Acc1 when
+-spec fold(StreamId, Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
     StreamId :: stream_id(),
-    Fun :: fun((Event :: event(), AccIn) -> AccOut),
+    Fun :: fun(
+        (
+            Event :: event(),
+            Sequence :: sequence(),
+            AccIn
+        ) -> AccOut
+    ),
     Acc0 :: term(),
     Range :: es_contract_range:range(),
     Acc1 :: term(),
     AccIn :: term(),
-    AccOut :: term().
+    AccOut :: term(),
+    Reason :: term().
 fold(StreamId, FoldFun, InitialAcc, Range) when
-    is_function(FoldFun, 2)
+    is_function(FoldFun, 3)
 ->
     From = es_contract_range:lower_bound(Range),
     To = es_contract_range:upper_bound(Range),
@@ -77,14 +92,19 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
                 #{sequence := Seq} <- [E],
                 within_range(Seq, From, To)
             ],
-            lists:foldl(FoldFun, InitialAcc, Filtered);
+            Result = lists:foldl(
+                fun(#{sequence := Seq} = Event, Acc) -> FoldFun(Event, Seq, Acc) end,
+                InitialAcc,
+                Filtered
+            ),
+            {ok, Result};
         {error, not_found} ->
-            InitialAcc;
+            {ok, InitialAcc};
         {error, Reason} ->
-            erlang:error(Reason)
+            {error, Reason}
     end.
 
--spec ensure_unique(file:filename(), [event()]) -> ok.
+-spec ensure_unique(file:filename(), [event()]) -> ok | {error, term()}.
 ensure_unique(Path, Events) ->
     case read_terms(Path) of
         {ok, Existing} ->
@@ -95,24 +115,24 @@ ensure_unique(Path, Events) ->
                 )
             of
                 true ->
-                    erlang:error(duplicate_event);
+                    {error, duplicate_event};
                 false ->
                     ok
             end;
         {error, not_found} ->
             ok;
         {error, Reason} ->
-            erlang:error(Reason)
+            {error, Reason}
     end.
 
--spec persist_events(file:filename(), [event()]) -> ok.
+-spec persist_events(file:filename(), [event()]) -> ok | {error, term()}.
 persist_events(Path, Events) ->
     IoData = [serialize_to_line(E) || E <- Events],
     case file:write_file(Path, IoData, [append]) of
         ok ->
             ok;
         {error, Reason} ->
-            erlang:error(Reason)
+            {error, Reason}
     end.
 
 -spec serialize_to_line(event() | snapshot()) -> iolist().

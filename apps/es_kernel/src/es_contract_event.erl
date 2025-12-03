@@ -47,7 +47,11 @@ across different aggregate types and instances.
 """.
 -type stream_id() :: {aggregate_type(), aggregate_id()}.
 
--doc "Sequence number of the event within its stream, starting from 0.".
+-doc """
+Sequence number of the event within its stream, starting from 0.
+
+Sequence values are monotonically increasing within a given stream.
+""".
 -type sequence() :: non_neg_integer().
 
 -doc "Type identifier for the event, describing what happened.".

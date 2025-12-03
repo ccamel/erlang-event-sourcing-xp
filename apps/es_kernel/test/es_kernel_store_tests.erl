@@ -250,9 +250,8 @@ duplicate_event(Store) ->
         ),
 
     ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, [Event])),
-    ?assertException(
-        error,
-        duplicate_event,
+    ?assertMatch(
+        {error, duplicate_event},
         es_kernel_store:append(Store, ?STREAM_A, [Event])
     ),
     ?assertMatch(
@@ -289,9 +288,8 @@ duplicate_event(Store) ->
             )
         ],
 
-    ?assertException(
-        error,
-        duplicate_event,
+    ?assertMatch(
+        {error, duplicate_event},
         es_kernel_store:append(Store, ?STREAM_B, Events)
     ),
     ?assertMatch(

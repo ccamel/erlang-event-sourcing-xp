@@ -34,10 +34,11 @@ This is the primary mechanism for persisting domain events. All events in the li
 must target the same stream and have unique identifiers. The store backend ensures
 atomic persistence and maintains sequence ordering.
 """.
--spec append(StoreContext, StreamId, Events) -> ok when
+-spec append(StoreContext, StreamId, Events) -> ok | {error, Reason} when
     StoreContext :: store_context(),
     StreamId :: es_contract_event:stream_id(),
-    Events :: [es_contract_event:t()].
+    Events :: [es_contract_event:t()],
+    Reason :: term().
 append({EventModule, _}, StreamId, Events) when is_list(Events) ->
     %% Validate that all events target the same StreamId
     ok = lists:foreach(
@@ -56,12 +57,10 @@ append({EventModule, _}, StreamId, Events) when is_list(Events) ->
     SeenIds = [es_contract_event:key(E) || E <- Events],
     case length(SeenIds) =:= length(lists:usort(SeenIds)) of
         true ->
-            ok;
+            EventModule:append(StreamId, Events);
         false ->
-            erlang:error(duplicate_event)
-    end,
-
-    EventModule:append(StreamId, Events).
+            {error, duplicate_event}
+    end.
 
 -doc """
 Folds events from the event store into an accumulator using the specified persistence module.
@@ -69,15 +68,22 @@ Folds events from the event store into an accumulator using the specified persis
 This is the core operation for event replay and state reconstruction. The backend
 retrieves events within the specified range and applies the fold function in sequence order.
 """.
--spec fold(StoreContext, StreamId, Fun, Acc0, Range) -> Acc1 when
+-spec fold(StoreContext, StreamId, Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
     StoreContext :: store_context(),
     StreamId :: es_contract_event:stream_id(),
-    Fun :: fun((Event :: es_contract_event:t(), AccIn) -> AccOut),
+    Fun :: fun(
+        (
+            Event :: es_contract_event:t(),
+            Sequence :: es_contract_event:sequence(),
+            AccIn
+        ) -> AccOut
+    ),
     Acc0 :: term(),
     Range :: es_contract_range:range(),
     Acc1 :: term(),
     AccIn :: term(),
-    AccOut :: term().
+    AccOut :: term(),
+    Reason :: term().
 fold({EventModule, _}, StreamId, Fun, InitialResult, Range) ->
     EventModule:fold(StreamId, Fun, InitialResult, Range).
 
@@ -92,15 +98,18 @@ This is a convenience wrapper around fold/5 that collects all events into a list
     Range :: es_contract_range:range(),
     Result :: [es_contract_event:t()].
 retrieve_events(StoreContext, StreamId, Range) ->
-    lists:reverse(
+    case
         fold(
             StoreContext,
             StreamId,
-            fun(Event, Acc) -> [Event | Acc] end,
+            fun(Event, _Seq, Acc) -> [Event | Acc] end,
             [],
             Range
         )
-    ).
+    of
+        {ok, Events} -> lists:reverse(Events);
+        {error, Reason} -> erlang:error(Reason)
+    end.
 
 -doc """
 Creates a new event map.
