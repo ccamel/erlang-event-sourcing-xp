@@ -10,6 +10,7 @@ The ETS-based implementation of the event store.
     start/0,
     stop/0,
     fold/4,
+    fold_all/3,
     append/2,
     store/1,
     load_latest/1
@@ -28,7 +29,11 @@ The ETS-based implementation of the event store.
 -type snapshot_data() :: es_contract_snapshot:state().
 
 -record(event_record, {
-    key :: event_id(), stream_id :: stream_id(), sequence :: sequence(), event :: event()
+    key :: event_id(),
+    stream_id :: stream_id(),
+    sequence :: sequence(),
+    position :: es_contract_event_store:position(),
+    event :: event()
 }).
 
 -record(snapshot_record, {
@@ -40,11 +45,13 @@ The ETS-based implementation of the event store.
 
 -define(DEFAULT_EVENT_TABLE_NAME, events).
 -define(DEFAULT_SNAPSHOT_TABLE_NAME, snapshots).
+-define(DEFAULT_POSITION_COUNTER_TABLE_NAME, position_counter).
 
 -spec start() -> ok.
 start() ->
     EventTable = event_table_name(),
     SnapshotTable = snapshot_table_name(),
+    PositionCounterTable = position_counter_table_name(),
     case ets:info(EventTable) of
         undefined ->
             _ = ets:new(
@@ -64,21 +71,47 @@ start() ->
             ok;
         _ ->
             ok
+    end,
+    case ets:info(PositionCounterTable) of
+        undefined ->
+            _ = ets:new(
+                PositionCounterTable,
+                [set, named_table, public]
+            ),
+            %% Initialize global position counter to 0
+            ets:insert(PositionCounterTable, {global_position, 0}),
+            ok;
+        _ ->
+            ok
     end.
 
 -spec stop() -> ok.
 stop() ->
     ets:delete(event_table_name()),
     ets:delete(snapshot_table_name()),
+    ets:delete(position_counter_table_name()),
     ok.
 
 -spec append(StreamId, Events) -> ok | {error, Reason} when
     StreamId :: stream_id(),
     Events :: [event()],
     Reason :: term().
+append(_, []) ->
+    ok;
 append(_, Events) ->
-    Records = lists:map(fun event_to_record/1, Events),
-    case ets:insert_new(event_table_name(), Records) of
+    %% Assign global positions to events
+    PositionCounterTable = position_counter_table_name(),
+    NumEvents = length(Events),
+    StartPosition = ets:update_counter(PositionCounterTable, global_position, NumEvents),
+    BasePosition = StartPosition - NumEvents,
+    RecordsWithPositions = lists:zipwith(
+        fun(Event, Offset) ->
+            event_to_record(Event, BasePosition + Offset)
+        end,
+        Events,
+        lists:seq(0, NumEvents - 1)
+    ),
+    case ets:insert_new(event_table_name(), RecordsWithPositions) of
         true ->
             ok;
         false ->
@@ -107,14 +140,15 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
         From = es_contract_range:lower_bound(Range),
         To = es_contract_range:upper_bound(Range),
 
-        Pattern = {event_record, '_', StreamId, '$1', '$2'},
+        Pattern = {event_record, '_', StreamId, '$1', '_', '$2'},
         Guard = [{'>=', '$1', From}, {'<', '$1', To}],
         MatchSpec = [{Pattern, Guard, [{{'$1', '$2'}}]}],
         ResultPairs = ets:select(event_table_name(), MatchSpec),
+        SortedPairs = lists:sort(ResultPairs),
         Result = lists:foldl(
             fun({Seq, Event}, Acc) -> FoldFun(Event, Seq, Acc) end,
             InitialAcc,
-            ResultPairs
+            SortedPairs
         ),
         {ok, Result}
     catch
@@ -122,11 +156,12 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
             {error, {Class, Reason, Stacktrace}}
     end.
 
-event_to_record(Event) ->
+event_to_record(Event, Position) ->
     #event_record{
         key = es_contract_event:key(Event),
         stream_id = maps:get(stream_id, Event),
         sequence = maps:get(sequence, Event),
+        position = Position,
         event = Event
     }.
 
@@ -161,6 +196,36 @@ load_latest(StreamId) ->
             {error, not_found}
     end.
 
+-spec fold_all(Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
+    Fun :: fun((Event :: event(), Position :: es_contract_event_store:position(), AccIn) -> AccOut),
+    Acc0 :: term(),
+    Range :: es_contract_range:range(),
+    Acc1 :: term(),
+    AccIn :: term(),
+    AccOut :: term(),
+    Reason :: term().
+fold_all(FoldFun, InitialAcc, Range) when is_function(FoldFun, 3) ->
+    try
+        From = es_contract_range:lower_bound(Range),
+        To = es_contract_range:upper_bound(Range),
+        Pattern = {event_record, '_', '_', '_', '$1', '$2'},
+        Guard = [{'>=', '$1', From}, {'<', '$1', To}],
+        MatchSpec = [{Pattern, Guard, [{{'$1', '$2'}}]}],
+        Results = ets:select(event_table_name(), MatchSpec),
+        Sorted = lists:sort(Results),
+        Result = lists:foldl(
+            fun({Position, Event}, Acc) ->
+                FoldFun(Event, Position, Acc)
+            end,
+            InitialAcc,
+            Sorted
+        ),
+        {ok, Result}
+    catch
+        Class:Reason:Stacktrace ->
+            {error, {Class, Reason, Stacktrace}}
+    end.
+
 -spec event_table_name() -> atom().
 event_table_name() ->
     application:get_env(es_store_ets, event_table_name, ?DEFAULT_EVENT_TABLE_NAME).
@@ -168,3 +233,9 @@ event_table_name() ->
 -spec snapshot_table_name() -> atom().
 snapshot_table_name() ->
     application:get_env(es_store_ets, snapshot_table_name, ?DEFAULT_SNAPSHOT_TABLE_NAME).
+
+-spec position_counter_table_name() -> atom().
+position_counter_table_name() ->
+    application:get_env(
+        es_store_ets, position_counter_table_name, ?DEFAULT_POSITION_COUNTER_TABLE_NAME
+    ).
