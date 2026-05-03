@@ -4,15 +4,18 @@
 
 -define(ETS_STORE_CONTEXT, {es_store_ets, es_store_ets}).
 -define(MNESIA_STORE_CONTEXT, {es_store_mnesia, es_store_mnesia}).
+-define(FILE_STORE_CONTEXT, {es_store_file, es_store_file}).
 -define(STREAM_A, {user, <<"account-A">>}).
 -define(STREAM_B, {user, <<"account-B">>}).
 
 suite_test_() ->
-    Stores = [?MNESIA_STORE_CONTEXT, ?ETS_STORE_CONTEXT],
+    Stores = [?MNESIA_STORE_CONTEXT, ?ETS_STORE_CONTEXT, ?FILE_STORE_CONTEXT],
     BaseTests =
         [
             {"persist_single_event", fun persist_single_event/1},
             {"persist_2_streams_event", fun persist_2_streams_event/1},
+            {"fold_all_events", fun fold_all_events/1},
+            {"fold_all_range", fun fold_all_range/1},
             {"fetch_streams_event", fun fetch_streams_event/1},
             {"wrong_stream_id", fun wrong_stream_id/1},
             {"duplicate_event", fun duplicate_event/1},
@@ -33,10 +36,19 @@ suite_test_() ->
 
 setup() ->
     mnesia:start(),
-    ok.
+    RootDir = filename:join([
+        "_build",
+        "test",
+        "es_store_file",
+        integer_to_list(erlang:unique_integer([positive]))
+    ]),
+    application:set_env(es_store_file, root_dir, RootDir),
+    RootDir.
 
-teardown(_) ->
+teardown(RootDir) ->
     mnesia:stop(),
+    application:unset_env(es_store_file, root_dir),
+    _ = file:del_dir_r(RootDir),
     ok.
 
 %%% Helper functions
@@ -122,6 +134,55 @@ persist_2_streams_event(Store) ->
         es_kernel_store:retrieve_events(
             Store, ?STREAM_B, es_contract_range:new(0, infinity)
         )
+    ),
+    ?assertEqual(ok, stop_store(Store)).
+
+fold_all_events(Store) ->
+    start_store(Store),
+    Timestamp = erlang:system_time(),
+    EventA1 = es_kernel_store:new_event(
+        ?STREAM_A, user, user_registered, 1, Timestamp, {"John Doe"}
+    ),
+    EventB1 = es_kernel_store:new_event(
+        ?STREAM_B, user, user_registered, 1, Timestamp, {"Jane Doe"}
+    ),
+    EventA2 = es_kernel_store:new_event(
+        ?STREAM_A, user, user_updated, 2, Timestamp, {"John Smith"}
+    ),
+
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, [EventA1])),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_B, [EventB1])),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, [EventA2])),
+
+    FoldFun = fun(Event, Position, Acc) -> Acc ++ [{Position, Event}] end,
+    ?assertMatch(
+        {ok, [{0, EventA1}, {1, EventB1}, {2, EventA2}]},
+        es_kernel_store:fold_all(Store, FoldFun, [], es_contract_range:new(0, infinity))
+    ),
+    ?assertNot(maps:is_key(position, EventA1)),
+    ?assertEqual(ok, stop_store(Store)).
+
+fold_all_range(Store) ->
+    start_store(Store),
+    Timestamp = erlang:system_time(),
+    EventA1 = es_kernel_store:new_event(
+        ?STREAM_A, user, user_registered, 1, Timestamp, {"John Doe"}
+    ),
+    EventB1 = es_kernel_store:new_event(
+        ?STREAM_B, user, user_registered, 1, Timestamp, {"Jane Doe"}
+    ),
+    EventA2 = es_kernel_store:new_event(
+        ?STREAM_A, user, user_updated, 2, Timestamp, {"John Smith"}
+    ),
+
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, [EventA1])),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_B, [EventB1])),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, [EventA2])),
+
+    FoldFun = fun(Event, Position, Acc) -> Acc ++ [{Position, Event}] end,
+    ?assertMatch(
+        {ok, [{1, EventB1}, {2, EventA2}]},
+        es_kernel_store:fold_all(Store, FoldFun, [], es_contract_range:new(1, 3))
     ),
     ?assertEqual(ok, stop_store(Store)).
 
@@ -250,9 +311,8 @@ duplicate_event(Store) ->
         ),
 
     ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, [Event])),
-    ?assertException(
-        error,
-        duplicate_event,
+    ?assertMatch(
+        {error, duplicate_event},
         es_kernel_store:append(Store, ?STREAM_A, [Event])
     ),
     ?assertMatch(
@@ -289,9 +349,8 @@ duplicate_event(Store) ->
             )
         ],
 
-    ?assertException(
-        error,
-        duplicate_event,
+    ?assertMatch(
+        {error, duplicate_event},
         es_kernel_store:append(Store, ?STREAM_B, Events)
     ),
     ?assertMatch(
@@ -428,6 +487,20 @@ snapshot_save_error(?MNESIA_STORE_CONTEXT = Store) ->
     Snapshot = es_kernel_store:new_snapshot(Domain, ?STREAM_A, Sequence, Timestamp, State),
 
     %% Normal save should still return ok
+    ?assertMatch(ok, es_kernel_store:store(Store, Snapshot)),
+
+    ?assertEqual(ok, stop_store(Store));
+snapshot_save_error(?FILE_STORE_CONTEXT = Store) ->
+    %% For the file store, stop/0 is intentionally a no-op. Verify the
+    %% snapshot write path remains successful for this backend.
+    ?assertMatch(ok, start_store(Store)),
+
+    Timestamp = erlang:system_time(),
+    State = #{balance => 100},
+    Sequence = 5,
+    Domain = user,
+
+    Snapshot = es_kernel_store:new_snapshot(Domain, ?STREAM_A, Sequence, Timestamp, State),
     ?assertMatch(ok, es_kernel_store:store(Store, Snapshot)),
 
     ?assertEqual(ok, stop_store(Store)).

@@ -12,6 +12,7 @@ The Mnesia-based implementation of the event store.
     start/0,
     stop/0,
     fold/4,
+    fold_all/3,
     append/2,
     store/1,
     load_latest/1
@@ -30,7 +31,11 @@ The Mnesia-based implementation of the event store.
 -type snapshot_data() :: es_contract_snapshot:state().
 
 -record(event_record, {
-    key :: event_id(), stream_id :: stream_id(), sequence :: sequence(), event :: event()
+    key :: event_id(),
+    stream_id :: stream_id(),
+    sequence :: sequence(),
+    position :: es_contract_event_store:position(),
+    event :: event()
 }).
 
 -record(snapshot_record, {
@@ -43,11 +48,13 @@ The Mnesia-based implementation of the event store.
 %% Default table names; overridable via application environment.
 -define(DEFAULT_EVENT_TABLE_NAME, events).
 -define(DEFAULT_SNAPSHOT_TABLE_NAME, snapshots).
+-define(DEFAULT_POSITION_COUNTER_TABLE_NAME, position_counter).
 
 -spec start() -> ok.
 start() ->
     EventTable = event_table_name(),
     SnapshotTable = snapshot_table_name(),
+    PositionCounterTable = position_counter_table_name(),
     try mnesia:table_info(EventTable, all) of
         _ ->
             ok
@@ -60,7 +67,7 @@ start() ->
                         {attributes, record_info(fields, event_record)},
                         {record_name, event_record},
                         {type, ordered_set},
-                        {index, [stream_id, sequence]}
+                        {index, [stream_id, sequence, position]}
                     ]
                 )
             of
@@ -90,31 +97,76 @@ start() ->
                 {aborted, SnapshotReason} ->
                     erlang:error(SnapshotReason)
             end
+    end,
+    %% Create position counter table if it doesn't exist
+    try mnesia:table_info(PositionCounterTable, all) of
+        _ ->
+            ok
+    catch
+        exit:{aborted, {no_exists, PositionCounterTable, all}} ->
+            case
+                mnesia:create_table(
+                    PositionCounterTable,
+                    [
+                        {attributes, [key, value]},
+                        {type, set}
+                    ]
+                )
+            of
+                {atomic, ok} ->
+                    %% Initialize global position counter to 0
+                    mnesia:dirty_write(
+                        PositionCounterTable, {PositionCounterTable, global_position, 0}
+                    ),
+                    ok;
+                {aborted, CounterReason} ->
+                    erlang:error(CounterReason)
+            end
     end.
 
 -spec stop() -> ok.
 stop() ->
     ok.
 
--spec append(StreamId, Events) -> ok when
+-spec append(StreamId, Events) -> ok | {error, Reason} when
     StreamId :: stream_id(),
-    Events :: [event()].
+    Events :: [event()],
+    Reason :: term().
 append(_, Events) ->
     case mnesia:transaction(fun() -> persist_events_in_tx(Events) end) of
         {atomic, _Result} ->
             ok;
         {aborted, Reason} ->
-            erlang:error(Reason)
+            {error, Reason}
     end.
 
 persist_events_in_tx([]) ->
     ok;
-persist_events_in_tx([#{stream_id := StreamId, sequence := Seq} = Event | Rest]) ->
+persist_events_in_tx(Events) when is_list(Events) ->
+    %% Allocate positions for all events
+    PositionCounterTable = position_counter_table_name(),
+    NumEvents = length(Events),
+    [{_, global_position, CurrentPosition}] = mnesia:read(
+        PositionCounterTable, global_position, write
+    ),
+    NewPosition = CurrentPosition + NumEvents,
+    ok = mnesia:write(
+        PositionCounterTable, {PositionCounterTable, global_position, NewPosition}, write
+    ),
+    %% Persist events with assigned positions
+    persist_events_with_positions(Events, CurrentPosition).
+
+persist_events_with_positions([], _Position) ->
+    ok;
+persist_events_with_positions(
+    [#{stream_id := StreamId, sequence := Seq} = Event | Rest], Position
+) ->
     Id = es_contract_event:key(Event),
     Record = #event_record{
         key = Id,
         stream_id = StreamId,
         sequence = Seq,
+        position = Position,
         event = Event
     },
     case mnesia:read(event_table_name(), Id, read) of
@@ -122,19 +174,26 @@ persist_events_in_tx([#{stream_id := StreamId, sequence := Seq} = Event | Rest])
             mnesia:abort(duplicate_event);
         _ ->
             ok = mnesia:write(event_table_name(), Record, write),
-            persist_events_in_tx(Rest)
+            persist_events_with_positions(Rest, Position + 1)
     end.
 
--spec fold(StreamId, Fun, Acc0, Range) -> Acc1 when
+-spec fold(StreamId, Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
     StreamId :: stream_id(),
-    Fun :: fun((Event :: event(), AccIn) -> AccOut),
+    Fun :: fun(
+        (
+            Event :: event(),
+            Sequence :: sequence(),
+            AccIn
+        ) -> AccOut
+    ),
     Acc0 :: term(),
     Range :: es_contract_range:range(),
     Acc1 :: term(),
     AccIn :: term(),
-    AccOut :: term().
+    AccOut :: term(),
+    Reason :: term().
 fold(StreamId, FoldFun, InitialAcc, Range) when
-    is_function(FoldFun, 2)
+    is_function(FoldFun, 3)
 ->
     From = es_contract_range:lower_bound(Range),
     To = es_contract_range:upper_bound(Range),
@@ -143,7 +202,7 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
             qlc:e(
                 qlc:q(
                     [
-                        E#event_record.event
+                        {E#event_record.sequence, E#event_record.event}
                      || E <- mnesia:table(event_table_name()),
                         E#event_record.stream_id =:= StreamId,
                         E#event_record.sequence >= From,
@@ -154,10 +213,15 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
             )
         end,
     case mnesia:transaction(FunQuery) of
-        {atomic, Events} ->
-            lists:foldl(FoldFun, InitialAcc, Events);
+        {atomic, EventPairs} ->
+            Result = lists:foldl(
+                fun({Seq, Event}, Acc) -> FoldFun(Event, Seq, Acc) end,
+                InitialAcc,
+                EventPairs
+            ),
+            {ok, Result};
         {aborted, Reason} ->
-            erlang:error(Reason)
+            {error, Reason}
     end.
 
 -spec store(Snapshot) -> ok | {warning, Reason} when
@@ -194,6 +258,46 @@ load_latest(StreamId) ->
             erlang:error(Reason)
     end.
 
+-spec fold_all(Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
+    Fun :: fun((Event :: event(), Position :: es_contract_event_store:position(), AccIn) -> AccOut),
+    Acc0 :: term(),
+    Range :: es_contract_range:range(),
+    Acc1 :: term(),
+    AccIn :: term(),
+    AccOut :: term(),
+    Reason :: term().
+fold_all(FoldFun, InitialAcc, Range) when is_function(FoldFun, 3) ->
+    From = es_contract_range:lower_bound(Range),
+    To = es_contract_range:upper_bound(Range),
+    FunQuery =
+        fun() ->
+            qlc:e(
+                qlc:q(
+                    [
+                        {E#event_record.event, E#event_record.position}
+                     || E <- mnesia:table(event_table_name()),
+                        E#event_record.position >= From,
+                        E#event_record.position < To
+                    ]
+                )
+            )
+        end,
+    case mnesia:transaction(FunQuery) of
+        {atomic, Results} ->
+            %% Sort results by position since QLC doesn't guarantee order
+            Sorted = lists:sort(fun({_, P1}, {_, P2}) -> P1 =< P2 end, Results),
+            Result = lists:foldl(
+                fun({Event, Position}, Acc) ->
+                    FoldFun(Event, Position, Acc)
+                end,
+                InitialAcc,
+                Sorted
+            ),
+            {ok, Result};
+        {aborted, Reason} ->
+            {error, Reason}
+    end.
+
 -spec event_table_name() -> atom().
 event_table_name() ->
     application:get_env(es_store_mnesia, event_table_name, ?DEFAULT_EVENT_TABLE_NAME).
@@ -201,3 +305,9 @@ event_table_name() ->
 -spec snapshot_table_name() -> atom().
 snapshot_table_name() ->
     application:get_env(es_store_mnesia, snapshot_table_name, ?DEFAULT_SNAPSHOT_TABLE_NAME).
+
+-spec position_counter_table_name() -> atom().
+position_counter_table_name() ->
+    application:get_env(
+        es_store_mnesia, position_counter_table_name, ?DEFAULT_POSITION_COUNTER_TABLE_NAME
+    ).

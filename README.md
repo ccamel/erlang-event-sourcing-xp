@@ -26,7 +26,7 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 - **Kernel OTP app** — packaged as an OTP application with a supervision tree (`es_kernel_sup`) that boots a dynamic aggregate supervisor and a singleton aggregate manager. Configure stores via application env, start with `application:ensure_all_started/1`, and dispatch commands through `es_kernel:dispatch/1`.
 - **Aggregate** — a reusable [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) harness that keeps domain logic pure while delegating event sourcing boilerplate.
 - **Aggregate Manager** — a singleton router that spins up aggregates on demand via the dynamic supervisor, rehydrates them from persisted events, monitors them, and passivates idle instances.
-- **Event Store** — a behaviour-driven abstraction with drop-in backends so you can pick the storage engine that fits your deployment.
+- **Event Store** — a behaviour-driven abstraction with drop-in backends, per-stream replay for aggregates, and global-position replay for read-side projections.
 - **Snapshots** — automatic checkpointing at configurable intervals to avoid replaying entire streams.
 - **Passivation** — idle aggregates are shut down cleanly and will rehydrate from the store on the next command.
 
@@ -111,26 +111,67 @@ The store layer separates domain logic from persistence concerns through two beh
 
 #### Event Store
 
-The event store is the heart of event sourcing persistence, designed as a `behaviour` (`es_contract_event_store`) that backends implement. It guarantees **ordering** (events replayed in sequence), **atomicity** (all-or-nothing persistence), and **immutability** (events never modified).
+The event store is the heart of event sourcing persistence, designed as a `behaviour` (`es_contract_event_store`) that backends implement. It guarantees **ordering** (events replayed in sequence or global position order), **atomicity** (all-or-nothing persistence), and **immutability** (events never modified).
+
+Events carry a stream-local `sequence`, used to rebuild a single aggregate. Store backends also assign a monotonically increasing global `position` when events are persisted. This position is storage metadata, not part of the domain event map, and is used for global replay, projections, and future read-side subscriptions.
 
 **Required Callbacks:**
 
 ```erlang
 % Appends events to a stream with monotonic sequence ordering
--callback append(StreamId, Events) -> ok
+-callback append(StreamId, Events) -> ok | {error, Reason}
     when StreamId :: es_contract_event:stream_id(),
-         Events :: [es_contract_event:t()].
+         Events :: [es_contract_event:t()],
+         Reason :: term().
 
-% Replays events in sequence order, applying a fold function
--callback fold(StreamId, Fun, Acc0, Range) -> Acc1
+% Replays events for one stream in sequence order
+-callback fold(StreamId, FoldFun, Acc0, Range) ->
+    {ok, Acc1} | {error, Reason}
     when StreamId :: es_contract_event:stream_id(),
-         Fun :: fun((Event :: es_contract_event:t(), AccIn) -> AccOut),
+         FoldFun :: fun(
+             (Event :: es_contract_event:t(),
+              Sequence :: es_contract_event:sequence(),
+              AccIn) -> AccOut
+         ),
          Acc0 :: term(),
          Range :: es_contract_range:range(),
          Acc1 :: term(),
          AccIn :: term(),
-         AccOut :: term().
+         AccOut :: term(),
+         Reason :: term().
+
+% Replays all events across streams in global position order
+-callback fold_all(FoldFun, Acc0, Range) ->
+    {ok, Acc1} | {error, Reason}
+    when FoldFun :: fun(
+             (Event :: es_contract_event:t(),
+              Position :: es_contract_event_store:position(),
+              AccIn) -> AccOut
+         ),
+         Acc0 :: term(),
+         Range :: es_contract_range:range(),
+         Acc1 :: term(),
+         AccIn :: term(),
+         AccOut :: term(),
+         Reason :: term().
 ```
+
+`fold/4` is the aggregate replay primitive: it reads one stream using stream-local sequence ranges. `fold_all/3` is the read-side primitive: it reads the global event log using position ranges. The kernel wrapper also exposes `es_kernel_store:fold_all/4` when callers need to provide an explicit accumulator.
+
+#### Projections
+
+`es_contract_projection` defines the read-side projection behaviour:
+
+```erlang
+-callback init() -> projection_state().
+-callback name() -> atom().
+-callback handle_event(Event, State) -> {ok, NewState} | {error, Reason}.
+-callback event_filter(Event) -> boolean().
+```
+
+`event_filter/1` is optional. If omitted, the projection is interested in all events. Projection modules describe how to transform events into read-side state; they do not decide how events are consumed from the store.
+
+This release provides the projection contract and global event folding support. A supervised projection runner, checkpoint storage, and live subscription support are intentionally left for a later iteration.
 
 #### Snapshot Store
 
@@ -172,7 +213,8 @@ Setting `snapshot_interval => 0` (default) disables automatic snapshotting.
 
 #### Additional future features
 
-- Support event subscriptions for real-time updates.
+- Add a projection runner with checkpointed catch-up over the global event log.
+- Support optional event subscriptions for real-time read-side updates.
 - Implement snapshot retention policies (e.g., keep only last N snapshots).
 
 #### Backend roadmap

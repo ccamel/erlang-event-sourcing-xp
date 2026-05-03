@@ -158,19 +158,24 @@ rehydrate(AggregateModule, StoreContext, StreamId) ->
                 {State0, ?SEQUENCE_ZERO}
         end,
     FoldFun =
-        fun(#{payload := Payload, sequence := Seq}, {StateAcc, _SeqAcc}) ->
+        fun(#{payload := Payload}, Seq, {StateAcc, _SeqAcc}) ->
             {
                 AggregateModule:apply_event(Payload, StateAcc),
                 Seq
             }
         end,
-    es_kernel_store:fold(
-        StoreContext,
-        StreamId,
-        FoldFun,
-        {StateFromSnapshot, SequenceFromSnapshot},
-        es_contract_range:new(SequenceFromSnapshot + 1, infinity)
-    ).
+    case
+        es_kernel_store:fold(
+            StoreContext,
+            StreamId,
+            FoldFun,
+            {StateFromSnapshot, SequenceFromSnapshot},
+            es_contract_range:new(SequenceFromSnapshot + 1, infinity)
+        )
+    of
+        {ok, Result} -> Result;
+        {error, Reason} -> erlang:error(Reason)
+    end.
 
 -doc """
 Handles synchronous commands sent to the aggregate.

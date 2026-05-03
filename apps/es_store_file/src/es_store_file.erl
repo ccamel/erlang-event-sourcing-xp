@@ -13,6 +13,7 @@ configurable root directory.
     start/0,
     stop/0,
     fold/4,
+    fold_all/3,
     append/2,
     store/1,
     load_latest/1
@@ -34,38 +35,63 @@ configurable root directory.
 -define(SNAPSHOTS_SUBDIR, "snapshots").
 -define(EVENT_EXT, ".log").
 -define(SNAPSHOT_EXT, ".snap").
+-define(POSITION_COUNTER_FILE, "position_counter").
+-define(GLOBAL_INDEX_FILE, "global_index.dat").
 
 -spec start() -> ok.
 start() ->
     ok = ensure_dir(events_dir()),
-    ok = ensure_dir(snapshots_dir()).
+    ok = ensure_dir(snapshots_dir()),
+    ok = ensure_position_counter().
 
 -spec stop() -> ok.
 stop() ->
     ok.
 
--spec append(StreamId, Events) -> ok when
+-spec append(StreamId, Events) -> ok | {error, Reason} when
     StreamId :: stream_id(),
-    Events :: [event()].
+    Events :: [event()],
+    Reason :: term().
 append(_StreamId, []) ->
     ok;
 append(StreamId, [#{aggregate_type := AggregateType} | _] = Events) ->
     BaseName = stream_basename(AggregateType, StreamId),
     Path = event_file_path(BaseName),
     ensure_dir(events_dir()),
-    ensure_unique(Path, Events),
-    persist_events(Path, Events).
+    case ensure_unique(Path, Events) of
+        ok ->
+            case persist_events(Path, Events) of
+                ok ->
+                    NumEvents = length(Events),
+                    StartPosition = allocate_positions(NumEvents),
+                    EventsWithPositions = lists:zip(
+                        Events, lists:seq(StartPosition, StartPosition + NumEvents - 1)
+                    ),
+                    append_to_global_index(EventsWithPositions, Path);
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
--spec fold(StreamId, Fun, Acc0, Range) -> Acc1 when
+-spec fold(StreamId, Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
     StreamId :: stream_id(),
-    Fun :: fun((Event :: event(), AccIn) -> AccOut),
+    Fun :: fun(
+        (
+            Event :: event(),
+            Sequence :: sequence(),
+            AccIn
+        ) -> AccOut
+    ),
     Acc0 :: term(),
     Range :: es_contract_range:range(),
     Acc1 :: term(),
     AccIn :: term(),
-    AccOut :: term().
+    AccOut :: term(),
+    Reason :: term().
 fold(StreamId, FoldFun, InitialAcc, Range) when
-    is_function(FoldFun, 2)
+    is_function(FoldFun, 3)
 ->
     From = es_contract_range:lower_bound(Range),
     To = es_contract_range:upper_bound(Range),
@@ -77,14 +103,19 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
                 #{sequence := Seq} <- [E],
                 within_range(Seq, From, To)
             ],
-            lists:foldl(FoldFun, InitialAcc, Filtered);
+            Result = lists:foldl(
+                fun(#{sequence := Seq} = Event, Acc) -> FoldFun(Event, Seq, Acc) end,
+                InitialAcc,
+                Filtered
+            ),
+            {ok, Result};
         {error, not_found} ->
-            InitialAcc;
+            {ok, InitialAcc};
         {error, Reason} ->
-            erlang:error(Reason)
+            {error, Reason}
     end.
 
--spec ensure_unique(file:filename(), [event()]) -> ok.
+-spec ensure_unique(file:filename(), [event()]) -> ok | {error, term()}.
 ensure_unique(Path, Events) ->
     case read_terms(Path) of
         {ok, Existing} ->
@@ -95,24 +126,24 @@ ensure_unique(Path, Events) ->
                 )
             of
                 true ->
-                    erlang:error(duplicate_event);
+                    {error, duplicate_event};
                 false ->
                     ok
             end;
         {error, not_found} ->
             ok;
         {error, Reason} ->
-            erlang:error(Reason)
+            {error, Reason}
     end.
 
--spec persist_events(file:filename(), [event()]) -> ok.
+-spec persist_events(file:filename(), [event()]) -> ok | {error, term()}.
 persist_events(Path, Events) ->
     IoData = [serialize_to_line(E) || E <- Events],
     case file:write_file(Path, IoData, [append]) of
         ok ->
             ok;
         {error, Reason} ->
-            erlang:error(Reason)
+            {error, Reason}
     end.
 
 -spec serialize_to_line(event() | snapshot()) -> iolist().
@@ -271,3 +302,111 @@ to_string(Value) when is_binary(Value) ->
     binary_to_list(Value);
 to_string(Value) when is_atom(Value) ->
     atom_to_list(Value).
+
+%% Position counter and global index management
+
+-spec ensure_position_counter() -> ok.
+ensure_position_counter() ->
+    Path = position_counter_path(),
+    case filelib:is_file(Path) of
+        true ->
+            ok;
+        false ->
+            ensure_dir(root_dir()),
+            file:write_file(Path, term_to_binary(0))
+    end.
+
+-spec allocate_positions(non_neg_integer()) -> es_contract_event_store:position().
+allocate_positions(NumEvents) ->
+    Path = position_counter_path(),
+    {ok, Binary} = file:read_file(Path),
+    CurrentPosition = binary_to_term(Binary),
+    NewPosition = CurrentPosition + NumEvents,
+    ok = file:write_file(Path, term_to_binary(NewPosition)),
+    CurrentPosition.
+
+-spec append_to_global_index([{event(), es_contract_event_store:position()}], file:filename()) ->
+    ok | {error, term()}.
+append_to_global_index(EventsWithPositions, EventFilePath) ->
+    IndexPath = global_index_path(),
+    IndexEntries = [
+        {Position, EventFilePath, es_contract_event:key(Event)}
+     || {Event, Position} <- EventsWithPositions
+    ],
+    IoData = [io_lib:format("~0p.~n", [Entry]) || Entry <- IndexEntries],
+    case file:write_file(IndexPath, IoData, [append]) of
+        ok ->
+            ok;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+-spec fold_all(Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
+    Fun :: fun((Event :: event(), Position :: es_contract_event_store:position(), AccIn) -> AccOut),
+    Acc0 :: term(),
+    Range :: es_contract_range:range(),
+    Acc1 :: term(),
+    AccIn :: term(),
+    AccOut :: term(),
+    Reason :: term().
+fold_all(FoldFun, InitialAcc, Range) when is_function(FoldFun, 3) ->
+    From = es_contract_range:lower_bound(Range),
+    To = es_contract_range:upper_bound(Range),
+    IndexPath = global_index_path(),
+    case file:consult(IndexPath) of
+        {ok, IndexEntries} ->
+            %% Filter by position range
+            Filtered = [
+                {Position, FilePath, Key}
+             || {Position, FilePath, Key} <- IndexEntries,
+                within_range(Position, From, To)
+            ],
+            Sorted = lists:sort(fun({P1, _, _}, {P2, _, _}) -> P1 =< P2 end, Filtered),
+            fold_global_entries(Sorted, FoldFun, InitialAcc);
+        {error, enoent} ->
+            {ok, InitialAcc};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+-spec fold_global_entries(
+    [{es_contract_event_store:position(), file:filename(), es_contract_event:key()}],
+    fun((event(), es_contract_event_store:position(), AccIn) -> AccOut),
+    AccIn
+) ->
+    {ok, AccOut} | {error, term()}
+when
+    AccIn :: term(),
+    AccOut :: term().
+fold_global_entries([], _FoldFun, Acc) ->
+    {ok, Acc};
+fold_global_entries([{Position, FilePath, Key} | Rest], FoldFun, Acc) ->
+    case load_event_by_key(FilePath, Key) of
+        {ok, Event} ->
+            fold_global_entries(Rest, FoldFun, FoldFun(Event, Position, Acc));
+        {error, Reason} ->
+            {error, {missing_global_index_event, Position, FilePath, Key, Reason}}
+    end.
+
+-spec load_event_by_key(file:filename(), es_contract_event:key()) ->
+    {ok, event()} | {error, not_found}.
+load_event_by_key(FilePath, Key) ->
+    case read_terms(FilePath) of
+        {ok, Events} ->
+            case lists:search(fun(E) -> es_contract_event:key(E) =:= Key end, Events) of
+                {value, Event} ->
+                    {ok, Event};
+                false ->
+                    {error, not_found}
+            end;
+        {error, _} ->
+            {error, not_found}
+    end.
+
+-spec position_counter_path() -> file:filename().
+position_counter_path() ->
+    filename:join(root_dir(), ?POSITION_COUNTER_FILE).
+
+-spec global_index_path() -> file:filename().
+global_index_path() ->
+    filename:join(root_dir(), ?GLOBAL_INDEX_FILE).
