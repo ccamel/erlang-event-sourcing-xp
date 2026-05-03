@@ -158,7 +158,9 @@ persist_events_in_tx(Events) when is_list(Events) ->
 
 persist_events_with_positions([], _Position) ->
     ok;
-persist_events_with_positions([#{stream_id := StreamId, sequence := Seq} = Event | Rest], Position) ->
+persist_events_with_positions(
+    [#{stream_id := StreamId, sequence := Seq} = Event | Rest], Position
+) ->
     Id = es_contract_event:key(Event),
     Record = #event_record{
         key = Id,

@@ -52,7 +52,6 @@ event_filter(_) -> false.
 
 -export_type([projection_state/0, event_filter/0]).
 
-
 -type projection_state() :: term().
 
 -doc """

@@ -98,7 +98,11 @@ fold function.
 -spec fold_all(StoreContext, Fun, Range) -> {ok, Acc1} | {error, Reason} when
     StoreContext :: store_context(),
     Fun :: fun(
-        (Event :: es_contract_event:t(), Position :: es_contract_event_store:position(), AccIn) -> AccOut
+        (
+            Event :: es_contract_event:t(),
+            Position :: es_contract_event_store:position(),
+            AccIn
+        ) -> AccOut
     ),
     Range :: es_contract_range:range(),
     Acc1 :: term(),
@@ -111,7 +115,11 @@ fold_all({EventModule, _}, Fun, Range) ->
 -spec fold_all(StoreContext, Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
     StoreContext :: store_context(),
     Fun :: fun(
-        (Event :: es_contract_event:t(), Position :: es_contract_event_store:position(), AccIn) -> AccOut
+        (
+            Event :: es_contract_event:t(),
+            Position :: es_contract_event_store:position(),
+            AccIn
+        ) -> AccOut
     ),
     Acc0 :: term(),
     Range :: es_contract_range:range(),
