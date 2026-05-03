@@ -1,5 +1,15 @@
 -module(es_contract_event_store).
 
+-export_type([position/0]).
+
+-doc """
+Global position of an event in the event store log.
+
+Positions are assigned by storage backends and are not part of the domain event
+payload. They are monotonically increasing within a backend instance.
+""".
+-type position() :: non_neg_integer().
+
 -moduledoc """
 Behaviour for event store backends.
 
@@ -10,6 +20,7 @@ retrieve events, independent of lifecycle management concerns.
 Callbacks:
 - `append/2` - append events to a stream, ensuring monotonic sequence numbers
 - `fold/4` - replay events of a single stream in order and fold them with a user function
+- `fold_all/3` - replay events from the global event log in position order and fold them
 
 Implementations must guarantee:
 
@@ -53,7 +64,6 @@ when
     StreamId :: es_contract_event:stream_id(),
     Events :: [es_contract_event:t()],
     Reason :: term().
-
 -doc """
 Retrieves events from a single stream and folds them into an accumulator.
 
@@ -88,6 +98,51 @@ when
         ) -> AccOut
     ),
     Acc0 :: term(),
+    Range :: es_contract_range:range(),
+    Acc1 :: term(),
+    AccIn :: term(),
+    AccOut :: term(),
+    Reason :: term().
+
+-doc """
+Retrieves events from the global event log and folds them into an accumulator.
+
+This callback is intended for projections and subscriptions on the read side
+of a CQRS architecture. Unlike `fold/4`, which operates on a single stream
+and uses sequence ranges, this function operates on the global event log and
+uses position ranges.
+
+Each persisted event is assigned a monotonically increasing global position
+(offset) when written. This position enables:
+
+- catch-up subscriptions (replay from position N)
+- projection checkpointing (resume processing from last position)
+- global event ordering for read models
+- cross-aggregate queries
+
+- FoldFun is a function `fun((Event, Position, AccIn) -> AccOut)` to process
+  each event with its global position.
+- InitialAcc is the initial accumulator value.
+- Range is a position range (not a sequence range) defining which events to retrieve.
+  Implementations MUST interpret this range in terms of global positions.
+
+
+On success, returns `{ok, Acc1}` where `Acc1` is the final accumulator.
+On failure, implementations MUST return `{error, Reason}`.
+Exceptions SHOULD be reserved for programmer errors or unrecoverable failures.
+""".
+-callback fold_all(FoldFun, Acc0, Range) ->
+    {ok, Acc1} | {error, Reason}
+when
+    FoldFun :: fun(
+        (
+            Event :: es_contract_event:t(),
+            Position :: position(),
+            AccIn
+        ) -> AccOut
+    ),
+    Acc0 :: term(),
+    %% position-based range
     Range :: es_contract_range:range(),
     Acc1 :: term(),
     AccIn :: term(),

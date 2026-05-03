@@ -14,6 +14,8 @@ Both may be the same module if it implements both event and snapshot storage.
 -export([
     append/3,
     fold/5,
+    fold_all/3,
+    fold_all/4,
     retrieve_events/3,
     store/2,
     load_latest/2,
@@ -86,6 +88,39 @@ retrieves events within the specified range and applies the fold function in seq
     Reason :: term().
 fold({EventModule, _}, StreamId, Fun, InitialResult, Range) ->
     EventModule:fold(StreamId, Fun, InitialResult, Range).
+
+-doc """
+Folds all events across all streams into an accumulator using the specified persistence module.
+
+The backend retrieves events globally, ordered by their assigned positions, and applies the
+fold function.
+""".
+-spec fold_all(StoreContext, Fun, Range) -> {ok, Acc1} | {error, Reason} when
+    StoreContext :: store_context(),
+    Fun :: fun(
+        (Event :: es_contract_event:t(), Position :: es_contract_event_store:position(), AccIn) -> AccOut
+    ),
+    Range :: es_contract_range:range(),
+    Acc1 :: term(),
+    AccIn :: term(),
+    AccOut :: term(),
+    Reason :: term().
+fold_all({EventModule, _}, Fun, Range) ->
+    EventModule:fold_all(Fun, #{}, Range).
+
+-spec fold_all(StoreContext, Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
+    StoreContext :: store_context(),
+    Fun :: fun(
+        (Event :: es_contract_event:t(), Position :: es_contract_event_store:position(), AccIn) -> AccOut
+    ),
+    Acc0 :: term(),
+    Range :: es_contract_range:range(),
+    Acc1 :: term(),
+    AccIn :: term(),
+    AccOut :: term(),
+    Reason :: term().
+fold_all({EventModule, _}, Fun, InitialResult, Range) ->
+    EventModule:fold_all(Fun, InitialResult, Range).
 
 -doc """
 Retrieves events for a given stream using the specified store module and range.
