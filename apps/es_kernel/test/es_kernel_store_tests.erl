@@ -4,11 +4,12 @@
 
 -define(ETS_STORE_CONTEXT, {es_store_ets, es_store_ets}).
 -define(MNESIA_STORE_CONTEXT, {es_store_mnesia, es_store_mnesia}).
+-define(FILE_STORE_CONTEXT, {es_store_file, es_store_file}).
 -define(STREAM_A, {user, <<"account-A">>}).
 -define(STREAM_B, {user, <<"account-B">>}).
 
 suite_test_() ->
-    Stores = [?MNESIA_STORE_CONTEXT, ?ETS_STORE_CONTEXT],
+    Stores = [?MNESIA_STORE_CONTEXT, ?ETS_STORE_CONTEXT, ?FILE_STORE_CONTEXT],
     BaseTests =
         [
             {"persist_single_event", fun persist_single_event/1},
@@ -35,10 +36,19 @@ suite_test_() ->
 
 setup() ->
     mnesia:start(),
-    ok.
+    RootDir = filename:join([
+        "_build",
+        "test",
+        "es_store_file",
+        integer_to_list(erlang:unique_integer([positive]))
+    ]),
+    application:set_env(es_store_file, root_dir, RootDir),
+    RootDir.
 
-teardown(_) ->
+teardown(RootDir) ->
     mnesia:stop(),
+    application:unset_env(es_store_file, root_dir),
+    _ = file:del_dir_r(RootDir),
     ok.
 
 %%% Helper functions
@@ -477,6 +487,20 @@ snapshot_save_error(?MNESIA_STORE_CONTEXT = Store) ->
     Snapshot = es_kernel_store:new_snapshot(Domain, ?STREAM_A, Sequence, Timestamp, State),
 
     %% Normal save should still return ok
+    ?assertMatch(ok, es_kernel_store:store(Store, Snapshot)),
+
+    ?assertEqual(ok, stop_store(Store));
+snapshot_save_error(?FILE_STORE_CONTEXT = Store) ->
+    %% For the file store, stop/0 is intentionally a no-op. Verify the
+    %% snapshot write path remains successful for this backend.
+    ?assertMatch(ok, start_store(Store)),
+
+    Timestamp = erlang:system_time(),
+    State = #{balance => 100},
+    Sequence = 5,
+    Domain = user,
+
+    Snapshot = es_kernel_store:new_snapshot(Domain, ?STREAM_A, Sequence, Timestamp, State),
     ?assertMatch(ok, es_kernel_store:store(Store, Snapshot)),
 
     ?assertEqual(ok, stop_store(Store)).
