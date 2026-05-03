@@ -13,6 +13,8 @@ suite_test_() ->
         [
             {"persist_single_event", fun persist_single_event/1},
             {"persist_2_streams_event", fun persist_2_streams_event/1},
+            {"fold_all_events", fun fold_all_events/1},
+            {"fold_all_range", fun fold_all_range/1},
             {"fetch_streams_event", fun fetch_streams_event/1},
             {"wrong_stream_id", fun wrong_stream_id/1},
             {"duplicate_event", fun duplicate_event/1},
@@ -122,6 +124,55 @@ persist_2_streams_event(Store) ->
         es_kernel_store:retrieve_events(
             Store, ?STREAM_B, es_contract_range:new(0, infinity)
         )
+    ),
+    ?assertEqual(ok, stop_store(Store)).
+
+fold_all_events(Store) ->
+    start_store(Store),
+    Timestamp = erlang:system_time(),
+    EventA1 = es_kernel_store:new_event(
+        ?STREAM_A, user, user_registered, 1, Timestamp, {"John Doe"}
+    ),
+    EventB1 = es_kernel_store:new_event(
+        ?STREAM_B, user, user_registered, 1, Timestamp, {"Jane Doe"}
+    ),
+    EventA2 = es_kernel_store:new_event(
+        ?STREAM_A, user, user_updated, 2, Timestamp, {"John Smith"}
+    ),
+
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, [EventA1])),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_B, [EventB1])),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, [EventA2])),
+
+    FoldFun = fun(Event, Position, Acc) -> Acc ++ [{Position, Event}] end,
+    ?assertMatch(
+        {ok, [{0, EventA1}, {1, EventB1}, {2, EventA2}]},
+        es_kernel_store:fold_all(Store, FoldFun, [], es_contract_range:new(0, infinity))
+    ),
+    ?assertNot(maps:is_key(position, EventA1)),
+    ?assertEqual(ok, stop_store(Store)).
+
+fold_all_range(Store) ->
+    start_store(Store),
+    Timestamp = erlang:system_time(),
+    EventA1 = es_kernel_store:new_event(
+        ?STREAM_A, user, user_registered, 1, Timestamp, {"John Doe"}
+    ),
+    EventB1 = es_kernel_store:new_event(
+        ?STREAM_B, user, user_registered, 1, Timestamp, {"Jane Doe"}
+    ),
+    EventA2 = es_kernel_store:new_event(
+        ?STREAM_A, user, user_updated, 2, Timestamp, {"John Smith"}
+    ),
+
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, [EventA1])),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_B, [EventB1])),
+    ?assertMatch(ok, es_kernel_store:append(Store, ?STREAM_A, [EventA2])),
+
+    FoldFun = fun(Event, Position, Acc) -> Acc ++ [{Position, Event}] end,
+    ?assertMatch(
+        {ok, [{1, EventB1}, {2, EventA2}]},
+        es_kernel_store:fold_all(Store, FoldFun, [], es_contract_range:new(1, 3))
     ),
     ?assertEqual(ok, stop_store(Store)).
 
