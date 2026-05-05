@@ -5,6 +5,10 @@ Projection runtime built on the global event log.
 
 The runner consumes events with `es_kernel_store:fold_all/4`, applies the
 projection callback module, and stores progress after each processed position.
+
+The polling runner is fail-fast: any store, checkpoint, or projection handling
+error stops the process. Run it under a supervisor with an appropriate restart
+strategy when automatic recovery is desired.
 """.
 
 -behaviour(gen_server).
