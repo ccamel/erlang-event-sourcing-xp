@@ -20,8 +20,7 @@ start() ->
     Table = table_name(),
     case ets:info(Table) of
         undefined ->
-            _ = ets:new(Table, [set, named_table, public]),
-            ok;
+            create_table(Table);
         _ ->
             ok
     end.
@@ -57,3 +56,18 @@ store_checkpoint(ProjectionName, Position) ->
 -spec table_name() -> atom().
 table_name() ->
     application:get_env(es_kernel, projection_checkpoint_table_name, ?DEFAULT_TABLE_NAME).
+
+-spec create_table(atom()) -> ok.
+create_table(Table) ->
+    try
+        _ = ets:new(Table, [set, named_table, public]),
+        ok
+    catch
+        error:badarg ->
+            case ets:info(Table) of
+                undefined ->
+                    erlang:error(badarg);
+                _ ->
+                    ok
+            end
+    end.
