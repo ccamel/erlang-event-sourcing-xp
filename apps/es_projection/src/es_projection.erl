@@ -15,7 +15,9 @@ strategy when automatic recovery is desired.
 
 -export([
     run_once/3,
+    start/3,
     start_link/3,
+    lookup/1,
     stop/1
 ]).
 
@@ -74,7 +76,25 @@ run_once(StoreContext, ProjectionModule, Options) ->
     end.
 
 -doc """
-Start a polling projection runner.
+Start a managed polling projection runner.
+""".
+-spec start(StoreContext, ProjectionModule, Options) -> {ok, pid()} | {error, Reason} when
+    StoreContext :: es_kernel_store:store_context(),
+    ProjectionModule :: module(),
+    Options :: options(),
+    Reason :: term().
+start(StoreContext, ProjectionModule, Options) ->
+    es_projection_mgr:start_projection(StoreContext, ProjectionModule, Options).
+
+-doc """
+Return the pid of a managed projection runner.
+""".
+-spec lookup(atom()) -> {ok, pid()} | {error, not_found}.
+lookup(ProjectionName) ->
+    es_projection_mgr:lookup(ProjectionName).
+
+-doc """
+Start a polling projection runner linked to the caller.
 """.
 -spec start_link(StoreContext, ProjectionModule, Options) -> gen_server:start_ret() when
     StoreContext :: es_kernel_store:store_context(),
@@ -91,8 +111,24 @@ start_link(StoreContext, ProjectionModule, Options) ->
 
 -doc """
 Stop a polling projection runner.
+
+When passed an atom, the managed projection with that name is stopped. Other
+server references are stopped directly. If no projection manager is running,
+an atom is treated as a locally registered runner name.
 """.
--spec stop(gen_server:server_ref()) -> ok.
+-spec stop(gen_server:server_ref()) -> ok | {error, not_found}.
+stop(ProjectionName) when is_atom(ProjectionName) ->
+    case erlang:whereis(es_projection_mgr) of
+        undefined ->
+            stop_local_or_not_found(ProjectionName);
+        _Pid ->
+            case es_projection_mgr:stop_projection(ProjectionName) of
+                ok ->
+                    ok;
+                {error, not_found} ->
+                    stop_local_or_not_found(ProjectionName)
+            end
+    end;
 stop(ServerRef) ->
     gen_server:stop(ServerRef).
 
@@ -172,6 +208,15 @@ init_runtime(StoreContext, ProjectionModule, Options) ->
             end;
         {error, Reason} ->
             {error, Reason}
+    end.
+
+-spec stop_local_or_not_found(atom()) -> ok | {error, not_found}.
+stop_local_or_not_found(Name) ->
+    case erlang:whereis(Name) of
+        undefined ->
+            {error, not_found};
+        _Pid ->
+            gen_server:stop(Name)
     end.
 
 -spec ensure_checkpoint_store_started(module()) -> ok | {error, term()}.

@@ -82,6 +82,8 @@ io:format(" -> ~p~n", [Dispatch(withdraw, 10)]),
 io:format("[4] withdraw $1000 (should fail)~n", []),
 io:format(" -> ~p~n", [Dispatch(withdraw, 1000)]),
 
+timer:sleep(500),
+
 ok.
 ```
 <!-- DEMO-END -->
@@ -179,13 +181,20 @@ es_projection:run_once(StoreContext, ProjectionModule, Options).
 
 % Start a polling projection runner
 es_projection:start_link(StoreContext, ProjectionModule, Options).
+
+% Start a managed polling projection runner under es_projection_sup
+es_projection:start(StoreContext, ProjectionModule, Options).
+
+% Locate or stop a managed projection by ProjectionModule:name/0
+es_projection:lookup(ProjectionName).
+es_projection:stop(ProjectionName).
 ```
 
 The runner owns checkpointing. It loads the last processed global position for `ProjectionModule:name/0`, consumes events with `es_kernel_store:fold_all/4`, applies `event_filter/1` when present, calls `handle_event/2`, and stores the checkpoint after each processed position. Filtered events are checkpointed too, so a projection can keep moving through the global log.
 
 By default, checkpoints are stored in ETS through `es_projection_checkpoint_ets`. Callers can provide another checkpoint backend with the `checkpoint_store` option. `start_position` defaults to `0`, and `poll_interval` defaults to `200` milliseconds.
 
-The polling runner is fail-fast: any store, checkpoint, or projection handling error stops the process. If automatic recovery is needed, start projection runners under a supervisor with the desired restart strategy. Projection runners are started explicitly by callers; they are not currently part of the `es_kernel_sup` supervision tree.
+The polling runner is fail-fast: any store, checkpoint, or projection handling error stops the process. `es_projection:start/3` starts runners under the projection dynamic supervisor and tracks them by projection name through the manager. `start_link/3` remains available for callers that want to own the runner process directly.
 
 #### Snapshot Store
 
@@ -228,7 +237,6 @@ Setting `snapshot_interval => 0` (default) disables automatic snapshotting.
 #### Additional future features
 
 - Add durable projection checkpoint backends for file or Mnesia stores if needed.
-- Add projection supervision/management helpers for named runners.
 - Support optional event subscriptions for real-time read-side updates.
 - Implement snapshot retention policies (e.g., keep only last N snapshots).
 

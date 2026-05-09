@@ -13,7 +13,8 @@ suite_test_() ->
         {"run_once_respects_start_position", fun run_once_respects_start_position/0},
         {"filtered_events_are_checkpointed", fun filtered_events_are_checkpointed/0},
         {"failed_event_is_not_checkpointed", fun failed_event_is_not_checkpointed/0},
-        {"polling_processes_later_events", fun polling_processes_later_events/0}
+        {"polling_processes_later_events", fun polling_processes_later_events/0},
+        {"named_runner_can_be_stopped_by_name", fun named_runner_can_be_stopped_by_name/0}
     ],
     {foreach, fun setup/0, fun teardown/1, Tests}.
 
@@ -107,6 +108,24 @@ polling_processes_later_events() ->
         wait_for_checkpoint(collect_projection, 0, 20)
     after
         es_projection:stop(Pid)
+    end.
+
+named_runner_can_be_stopped_by_name() ->
+    RunnerName = named_projection_runner,
+    {ok, Pid} = es_projection:start_link(
+        ?STORE, es_projection_collect, #{name => RunnerName, poll_interval => 20}
+    ),
+    try
+        ?assertEqual(Pid, erlang:whereis(RunnerName)),
+        ?assertEqual(ok, es_projection:stop(RunnerName)),
+        ?assertEqual(undefined, erlang:whereis(RunnerName))
+    after
+        case erlang:whereis(RunnerName) of
+            undefined ->
+                ok;
+            _ ->
+                es_projection:stop(RunnerName)
+        end
     end.
 
 append_sample_events() ->

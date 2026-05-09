@@ -41,4 +41,6 @@ io:format(" -> ~p~n", [Dispatch(withdraw, 10)]),
 io:format("[4] withdraw $1000 (should fail)~n", []),
 io:format(" -> ~p~n", [Dispatch(withdraw, 1000)]),
 
+timer:sleep(500),
+
 ok.
