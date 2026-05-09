@@ -171,7 +171,21 @@ Events carry a stream-local `sequence`, used to rebuild a single aggregate. Stor
 
 `event_filter/1` is optional. If omitted, the projection is interested in all events. Projection modules describe how to transform events into read-side state; they do not decide how events are consumed from the store.
 
-This release provides the projection contract and global event folding support. A supervised projection runner, checkpoint storage, and live subscription support are intentionally left for a later iteration.
+`es_kernel_projection` provides a pull-based projection runtime on top of the global event log:
+
+```erlang
+% Run catch-up once and return the final projection state
+es_kernel_projection:run_once(StoreContext, ProjectionModule, Options).
+
+% Start a polling projection runner
+es_kernel_projection:start_link(StoreContext, ProjectionModule, Options).
+```
+
+The runner owns checkpointing. It loads the last processed global position for `ProjectionModule:name/0`, consumes events with `es_kernel_store:fold_all/4`, applies `event_filter/1` when present, calls `handle_event/2`, and stores the checkpoint after each processed position. Filtered events are checkpointed too, so a projection can keep moving through the global log.
+
+By default, checkpoints are stored in ETS through `es_projection_checkpoint_ets`. Callers can provide another checkpoint backend with the `checkpoint_store` option. `start_position` defaults to `0`, and `poll_interval` defaults to `200` milliseconds.
+
+The polling runner is fail-fast: any store, checkpoint, or projection handling error stops the process. If automatic recovery is needed, start projection runners under a supervisor with the desired restart strategy. Projection runners are started explicitly by callers; they are not currently part of the `es_kernel_sup` supervision tree.
 
 #### Snapshot Store
 
@@ -213,7 +227,8 @@ Setting `snapshot_interval => 0` (default) disables automatic snapshotting.
 
 #### Additional future features
 
-- Add a projection runner with checkpointed catch-up over the global event log.
+- Add durable projection checkpoint backends for file or Mnesia stores if needed.
+- Add projection supervision/management helpers for named runners.
 - Support optional event subscriptions for real-time read-side updates.
 - Implement snapshot retention policies (e.g., keep only last N snapshots).
 
