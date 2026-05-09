@@ -171,14 +171,14 @@ Events carry a stream-local `sequence`, used to rebuild a single aggregate. Stor
 
 `event_filter/1` is optional. If omitted, the projection is interested in all events. Projection modules describe how to transform events into read-side state; they do not decide how events are consumed from the store.
 
-`es_kernel_projection` provides a pull-based projection runtime on top of the global event log:
+`es_projection` provides a pull-based projection runtime on top of the global event log:
 
 ```erlang
 % Run catch-up once and return the final projection state
-es_kernel_projection:run_once(StoreContext, ProjectionModule, Options).
+es_projection:run_once(StoreContext, ProjectionModule, Options).
 
 % Start a polling projection runner
-es_kernel_projection:start_link(StoreContext, ProjectionModule, Options).
+es_projection:start_link(StoreContext, ProjectionModule, Options).
 ```
 
 The runner owns checkpointing. It loads the last processed global position for `ProjectionModule:name/0`, consumes events with `es_kernel_store:fold_all/4`, applies `event_filter/1` when present, calls `handle_event/2`, and stores the checkpoint after each processed position. Filtered events are checkpointed too, so a projection can keep moving through the global log.
