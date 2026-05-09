@@ -1,4 +1,4 @@
--module(es_kernel_projection_tests).
+-module(es_projection_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -32,7 +32,7 @@ run_once_processes_global_log() ->
 
     ?assertMatch(
         {ok, [created, ordered, updated], 2},
-        es_kernel_projection:run_once(?STORE, es_kernel_projection_collect, #{})
+        es_projection:run_once(?STORE, es_projection_collect, #{})
     ),
     ?assertEqual(
         {ok, 2},
@@ -48,7 +48,7 @@ run_once_resumes_from_checkpoint() ->
 
     ?assertMatch(
         {ok, [ordered, updated], 2},
-        es_kernel_projection:run_once(?STORE, es_kernel_projection_collect, #{})
+        es_projection:run_once(?STORE, es_projection_collect, #{})
     ),
     ?assertEqual(
         {ok, 2},
@@ -60,8 +60,8 @@ run_once_respects_start_position() ->
 
     ?assertMatch(
         {ok, [ordered, updated], 2},
-        es_kernel_projection:run_once(
-            ?STORE, es_kernel_projection_collect, #{start_position => 1}
+        es_projection:run_once(
+            ?STORE, es_projection_collect, #{start_position => 1}
         )
     ),
     ?assertEqual(
@@ -74,7 +74,7 @@ filtered_events_are_checkpointed() ->
 
     ?assertMatch(
         {ok, [created, updated], 2},
-        es_kernel_projection:run_once(?STORE, es_kernel_projection_filtered, #{})
+        es_projection:run_once(?STORE, es_projection_filtered, #{})
     ),
     ?assertEqual(
         {ok, 2},
@@ -89,7 +89,7 @@ failed_event_is_not_checkpointed() ->
 
     ?assertEqual(
         {error, {handle_event_failed, 1, boom}},
-        es_kernel_projection:run_once(?STORE, es_kernel_projection_failing, #{})
+        es_projection:run_once(?STORE, es_projection_failing, #{})
     ),
     ?assertEqual(
         {ok, 0},
@@ -97,14 +97,17 @@ failed_event_is_not_checkpointed() ->
     ).
 
 polling_processes_later_events() ->
-    {ok, Pid} = es_kernel_projection:start_link(
-        ?STORE, es_kernel_projection_collect, #{poll_interval => 20}
+    {ok, Pid} = es_projection:start_link(
+        ?STORE, es_projection_collect, #{poll_interval => 20}
     ),
-    Timestamp = erlang:system_time(),
-    Event = new_event(?STREAM_A, user, created, 1, Timestamp),
-    ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [Event])),
-    wait_for_checkpoint(collect_projection, 0, 20),
-    ?assertEqual(ok, es_kernel_projection:stop(Pid)).
+    try
+        Timestamp = erlang:system_time(),
+        Event = new_event(?STREAM_A, user, created, 1, Timestamp),
+        ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [Event])),
+        wait_for_checkpoint(collect_projection, 0, 20)
+    after
+        es_projection:stop(Pid)
+    end.
 
 append_sample_events() ->
     Timestamp = erlang:system_time(),

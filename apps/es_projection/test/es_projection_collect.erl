@@ -1,4 +1,4 @@
--module(es_kernel_projection_collect).
+-module(es_projection_collect).
 
 -behaviour(es_contract_projection).
 

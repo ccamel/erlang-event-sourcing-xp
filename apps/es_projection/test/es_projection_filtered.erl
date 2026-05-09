@@ -1,4 +1,4 @@
--module(es_kernel_projection_filtered).
+-module(es_projection_filtered).
 
 -behaviour(es_contract_projection).
 

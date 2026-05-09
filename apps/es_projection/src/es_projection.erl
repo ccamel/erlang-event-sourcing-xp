@@ -1,4 +1,4 @@
--module(es_kernel_projection).
+-module(es_projection).
 
 -moduledoc """
 Projection runtime built on the global event log.
