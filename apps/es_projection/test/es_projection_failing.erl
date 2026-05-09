@@ -1,4 +1,4 @@
--module(es_kernel_projection_failing).
+-module(es_projection_failing).
 
 -behaviour(es_contract_projection).
 

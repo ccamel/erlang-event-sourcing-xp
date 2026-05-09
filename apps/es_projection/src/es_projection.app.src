@@ -1,0 +1,14 @@
+{application, es_projection, [
+    {description, "Projection runtime for event sourcing implementation in Erlang"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib, es_kernel]},
+    {modules, [
+        es_contract_projection,
+        es_contract_projection_checkpoint_store,
+        es_projection_checkpoint_ets,
+        es_projection
+    ]},
+    {licenses, ["BSD 3-Clause"]},
+    {links, []}
+]}.
