@@ -1,12 +1,17 @@
 {application, es_projection, [
     {description, "Projection runtime for event sourcing implementation in Erlang"},
     {vsn, "0.1.0"},
-    {registered, []},
+    {registered, [es_projection_root_sup, es_projection_sup, es_projection_mgr]},
     {applications, [kernel, stdlib, es_kernel]},
+    {mod, {es_projection_app, []}},
     {modules, [
         es_contract_projection,
         es_contract_projection_checkpoint_store,
+        es_projection_app,
         es_projection_checkpoint_ets,
+        es_projection_mgr,
+        es_projection_root_sup,
+        es_projection_sup,
         es_projection
     ]},
     {licenses, ["BSD 3-Clause"]},
