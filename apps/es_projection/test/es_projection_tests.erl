@@ -100,11 +100,14 @@ polling_processes_later_events() ->
     {ok, Pid} = es_projection:start_link(
         ?STORE, es_projection_collect, #{poll_interval => 20}
     ),
-    Timestamp = erlang:system_time(),
-    Event = new_event(?STREAM_A, user, created, 1, Timestamp),
-    ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [Event])),
-    wait_for_checkpoint(collect_projection, 0, 20),
-    ?assertEqual(ok, es_projection:stop(Pid)).
+    try
+        Timestamp = erlang:system_time(),
+        Event = new_event(?STREAM_A, user, created, 1, Timestamp),
+        ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [Event])),
+        wait_for_checkpoint(collect_projection, 0, 20)
+    after
+        es_projection:stop(Pid)
+    end.
 
 append_sample_events() ->
     Timestamp = erlang:system_time(),
