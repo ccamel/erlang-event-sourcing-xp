@@ -70,10 +70,10 @@ jobs:
       - name: Collect coverage files
         id: coverage_files
         run: |
-          files=$(ls _build/test/covertool/*.covertool.xml)
-          list=$(printf "%s," $files)
-          list=${list%,}
-          echo "files=$list" >> "$GITHUB_OUTPUT"
+          shopt -s nullglob
+          files=(_build/test/covertool/*.covertool.xml)
+          printf -v list '%s,' "${files[@]}"
+          echo "files=${list%,}" >> "$GITHUB_OUTPUT"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
