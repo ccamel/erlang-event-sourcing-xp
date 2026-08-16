@@ -3,9 +3,9 @@
 > 🧪 Experimenting with Event Sourcing in Erlang using _pure functional_ principles, [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html)-based aggregates, and _pluggable_ Event Store backends.
 
 [![erlang](https://img.shields.io/badge/Erlang-white.svg?style=for-the-badge&logo=erlang&logoColor=a90533)](https://www.erlang.org/)
-[![lint](https://img.shields.io/github/actions/workflow/status/ccamel/erlang-event-sourcing-xp/lint.yml?label=lint&style=for-the-badge&logo=github)](https://github.com/ccamel/erlang-event-sourcing-xp/actions/workflows/lint.yml)
-[![build](https://img.shields.io/github/actions/workflow/status/ccamel/erlang-event-sourcing-xp/build.yml?label=build&style=for-the-badge&logo=github)](https://github.com/ccamel/erlang-event-sourcing-xp/actions/workflows/build.yml)
-[![test](https://img.shields.io/github/actions/workflow/status/ccamel/erlang-event-sourcing-xp/test.yml?label=test&style=for-the-badge&logo=github)](https://github.com/ccamel/erlang-event-sourcing-xp/actions/workflows/test.yml)
+[![lint-erlang](https://img.shields.io/github/actions/workflow/status/ccamel/erlang-event-sourcing-xp/lint-erlang.yml?label=lint-erlang&style=for-the-badge&logo=github)](https://github.com/ccamel/erlang-event-sourcing-xp/actions/workflows/lint-erlang.yml)
+[![build-erlang](https://img.shields.io/github/actions/workflow/status/ccamel/erlang-event-sourcing-xp/build-erlang.yml?label=build-erlang&style=for-the-badge&logo=github)](https://github.com/ccamel/erlang-event-sourcing-xp/actions/workflows/build-erlang.yml)
+[![test-erlang](https://img.shields.io/github/actions/workflow/status/ccamel/erlang-event-sourcing-xp/test-erlang.yml?label=test-erlang&style=for-the-badge&logo=github)](https://github.com/ccamel/erlang-event-sourcing-xp/actions/workflows/test-erlang.yml)
 [![codecov](https://img.shields.io/codecov/c/github/ccamel/erlang-event-sourcing-xp?style=for-the-badge&token=O3FJO5QDCA&logo=codecov)](https://codecov.io/gh/ccamel/erlang-event-sourcing-xp)
 
 [![release](https://img.shields.io/github/release/ccamel/erlang-event-sourcing-xp.svg?style=for-the-badge)](https://github.com/ccamel/erlang-event-sourcing-xp/releases)

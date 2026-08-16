@@ -1,8 +1,6 @@
 name: Lint / Nix
 
 on:
-  workflow_call:
-
   push:
     branches: [main]
     paths:
@@ -23,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: check-nix-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

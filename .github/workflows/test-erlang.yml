@@ -1,22 +1,33 @@
-name: Build
+name: Test / Erlang
 
 on:
-  workflow_call:
-
   push:
     branches: [main]
+    paths:
+      - '.github/workflows/test-erlang.yml'
+      - 'apps/**'
+      - 'rebar.config'
+      - 'rebar.lock'
+      - 'codecov.yml'
 
   pull_request:
     branches: [main]
+    paths:
+      - '.github/workflows/test-erlang.yml'
+      - 'apps/**'
+      - 'rebar.config'
+      - 'rebar.lock'
+      - 'codecov.yml'
+
+permissions:
+  contents: read
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-erlang:
-    permissions:
-      contents: read
+  test-erlang:
     runs-on: ubuntu-22.04
     env:
       ERL_FLAGS: "-enable-feature all"
@@ -50,6 +61,24 @@ jobs:
             -rebar3-${{ env.REBAR3_VERSION }}\
             -hash-${{ hashFiles('rebar.lock') }}"
 
-      - name: Lint Erlang code (elvis)
+      - name: Run EUnit tests
+        run: rebar3 eunit --cover
+
+      - name: Generate covertool
+        run: rebar3 covertool generate
+
+      - name: Collect coverage files
+        id: coverage_files
         run: |
-          rebar3 compile
+          shopt -s nullglob
+          files=(_build/test/covertool/*.covertool.xml)
+          printf -v list '%s,' "${files[@]}"
+          echo "files=${list%,}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: ${{ steps.coverage_files.outputs.files }}
+          flags: erlang
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
