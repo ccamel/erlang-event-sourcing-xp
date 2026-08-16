@@ -13,6 +13,9 @@ concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   test-erlang:
     runs-on: ubuntu-22.04
