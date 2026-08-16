@@ -1,27 +1,17 @@
-name: Release
+name: Release / Perform
 
 on:
   workflow_dispatch:
 
 permissions:
-  pull-requests: read
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  lint:
-    uses: ./.github/workflows/lint.yml
-
-  build:
-    uses: ./.github/workflows/build.yml
-
-  test:
-    uses: ./.github/workflows/test.yml
-
-  perform-release:
-    needs:
-      - lint
-      - build
-      - test
+  release-perform:
     runs-on: ubuntu-22.04
     env:
       ERL_FLAGS: "-enable-feature all"

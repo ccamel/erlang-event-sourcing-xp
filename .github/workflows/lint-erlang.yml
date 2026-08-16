@@ -1,23 +1,33 @@
-name: Test
+name: Lint / Erlang
 
 on:
-  workflow_call:
-
   push:
     branches: [main]
+    paths:
+      - '.github/workflows/lint-erlang.yml'
+      - 'apps/**'
+      - 'rebar.config'
+      - 'rebar.lock'
+      - 'elvis.config'
 
   pull_request:
     branches: [main]
-
-concurrency:
-  group: test-${{ github.ref }}
-  cancel-in-progress: true
+    paths:
+      - '.github/workflows/lint-erlang.yml'
+      - 'apps/**'
+      - 'rebar.config'
+      - 'rebar.lock'
+      - 'elvis.config'
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test-erlang:
+  lint-erlang:
     runs-on: ubuntu-22.04
     env:
       ERL_FLAGS: "-enable-feature all"
@@ -51,26 +61,17 @@ jobs:
             -rebar3-${{ env.REBAR3_VERSION }}\
             -hash-${{ hashFiles('rebar.lock') }}"
 
-      - name: Run EUnit tests
-        run: |
-          rebar3 eunit --cover
+      - name: Lint Erlang code
+        run: rebar3 lint
 
-      - name: Generate covertool
-        run: |
-          rebar3 covertool generate
+      - name: Update dialyzer PLT
+        run: rebar3 dialyzer --update-plt || true
 
-      - name: Collect coverage files
-        id: coverage_files
-        run: |
-          files=$(ls _build/test/covertool/*.covertool.xml)
-          list=$(printf "%s," $files)
-          list=${list%,}
-          echo "files=$list" >> "$GITHUB_OUTPUT"
+      - name: Run dialyzer
+        run: rebar3 dialyzer
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7
-        with:
-          files: ${{ steps.coverage_files.outputs.files }}
-          flags: erlang
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Ensure code is formatted
+        run: rebar3 fmt --check
+
+      - name: Ensure documentation generates
+        run: rebar3 ex_doc

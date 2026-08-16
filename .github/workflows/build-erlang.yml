@@ -1,22 +1,31 @@
-name: Build
+name: Build / Erlang
 
 on:
-  workflow_call:
-
   push:
     branches: [main]
+    paths:
+      - '.github/workflows/build-erlang.yml'
+      - 'apps/**'
+      - 'rebar.config'
+      - 'rebar.lock'
 
   pull_request:
     branches: [main]
+    paths:
+      - '.github/workflows/build-erlang.yml'
+      - 'apps/**'
+      - 'rebar.config'
+      - 'rebar.lock'
+
+permissions:
+  contents: read
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-erlang:
-    permissions:
-      contents: read
     runs-on: ubuntu-22.04
     env:
       ERL_FLAGS: "-enable-feature all"
@@ -50,6 +59,5 @@ jobs:
             -rebar3-${{ env.REBAR3_VERSION }}\
             -hash-${{ hashFiles('rebar.lock') }}"
 
-      - name: Lint Erlang code (elvis)
-        run: |
-          rebar3 compile
+      - name: Build Erlang code
+        run: rebar3 compile
