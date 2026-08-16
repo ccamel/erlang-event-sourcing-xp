@@ -19,3 +19,7 @@ doc/
 
 # application files
 data/
+
+# Nix
+.direnv/
+result
