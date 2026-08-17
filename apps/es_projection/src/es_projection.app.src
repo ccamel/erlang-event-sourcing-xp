@@ -9,6 +9,7 @@
         es_contract_projection_checkpoint_store,
         es_projection_app,
         es_projection_checkpoint_ets,
+        es_projection_checkpoint_file,
         es_projection_mgr,
         es_projection_root_sup,
         es_projection_sup,
