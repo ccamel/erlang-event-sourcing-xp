@@ -14,6 +14,8 @@ suite_test_() ->
         {"filtered_events_are_checkpointed", fun filtered_events_are_checkpointed/0},
         {"failed_event_is_not_checkpointed", fun failed_event_is_not_checkpointed/0},
         {"polling_processes_later_events", fun polling_processes_later_events/0},
+        {"checkpoint_table_uses_projection_application_env",
+            fun checkpoint_table_uses_projection_application_env/0},
         {"named_runner_can_be_stopped_by_name", fun named_runner_can_be_stopped_by_name/0}
     ],
     {foreach, fun setup/0, fun teardown/1, Tests}.
@@ -127,6 +129,15 @@ named_runner_can_be_stopped_by_name() ->
                 es_projection:stop(RunnerName)
         end
     end.
+
+checkpoint_table_uses_projection_application_env() ->
+    CustomTable = projection_checkpoints_test,
+    ok = application:set_env(es_projection, projection_checkpoint_table_name, CustomTable),
+    ok = es_projection_checkpoint_ets:start(),
+    ?assertNotEqual(undefined, ets:info(CustomTable)),
+    ok = es_projection_checkpoint_ets:stop(),
+    ok = application:unset_env(es_projection, projection_checkpoint_table_name),
+    ok = es_projection_checkpoint_ets:start().
 
 append_sample_events() ->
     Timestamp = erlang:system_time(),
