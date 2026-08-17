@@ -25,6 +25,7 @@
         {
           default = pkgs.mkShell {
             packages = [
+              pkgs.actionlint
               pkgs.bash-language-server
               pkgs.deadnix
               pkgs.erlang_27
@@ -33,8 +34,10 @@
               pkgs.marksman
               pkgs.nil
               pkgs.nixfmt
+              pkgs.nodejs_22
               pkgs.rebar3
               pkgs.statix
+              pkgs.uv
               pkgs.yaml-language-server
             ];
 

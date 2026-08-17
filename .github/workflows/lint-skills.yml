@@ -1,0 +1,44 @@
+name: Lint / Agent Skills
+
+on:
+  workflow_call:
+  push:
+    branches: [main]
+    paths:
+      - '.agents/skills/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.agents/skills/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-skills:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4
+
+      - name: Install skills-ref tool
+        run: uv tool install git+https://github.com/agentskills/agentskills.git#subdirectory=skills-ref
+
+      - name: Validate skills with skills-ref
+        run: |
+          for dir in .agents/skills/*/; do
+            skills-ref validate "$dir"
+          done
+
+      - name: Validate skills with skill-check
+        run: npx skill-check check --no-security-scan .agents/skills
