@@ -193,7 +193,7 @@ es_projection:stop(ProjectionName).
 
 The runner owns checkpointing. It loads the last processed global position for `ProjectionModule:name/0`, consumes events with `es_kernel_store:fold_all/4`, applies `event_filter/1` when present, calls `handle_event/2`, and stores the checkpoint after each processed position. Filtered events are checkpointed too, so a projection can keep moving through the global log.
 
-By default, checkpoints are stored in ETS through `es_projection_checkpoint_ets`. Callers can provide another checkpoint backend with the `checkpoint_store` option. `start_position` defaults to `0`, and `poll_interval` defaults to `200` milliseconds.
+By default, checkpoints are stored in ETS through `es_projection_checkpoint_ets`. For persistent file checkpoints, set `checkpoint_store => es_projection_checkpoint_file` and configure its root directory with `application:set_env(es_projection, checkpoint_file_dir, Path)`. Callers can provide another checkpoint backend with the `checkpoint_store` option. `start_position` defaults to `0`, and `poll_interval` defaults to `200` milliseconds.
 
 The polling runner is fail-fast: any store, checkpoint, or projection handling error stops the process. `es_projection:start/3` starts runners under the projection dynamic supervisor and tracks them by projection name through the manager. `start_link/3` remains available for callers that want to own the runner process directly.
 

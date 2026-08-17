@@ -55,7 +55,7 @@ store_checkpoint(ProjectionName, Position) ->
 
 -spec table_name() -> atom().
 table_name() ->
-    application:get_env(es_kernel, projection_checkpoint_table_name, ?DEFAULT_TABLE_NAME).
+    application:get_env(es_projection, projection_checkpoint_table_name, ?DEFAULT_TABLE_NAME).
 
 -spec create_table(atom()) -> ok.
 create_table(Table) ->
