@@ -2,7 +2,7 @@
 
 -behaviour(es_contract_projection).
 
--export([init/0, name/0, event_filter/1, handle_event/2]).
+-export([init/0, name/0, event_filter/1, handle_event/3]).
 
 init() ->
     #{}.
@@ -17,6 +17,7 @@ event_filter(_) ->
 
 handle_event(
     #{stream_id := {bank_account, AccountId}, type := deposited, payload := #{amount := Amount}},
+    _Position,
     State
 ) ->
     NewState = update_balance(AccountId, Amount, State),
@@ -24,12 +25,13 @@ handle_event(
     {ok, NewState};
 handle_event(
     #{stream_id := {bank_account, AccountId}, type := withdrawn, payload := #{amount := Amount}},
+    _Position,
     State
 ) ->
     NewState = update_balance(AccountId, -Amount, State),
     log_state(AccountId, NewState),
     {ok, NewState};
-handle_event(_, State) ->
+handle_event(_, _Position, State) ->
     {ok, State}.
 
 update_balance(AccountId, Delta, State) ->
