@@ -2,7 +2,7 @@
 
 -behaviour(es_contract_projection).
 
--export([init/0, name/0, handle_event/2, event_filter/1]).
+-export([init/0, name/0, handle_event/3, event_filter/1]).
 
 init() ->
     [].
@@ -15,5 +15,5 @@ event_filter(#{aggregate_type := user}) ->
 event_filter(_) ->
     false.
 
-handle_event(#{type := Type}, State) ->
-    {ok, State ++ [Type]}.
+handle_event(#{type := Type}, Position, State) ->
+    {ok, State ++ [{Type, Position}]}.
