@@ -29,6 +29,7 @@
               pkgs.bash-language-server
               pkgs.deadnix
               pkgs.erlang_27
+              pkgs.erlang-language-platform
               pkgs.git
               pkgs.markdownlint-cli2
               pkgs.marksman
