@@ -49,9 +49,13 @@ The Mnesia-based implementation of the event store.
 -define(DEFAULT_EVENT_TABLE_NAME, events).
 -define(DEFAULT_SNAPSHOT_TABLE_NAME, snapshots).
 -define(DEFAULT_POSITION_COUNTER_TABLE_NAME, position_counter).
+-define(EVENT_TABLE_NAME_KEY, {?MODULE, event_table_name}).
+-define(SNAPSHOT_TABLE_NAME_KEY, {?MODULE, snapshot_table_name}).
+-define(POSITION_COUNTER_TABLE_NAME_KEY, {?MODULE, position_counter_table_name}).
 
 -spec start() -> ok.
 start() ->
+    cache_table_names(),
     EventTable = event_table_name(),
     SnapshotTable = snapshot_table_name(),
     PositionCounterTable = position_counter_table_name(),
@@ -300,14 +304,28 @@ fold_all(FoldFun, InitialAcc, Range) when is_function(FoldFun, 3) ->
 
 -spec event_table_name() -> atom().
 event_table_name() ->
-    application:get_env(es_store_mnesia, event_table_name, ?DEFAULT_EVENT_TABLE_NAME).
+    persistent_term:get(?EVENT_TABLE_NAME_KEY).
 
 -spec snapshot_table_name() -> atom().
 snapshot_table_name() ->
-    application:get_env(es_store_mnesia, snapshot_table_name, ?DEFAULT_SNAPSHOT_TABLE_NAME).
+    persistent_term:get(?SNAPSHOT_TABLE_NAME_KEY).
 
 -spec position_counter_table_name() -> atom().
 position_counter_table_name() ->
-    application:get_env(
-        es_store_mnesia, position_counter_table_name, ?DEFAULT_POSITION_COUNTER_TABLE_NAME
+    persistent_term:get(?POSITION_COUNTER_TABLE_NAME_KEY).
+
+cache_table_names() ->
+    persistent_term:put(
+        ?EVENT_TABLE_NAME_KEY,
+        application:get_env(es_store_mnesia, event_table_name, ?DEFAULT_EVENT_TABLE_NAME)
+    ),
+    persistent_term:put(
+        ?SNAPSHOT_TABLE_NAME_KEY,
+        application:get_env(es_store_mnesia, snapshot_table_name, ?DEFAULT_SNAPSHOT_TABLE_NAME)
+    ),
+    persistent_term:put(
+        ?POSITION_COUNTER_TABLE_NAME_KEY,
+        application:get_env(
+            es_store_mnesia, position_counter_table_name, ?DEFAULT_POSITION_COUNTER_TABLE_NAME
+        )
     ).
