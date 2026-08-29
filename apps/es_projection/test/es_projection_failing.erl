@@ -2,7 +2,7 @@
 
 -behaviour(es_contract_projection).
 
--export([init/0, name/0, handle_event/2]).
+-export([init/0, name/0, handle_event/3]).
 
 init() ->
     [].
@@ -10,7 +10,7 @@ init() ->
 name() ->
     failing_projection.
 
-handle_event(#{type := fail}, _State) ->
+handle_event(#{type := fail}, _Position, _State) ->
     {error, boom};
-handle_event(#{type := Type}, State) ->
-    {ok, State ++ [Type]}.
+handle_event(#{type := Type}, Position, State) ->
+    {ok, State ++ [{Type, Position}]}.

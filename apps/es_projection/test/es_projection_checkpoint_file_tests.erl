@@ -52,15 +52,16 @@ stores_latest_checkpoint_across_restart() ->
 projection_runner_uses_file_checkpoint_store() ->
     Event = es_kernel_store:new_event(?STREAM, user, created, 1, erlang:system_time(), #{}),
     ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM, [Event])),
-    ?assertMatch(
-        {ok, [created], 0},
-        es_projection:run_once(
-            ?STORE,
-            es_projection_collect,
-            #{checkpoint_store => es_projection_checkpoint_file}
-        )
+    {ok, Pid} = es_projection:start_link(
+        ?STORE,
+        es_projection_collect,
+        #{checkpoint_store => es_projection_checkpoint_file, poll_interval => 20}
     ),
-    ?assertEqual({ok, 0}, es_projection_checkpoint_file:load_checkpoint(collect_projection)).
+    try
+        wait_for_checkpoint(collect_projection, 0, 20)
+    after
+        es_projection:stop(Pid)
+    end.
 
 returns_file_errors() ->
     RootDir = checkpoint_root_dir(),
@@ -127,3 +128,14 @@ checkpoint_root_dir() ->
 checkpoint_path(ProjectionName) ->
     Filename = binary_to_list(binary:encode_hex(atom_to_binary(ProjectionName, utf8))),
     filename:join(checkpoint_root_dir(), Filename ++ ".checkpoint").
+
+wait_for_checkpoint(_ProjectionName, _ExpectedPosition, 0) ->
+    ?assert(false);
+wait_for_checkpoint(ProjectionName, ExpectedPosition, AttemptsLeft) ->
+    case es_projection_checkpoint_file:load_checkpoint(ProjectionName) of
+        {ok, ExpectedPosition} ->
+            ok;
+        _ ->
+            timer:sleep(20),
+            wait_for_checkpoint(ProjectionName, ExpectedPosition, AttemptsLeft - 1)
+    end.

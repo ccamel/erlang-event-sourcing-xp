@@ -29,17 +29,29 @@ teardown(_) ->
 managed_runner_can_be_started_and_stopped() ->
     ?assertEqual({error, not_found}, es_projection:lookup(collect_projection)),
 
-    {ok, Pid} = es_projection:start(?STORE, es_projection_collect, #{poll_interval => 20}),
+    {ok, Pid} = es_projection:start(
+        ?STORE, es_projection_collect, #{
+            checkpoint_store => es_projection_checkpoint_ets, poll_interval => 20
+        }
+    ),
     ?assertEqual({ok, Pid}, es_projection:lookup(collect_projection)),
 
     ?assertEqual(ok, es_projection:stop(collect_projection)),
     ?assertEqual({error, not_found}, es_projection:lookup(collect_projection)).
 
 managed_runner_start_is_idempotent() ->
-    {ok, Pid} = es_projection:start(?STORE, es_projection_collect, #{poll_interval => 20}),
+    {ok, Pid} = es_projection:start(
+        ?STORE, es_projection_collect, #{
+            checkpoint_store => es_projection_checkpoint_ets, poll_interval => 20
+        }
+    ),
     ?assertEqual(
         {ok, Pid},
-        es_projection:start(?STORE, es_projection_collect, #{poll_interval => 20})
+        es_projection:start(
+            ?STORE,
+            es_projection_collect,
+            #{checkpoint_store => es_projection_checkpoint_ets, poll_interval => 20}
+        )
     ),
     ?assertEqual(ok, es_projection:stop(collect_projection)).
 
@@ -48,7 +60,11 @@ dead_runner_is_removed_from_registry() ->
     Event = es_kernel_store:new_event(?STREAM_A, user, fail, 1, Timestamp, #{}),
     ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [Event])),
 
-    {ok, Pid} = es_projection:start(?STORE, es_projection_failing, #{poll_interval => 20}),
+    {ok, Pid} = es_projection:start(
+        ?STORE, es_projection_failing, #{
+            checkpoint_store => es_projection_checkpoint_ets, poll_interval => 20
+        }
+    ),
     ?assertEqual({ok, Pid}, es_projection:lookup(failing_projection)),
     wait_until_removed(failing_projection, 20).
 

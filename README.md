@@ -168,34 +168,63 @@ Events carry a stream-local `sequence`, used to rebuild a single aggregate. Stor
 ```erlang
 -callback init() -> projection_state().
 -callback name() -> atom().
--callback handle_event(Event, State) -> {ok, NewState} | {error, Reason}.
+-callback handle_event(Event, Position, State) -> {ok, NewState} | {error, Reason}.
 -callback event_filter(Event) -> boolean().
 ```
 
-`event_filter/1` is optional. If omitted, the projection is interested in all events. Projection modules describe how to transform events into read-side state; they do not decide how events are consumed from the store.
+`event_filter/1` is optional. If omitted, the projection is interested in all
+events. Projection state is opaque to the runtime: it can be an in-memory view,
+a repository or database session, a graph or column-store client, batching or
+caching state, or any other context needed to maintain a derived, rebuildable,
+query-oriented view. Projections are not intended for arbitrary reactions such
+as emails, webhooks, or commands.
 
-`es_projection` provides a pull-based projection runtime on top of the global event log:
+`es_projection` exposes two distinct consumption modes:
+
+- `run_once/3` initializes the projection, folds the global log from
+  `start_position` (default `0`), calls `handle_event/3` for selected events,
+  and returns `{ok, ProjectionState, LastPosition}`. Every invocation is an
+  independent fold: it never loads or writes a checkpoint. An in-memory view is
+  therefore supported here.
+- `start/3` and `start_link/3` run fail-fast, continuous consumers. They load
+  the last committed global position, resume at its successor (or
+  `start_position` when absent), and commit each event position only after
+  `handle_event/3` returns `{ok, NewState}`. Positions of filtered events are
+  committed without invoking the callback. Event-store, checkpoint-store, and
+  projection failures stop the runner.
+
+Continuous runners require a checkpoint store. Configure one per runner or for
+the application:
 
 ```erlang
-% Run catch-up once and return the final projection state
-es_projection:run_once(StoreContext, ProjectionModule, Options).
+es_projection:start_link(StoreContext, Projection, #{
+    checkpoint_store => es_projection_checkpoint_file
+}).
 
-% Start a polling projection runner
-es_projection:start_link(StoreContext, ProjectionModule, Options).
-
-% Start a managed polling projection runner under es_projection_sup
-es_projection:start(StoreContext, ProjectionModule, Options).
-
-% Locate or stop a managed projection by ProjectionModule:name/0
-es_projection:lookup(ProjectionName).
-es_projection:stop(ProjectionName).
+application:set_env(es_projection, checkpoint_store, es_projection_checkpoint_file).
 ```
 
-The runner owns checkpointing. It loads the last processed global position for `ProjectionModule:name/0`, consumes events with `es_kernel_store:fold_all/4`, applies `event_filter/1` when present, calls `handle_event/2`, and stores the checkpoint after each processed position. Filtered events are checkpointed too, so a projection can keep moving through the global log.
+When neither source configures a store, startup returns
+`{error, checkpoint_store_not_configured}`. The options value takes precedence
+over the application value. `es_projection_checkpoint_ets` remains available
+for tests and explicitly ephemeral deployments, but it does not survive a VM
+restart. Its dedicated owner process prevents direct runner restarts from
+discarding shared checkpoints. Use `es_projection_checkpoint_file` or another
+durable backend when recovery across VM restarts is required.
 
-By default, checkpoints are stored in ETS through `es_projection_checkpoint_ets`. For persistent file checkpoints, set `checkpoint_store => es_projection_checkpoint_file` and configure its root directory with `application:set_env(es_projection, checkpoint_file_dir, Path)`. Callers can provide another checkpoint backend with the `checkpoint_store` option. `start_position` defaults to `0`, and `poll_interval` defaults to `200` milliseconds.
+Continuous delivery is at-least-once. Returning `{ok, NewState}` means the
+projected-view mutation has reached that projection's required durability level.
+If the runner crashes after the mutation but before its checkpoint commit, it
+presents the event again. Projections must make targeted mutations idempotent
+or deduplicate with `Position`; the runtime neither persists arbitrary callback
+state nor provides exactly-once semantics across unrelated stores. A view that
+exists only in `ProjectionState` is not a crash-safe continuous projection,
+because the view disappears while a durable checkpoint remains.
 
-The polling runner is fail-fast: any store, checkpoint, or projection handling error stops the process. `es_projection:start/3` starts runners under the projection dynamic supervisor and tracks them by projection name through the manager. `start_link/3` remains available for callers that want to own the runner process directly.
+The polling runner is fail-fast. `es_projection:start/3` starts runners under
+the projection dynamic supervisor and tracks them by projection name through
+the manager. `start_link/3` remains available for callers that want to own the
+runner process directly.
 
 #### Snapshot Store
 
@@ -237,8 +266,8 @@ Setting `snapshot_interval => 0` (default) disables automatic snapshotting.
 
 #### Additional future features
 
-- Add durable projection checkpoint backends for file or Mnesia stores if needed.
-- Support optional event subscriptions for real-time read-side updates.
+- Add notification-driven wakeups for continuous projections.
+- Add fault-tolerant projection state stores, snapshots, or changelogs.
 - Implement snapshot retention policies (e.g., keep only last N snapshots).
 
 #### Backend roadmap

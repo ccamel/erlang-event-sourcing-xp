@@ -10,10 +10,8 @@ OTP application callback for the projection runtime.
 
 -spec start(application:start_type(), term()) -> {ok, pid()}.
 start(_StartType, _StartArgs) ->
-    es_projection_checkpoint_ets:start(),
     es_projection_root_sup:start_link().
 
 -spec stop(term()) -> ok.
 stop(_State) ->
-    ok = es_projection_checkpoint_ets:stop(),
     ok.

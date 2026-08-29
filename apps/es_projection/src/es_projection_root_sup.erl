@@ -24,6 +24,14 @@ init([]) ->
     },
     ChildSpecs = [
         #{
+            id => es_projection_checkpoint_ets,
+            start => {es_projection_checkpoint_ets, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [es_projection_checkpoint_ets]
+        },
+        #{
             id => es_projection_sup,
             start => {es_projection_sup, start_link, []},
             restart => permanent,
