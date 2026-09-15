@@ -69,7 +69,7 @@ find_index(Haystack, Needle, AccRev) ->
     case starts_with(Haystack, Needle) of
         true ->
             Before = lists:reverse(AccRev),
-            After = drop(Haystack, length(Needle)),
+            After = lists:nthtail(length(Needle), Haystack),
             {Before, After};
         false ->
             case Haystack of
@@ -83,8 +83,3 @@ starts_with([], [_|_]) -> false;
 starts_with([Hh|Ht], [Nh|Nt]) when Hh =:= Nh -> starts_with(Ht, Nt);
 starts_with(_, _) -> false.
 
-%% Simple drop/2 for compatibility with older OTPs where lists:drop/2
-%% may not be available.
-drop(List, N) when N =< 0 -> List;
-drop([], _N) -> [];
-drop([_H|T], N) -> drop(T, N - 1).

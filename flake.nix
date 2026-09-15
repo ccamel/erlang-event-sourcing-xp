@@ -21,6 +21,9 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          rebar3Otp29 = pkgs.beam29Packages.rebar3.overrideAttrs (_: {
+            doCheck = false;
+          });
         in
         {
           default = pkgs.mkShell {
@@ -28,7 +31,7 @@
               pkgs.actionlint
               pkgs.bash-language-server
               pkgs.deadnix
-              pkgs.erlang_27
+              pkgs.beam29Packages.erlang
               pkgs.erlang-language-platform
               pkgs.git
               pkgs.markdownlint-cli2
@@ -36,7 +39,7 @@
               pkgs.nil
               pkgs.nixfmt
               pkgs.nodejs_22
-              pkgs.rebar3
+              rebar3Otp29
               pkgs.statix
               pkgs.uv
               pkgs.yaml-language-server

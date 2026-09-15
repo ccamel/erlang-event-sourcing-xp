@@ -35,7 +35,7 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 
 This project is a work in progress, and I welcome any feedback or contributions. If you're interested in [Event Sourcing](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing), [Erlang/OTP](https://www.erlang.org/), or both, feel free to reach out!
 
-Start the Erlang [shell](https://www.erlang.org/docs/20/man/shell.html) and run the following commands to play with the `es_xp` example application. `es_xp` depends on `es_store_ets` and `es_kernel`, so `application:ensure_all_started(es_xp)` brings up the full stack; commands are dispatched through `es_kernel:dispatch/1`.
+Start the Erlang [shell](https://www.erlang.org/docs/29/man/shell.html) and run the following commands to play with the `es_xp` example application. `es_xp` depends on `es_store_ets` and `es_kernel`, so `application:ensure_all_started(es_xp)` brings up the full stack; commands are dispatched through `es_kernel:dispatch/1`.
 
 <!-- DEMO-START -->
 
