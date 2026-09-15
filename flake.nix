@@ -28,7 +28,7 @@
               pkgs.actionlint
               pkgs.bash-language-server
               pkgs.deadnix
-              pkgs.erlang_27
+              pkgs.beam29Packages.erlang
               pkgs.erlang-language-platform
               pkgs.git
               pkgs.markdownlint-cli2
