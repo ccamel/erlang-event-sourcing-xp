@@ -16,7 +16,7 @@ jobs:
     env:
       ERL_FLAGS: "-enable-feature all"
       OTP_VERSION: "29"
-      REBAR3_VERSION: "3.24.0"
+      REBAR3_VERSION: "3.27.0"
     steps:
       - name: Import GPG key
         uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
@@ -47,7 +47,7 @@ jobs:
           key: "_build-cache-for\
             -otp-${{ env.OTP_VERSION }}\
             -rebar3-${{ env.REBAR3_VERSION }}\
-            -hash-${{ hashFiles('rebar.lock') }}"
+            -hash-${{ hashFiles('rebar.config', 'elvis.config', 'rebar.lock') }}"
 
       - name: Restore rebar3's cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -56,7 +56,7 @@ jobs:
           key: "rebar3-cache-for\
             -otp-${{ env.OTP_VERSION }}\
             -rebar3-${{ env.REBAR3_VERSION }}\
-            -hash-${{ hashFiles('rebar.lock') }}"
+            -hash-${{ hashFiles('rebar.config', 'elvis.config', 'rebar.lock') }}"
 
       - name: Release project
         uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v5

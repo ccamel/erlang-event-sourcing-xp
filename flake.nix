@@ -21,6 +21,9 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          rebar3Otp29 = pkgs.beam29Packages.rebar3.overrideAttrs (_: {
+            doCheck = false;
+          });
         in
         {
           default = pkgs.mkShell {
@@ -36,7 +39,7 @@
               pkgs.nil
               pkgs.nixfmt
               pkgs.nodejs_22
-              pkgs.rebar3
+              rebar3Otp29
               pkgs.statix
               pkgs.uv
               pkgs.yaml-language-server

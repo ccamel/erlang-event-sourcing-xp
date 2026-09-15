@@ -32,7 +32,7 @@ jobs:
     env:
       ERL_FLAGS: "-enable-feature all"
       OTP_VERSION: "29"
-      REBAR3_VERSION: "3.24.0"
+      REBAR3_VERSION: "3.27.0"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,7 +50,7 @@ jobs:
           key: "_build-cache-for\
             -otp-${{ env.OTP_VERSION }}\
             -rebar3-${{ env.REBAR3_VERSION }}\
-            -hash-${{ hashFiles('rebar.lock') }}"
+            -hash-${{ hashFiles('rebar.config', 'elvis.config', 'rebar.lock') }}"
 
       - name: Restore rebar3's cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -59,7 +59,7 @@ jobs:
           key: "rebar3-cache-for\
             -otp-${{ env.OTP_VERSION }}\
             -rebar3-${{ env.REBAR3_VERSION }}\
-            -hash-${{ hashFiles('rebar.lock') }}"
+            -hash-${{ hashFiles('rebar.config', 'elvis.config', 'rebar.lock') }}"
 
       - name: Lint Erlang code
         run: rebar3 lint
