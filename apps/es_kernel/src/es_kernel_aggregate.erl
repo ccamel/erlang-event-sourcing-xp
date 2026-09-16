@@ -22,7 +22,7 @@
 
 -record(state, {
     aggregate_type :: es_contract_event:aggregate_type(),
-    aggregate_module :: es_kernel_registry:aggregate_module(),
+    domain :: es_kernel_registry:domain(),
     store :: es_kernel_store:store_context(),
     aggregate_id :: es_contract_command:aggregate_id(),
     state :: aggregate_state(),
@@ -44,7 +44,7 @@ Starts an aggregate process for a given aggregate type and aggregate ID.
 - StoreContext is the `{EventStore, SnapshotStore}` context.
 - Opts controls inactivity timeout, time source, and snapshot interval.
 
-The aggregate type will be resolved to the implementing module in init/1.
+The aggregate type is resolved to its registered domain implementation in `init/1`.
 """.
 -spec start_link(AggregateType, AggId, StoreContext, Opts) -> gen_server:start_ret() when
     AggregateType :: es_contract_event:aggregate_type(),
@@ -77,18 +77,20 @@ Executes a command on an aggregate process.
 Sends a command to a running aggregate and waits for the result. Returns
 `ok` if the command was handled successfully, or `{error, Reason}` if
 it failed.
+
+The call waits for the aggregate reply; WASM domain descriptors bound guest work.
 """.
 -spec execute(Pid, Command) -> ok | {error, Reason} when
     Pid :: pid(),
     Command :: es_contract_command:t(),
     Reason :: term().
 execute(Pid, Command) ->
-    gen_server:call(Pid, Command).
+    gen_server:call(Pid, Command, infinity).
 -doc """
 Initializes the aggregate process.
 
 Rehydrates the aggregate state from the store and installs the
-passivation timer. Resolves the aggregate_type to its implementing module.
+passivation timer. Resolves the aggregate type to its domain implementation.
 Options control inactivity timeout, time source, and snapshot interval.
 """.
 -spec init(
@@ -103,27 +105,27 @@ Options control inactivity timeout, time source, and snapshot interval.
         snapshot_interval => non_neg_integer()
     }.
 init({AggregateType, AggId, StoreContext, Opts}) ->
-    AggregateModule =
-        case es_kernel_registry:lookup_module(AggregateType) of
-            {ok, Module} ->
-                Module;
+    Domain =
+        case es_kernel_registry:lookup(AggregateType) of
+            {ok, RegisteredDomain} ->
+                RegisteredDomain;
             {error, not_found} ->
                 logger:warning(
                     "No registry entry for aggregate_type ~p, "
-                    "falling back to using type as module name",
+                    "falling back to an Erlang module with the same name",
                     [AggregateType]
                 ),
-                AggregateType
+                #{runtime => erlang, module => AggregateType}
         end,
 
     StreamId = {AggregateType, AggId},
-    {State1, Sequence1} = rehydrate(AggregateModule, StoreContext, StreamId),
+    {State1, Sequence1} = rehydrate(Domain, StoreContext, StreamId),
     Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
     SnapshotInterval = maps:get(snapshot_interval, Opts, 0),
     TimerRef = install_passivation(Timeout, undefined),
     {ok, #state{
         aggregate_type = AggregateType,
-        aggregate_module = AggregateModule,
+        domain = Domain,
         store = StoreContext,
         aggregate_id = AggId,
         state = State1,
@@ -142,14 +144,14 @@ to rebuild the current state. Returns `{State, Sequence}` where
 `State` is the aggregate state and `Sequence` the last applied event
 sequence.
 """.
--spec rehydrate(AggregateModule, StoreContext, StreamId) -> {State, Sequence} when
-    AggregateModule :: es_kernel_registry:aggregate_module(),
+-spec rehydrate(Domain, StoreContext, StreamId) -> {State, Sequence} when
+    Domain :: es_kernel_registry:domain(),
     StoreContext :: es_kernel_store:store_context(),
     StreamId :: es_contract_event:stream_id(),
     State :: aggregate_state(),
     Sequence :: non_neg_integer().
-rehydrate(AggregateModule, StoreContext, StreamId) ->
-    State0 = AggregateModule:init(),
+rehydrate(Domain, StoreContext, StreamId) ->
+    State0 = es_kernel_domain:init(Domain),
     {StateFromSnapshot, SequenceFromSnapshot} =
         case es_kernel_store:load_latest(StoreContext, StreamId) of
             {ok, #{state := SnapshotState, sequence := SnapshotSeq}} ->
@@ -160,7 +162,7 @@ rehydrate(AggregateModule, StoreContext, StreamId) ->
     FoldFun =
         fun(#{payload := Payload}, Seq, {StateAcc, _SeqAcc}) ->
             {
-                AggregateModule:apply_event(Payload, StateAcc),
+                es_kernel_domain:apply_event(Domain, Payload, StateAcc),
                 Seq
             }
         end,
@@ -254,7 +256,7 @@ install_passivation(Timeout, TimerRef) ->
 -doc """
 Handles a command against the current aggregate state.
 
-Delegates to the aggregate module to decide how to handle the command,
+Delegates to the registered domain implementation to decide how to handle the command,
 persists any resulting events, applies them to the state, and returns
 either `{ok, {State, Sequence}}` or `{error, Reason}`.
 """.
@@ -268,7 +270,7 @@ either `{ok, {State, Sequence}}` or `{error, Reason}`.
 process_command(
     #state{
         aggregate_type = AggregateType,
-        aggregate_module = AggregateModule,
+        domain = Domain,
         store = StoreContext,
         aggregate_id = AggId,
         state = State0,
@@ -278,16 +280,16 @@ process_command(
     Command
 ) ->
     StreamId = {AggregateType, AggId},
-    CmdResult = AggregateModule:handle_command(Command, State0),
+    CmdResult = es_kernel_domain:handle_command(Domain, Command, State0),
     case CmdResult of
         {ok, []} ->
             {ok, {State0, Sequence0}};
         {ok, PayloadEvents} when is_list(PayloadEvents) ->
             ok = persist_events(
-                PayloadEvents, {AggregateModule, StoreContext, StreamId, Sequence0, NowFun}
+                PayloadEvents, {Domain, StoreContext, StreamId, Sequence0, NowFun}
             ),
             {State1, Sequence1} =
-                apply_events(PayloadEvents, {AggregateModule, State0, Sequence0}),
+                apply_events(PayloadEvents, {Domain, State0, Sequence0}),
             {ok, {State1, Sequence1}};
         {error, Reason} ->
             {error, Reason}
@@ -296,16 +298,16 @@ process_command(
 -spec apply_events(
     PayloadEvents :: [es_contract_event:payload()],
     {
-        AggregateModule :: es_kernel_registry:aggregate_module(),
+        Domain :: es_kernel_registry:domain(),
         State :: aggregate_state(),
         Sequence0 :: es_contract_event:sequence()
     }
 ) ->
     {State :: aggregate_state(), Sequence :: es_contract_event:sequence()}.
-apply_events(PayloadEvents, {AggregateModule, State0, Sequence0}) ->
+apply_events(PayloadEvents, {Domain, State0, Sequence0}) ->
     lists:foldl(
         fun(Event, {StateN, SequenceN}) ->
-            StateN1 = AggregateModule:apply_event(Event, StateN),
+            StateN1 = es_kernel_domain:apply_event(Domain, Event, StateN),
             SequenceN1 = SequenceN + 1,
             {StateN1, SequenceN1}
         end,
@@ -316,21 +318,21 @@ apply_events(PayloadEvents, {AggregateModule, State0, Sequence0}) ->
 -spec persist_events(
     PayloadEvents :: [es_contract_event:payload()],
     {
-        AggregateModule :: es_kernel_registry:aggregate_module(),
+        Domain :: es_kernel_registry:domain(),
         StoreContext :: es_kernel_store:store_context(),
         StreamId :: es_contract_event:stream_id(),
         Sequence0 :: es_contract_event:sequence(),
         NowFun :: fun(() -> non_neg_integer())
     }
 ) -> ok.
-persist_events(PayloadEvents, {AggregateModule, StoreContext, StreamId, Sequence0, NowFun}) ->
+persist_events(PayloadEvents, {Domain, StoreContext, StreamId, Sequence0, NowFun}) ->
     {AggregateType, _AggregateId} = StreamId,
     {Events, _} =
         lists:mapfoldl(
             fun(PayloadEvent, SequenceN) ->
                 Now = NowFun(),
                 SequenceN1 = SequenceN + 1,
-                EventType = AggregateModule:event_type(PayloadEvent),
+                EventType = es_kernel_domain:event_type(Domain, PayloadEvent),
                 Event =
                     es_kernel_store:new_event(
                         StreamId,
