@@ -19,7 +19,9 @@ setup() ->
     application:set_env(es_kernel, event_store, es_store_ets),
     application:set_env(es_kernel, snapshot_store, es_store_ets),
     %% Register aggregate type mapping for tests
-    es_kernel_registry:register(bank_account, bank_account_aggregate),
+    es_kernel_registry:register(
+        bank_account, #{runtime => erlang, module => bank_account_aggregate}
+    ),
     StoreContext = es_kernel_app:get_store_context(),
     {EventStore, SnapshotStore} = StoreContext,
     EventStore:start(),
@@ -43,8 +45,8 @@ teardown({EventStore, SnapshotStore}) ->
 -define(assertState(Pid, Id, ExpectedState, ExpectedSeq), begin
     StoreCtx = es_kernel_app:get_store_context(),
     ?assertMatch(
-        {state, bank_account, bank_account_aggregate, StoreCtx, Id, ExpectedState, ExpectedSeq, _,
-            _, _, _},
+        {state, bank_account, #{runtime := erlang, module := bank_account_aggregate}, StoreCtx, Id,
+            ExpectedState, ExpectedSeq, _, _, _, _},
         sys:get_state(Pid)
     )
 end).
