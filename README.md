@@ -382,6 +382,22 @@ Run the included example:
 rebar3 shell < apps/es_xp/examples/demo_wasm_promotion.script
 ```
 
+#### Domain runtime roadmap
+
+A domain runtime implements `init`, `decide`, and `apply`; the Erlang kernel
+keeps event persistence, replay, snapshots, and supervision. All WASM rows use
+[erlang_wasm](https://github.com/benoitc/erlang_wasm): an AssemblyScript guest
+would expose the domain ABI directly, while QuickJS, Lua, and CPython host a
+language runtime inside the guest.
+
+| Domain runtime | Status | Icon | Capabilities | Highlights | Ideal use cases |
+| --- | --- | --- | --- | --- | --- |
+| Erlang/OTP | ✅ Ready | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png" alt="erlang-logo"> | Native `es_contract_aggregate` | Direct BEAM execution; baseline contract. | Idiomatic Erlang domains and the lowest-overhead path. |
+| WASM / QuickJS | ✅ Ready | ⚡ | JSON + WASI | QuickJS interprets the supplied JavaScript guest. | Sandboxed dynamic rules and JavaScript experiments. |
+| WASM / AssemblyScript | 🛠️ Planned | 🔷 | Direct WASM domain ABI | Compiled guest; no embedded language runtime. | Comparing direct compiled plugins with hosted guests. |
+| WASM / Lua | 🛠️ Planned | 🌙 | JSON + WASI | Lua runtime hosted in the WASM guest. | Compact scripting-language experiments. |
+| WASM / CPython | 🛠️ Planned | 🐍 | JSON + WASI | CPython runtime hosted in the WASM guest; native extensions excluded. | Testing heavyweight interpreted guests and their lifecycle cost. |
+
 #### Passivation
 
 Each aggregate instance (a `gen_server`) is automatically passivated — i.e., stopped — after a period of inactivity.
