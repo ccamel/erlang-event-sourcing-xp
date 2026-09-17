@@ -1,6 +1,10 @@
 {"1.2.0",
 [{<<"quickrand">>,{pkg,<<"quickrand">>,<<"2.0.7">>},1},
- {<<"uuid">>,{pkg,<<"uuid_erl">>,<<"2.0.7">>},0}]}.
+ {<<"uuid">>,{pkg,<<"uuid_erl">>,<<"2.0.7">>},0},
+ {<<"wasm">>,
+  {git,"https://github.com/benoitc/erlang_wasm.git",
+       {ref,"38642c7f216be20b6efa3bdcbf794a1302ebbb05"}},
+  0}]}.
 [
 {pkg_hash,[
  {<<"quickrand">>, <<"D2BD76676A446E6A058D678444B7FDA1387B813710D1AF6D6E29BB92186C8820">>},

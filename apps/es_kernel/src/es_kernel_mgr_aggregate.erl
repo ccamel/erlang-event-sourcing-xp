@@ -79,13 +79,15 @@ Dispatches a command to the appropriate aggregate instance.
 Returns `ok` on success, or `{error, Reason}` if routing or execution fails.
 If the target aggregate dies during the call, returns `{error, {aggregate_down, Reason}}`
 and evicts the stale PID so a subsequent dispatch will start a fresh aggregate.
+
+The call waits for the aggregate reply; WASM domain descriptors bound guest work.
 """.
 -spec dispatch(ServerRef, Command) -> ok | {error, Reason} when
     ServerRef :: gen_server:server_ref(),
     Command :: es_contract_command:t(),
     Reason :: term().
 dispatch(ServerRef, Command) ->
-    gen_server:call(ServerRef, Command).
+    gen_server:call(ServerRef, Command, infinity).
 
 -doc """
 Initializes the aggregate manager state from the store context and options.

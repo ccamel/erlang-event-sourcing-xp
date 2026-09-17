@@ -28,6 +28,7 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 - **Aggregate** — a reusable [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) harness that keeps domain logic pure while delegating event sourcing boilerplate.
 - **Aggregate Manager** — a singleton router that spins up aggregates on demand via the dynamic supervisor, rehydrates them from persisted events, monitors them, and passivates idle instances.
 - **Event Store** — a behaviour-driven abstraction with drop-in backends, per-stream replay for aggregates, and global-position replay for read-side projections.
+- **WASM domains** — aggregates may execute domain decisions and event reducers in sandboxed QuickJS/WebAssembly while the Erlang kernel retains persistence, replay, snapshots, and supervision.
 - **Snapshots** — automatic checkpointing at configurable intervals to avoid replaying entire streams.
 - **Passivation** — idle aggregates are shut down cleanly and will rehydrate from the store on the next command.
 
@@ -282,12 +283,12 @@ Setting `snapshot_interval => 0` (default) disables automatic snapshotting.
 
 ### Aggregate
 
-The _aggregate_ is implemented as a [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) that encapsulates _domain logic_ and delegates event persistence to a pluggable Event Store (e.g. [ETS](https://www.erlang.org/doc/apps/stdlib/ets.html) or [Mnesia](https://www.erlang.org/doc/apps/mnesia/mnesia.html)).
+The _aggregate_ is implemented as a [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) that owns event-sourcing infrastructure and delegates domain logic to either an Erlang module or a sandboxed WebAssembly domain.
 
-The core idea is to separate concerns between domain behavior and infrastructure. To achieve this, the system is structured into three main components:
+The core idea is to separate domain behavior from infrastructure:
 
-- 🧩 **Domain Module** — a pure module that implements domain-specific logic via _behaviour_ callbacks.
-- ⚙️ **`aggregate`** — the glue that bridges domain logic and infrastructure (event sourcing logic, event persistence, etc.).
+- 🧩 **Domain implementation** — an Erlang module implementing `es_contract_aggregate`, or a QuickJS program hosted by WebAssembly.
+- ⚙️ **`es_kernel_domain`** — dispatches the common `init`, command, event, and event-type operations to the selected runtime.
 - 🚦 [`gen_server`](https://www.erlang.org/doc/apps/stdlib/gen_server.html) — the OTP mechanism that provides lifecycle management and message orchestration.
 
 The `aggregate` provides:
@@ -309,13 +310,13 @@ sequenceDiagram
     participant AggMgr as es_kernel_mgr_aggregate
     participant AggSup as es_kernel_aggregate_sup
     participant Agg as es_kernel_aggregate
-    participant DomainModule as AggregateModule (callback)
+    participant DomainModule as Domain (Erlang or WASM)
 
     User ->> Kernel: es_kernel:dispatch(Command)
     Kernel ->> AggMgr: gen_server:call(?MODULE, Command)
 
     alt aggregate not running
-        AggMgr ->> AggSup: start_aggregate(Module, Store, Id, Opts)
+        AggMgr ->> AggSup: start_aggregate(Type, Id, Store, Opts)
         AggSup -->> AggMgr: {ok, Pid}
     end
 
@@ -326,6 +327,59 @@ sequenceDiagram
     loop For each Event
         Agg ->> DomainModule: apply_event(Event, State)
     end
+```
+
+#### WASM domains
+
+`es_kernel` embeds [erlang_wasm](https://github.com/benoitc/erlang_wasm), a
+WebAssembly runtime implemented in Erlang/OTP. It loads, instantiates, executes,
+and bounds the guest; QuickJS is the guest runtime used by this example.
+
+Register an Erlang implementation with an explicit runtime descriptor:
+
+```erlang
+es_kernel_registry:register(
+    bank_account,
+    #{runtime => erlang, module => bank_account_aggregate}
+).
+```
+
+A QuickJS domain receives its module path from deployment configuration:
+
+```erlang
+{ok, QjsModule} = application:get_env(es_xp, qjs_module),
+es_kernel_registry:register(
+    promotion_campaign,
+    #{
+        runtime => wasm,
+        engine => quickjs,
+        module => QjsModule,
+        source => filename:join(code:priv_dir(es_xp), "promotion_campaign.js"),
+        timeout => 5000,
+        limits => #{fuel => infinity, max_memory_pages => 4096}
+    }
+).
+```
+
+`qjs_module` names a QuickJS guest supplied by the deployment. The included
+example downloads its pinned guest into the user cache and sets this value
+before starting `es_xp`.
+
+The JavaScript program exposes `main(input)` and handles three operations:
+
+`init` returns initial state, `decide` returns events or an error, and `apply`
+rebuilds state from an event. Inputs and outputs are JSON. Each call receives a
+fresh WASM instance, a private read-only directory, deterministic random input,
+no network, a memory limit, and a process-level deadline.
+
+Kernel routing calls do not impose a second API deadline: the domain descriptor's
+`timeout` controls each guest invocation, so a domain timeout returns an error
+rather than making the caller exit after five seconds.
+
+Run the included example:
+
+```sh
+rebar3 shell < apps/es_xp/examples/demo_wasm_promotion.script
 ```
 
 #### Passivation
@@ -400,7 +454,7 @@ The manager is responsible for:
 The aggregate manager maintains a mapping of `{AggregateType, AggregateId}` to aggregate process PIDs. When a command is received (typically via `es_kernel:dispatch/1`):
 
 1. It extracts the `aggregate_type` and `aggregate_id` from the command map.
-2. The `aggregate_type` is resolved to its implementing module via `es_kernel_registry`.
+2. The `aggregate_type` is resolved to its registered Erlang or WASM domain via `es_kernel_registry`.
 3. The internal `pids` map is checked for an existing aggregate instance.
 4. If none exists, the manager asks `es_kernel_aggregate_sup` to start the aggregate, monitors the new PID, and stores it in the registry.
 5. The command is forwarded to the aggregate via `es_kernel_aggregate:execute/2`.

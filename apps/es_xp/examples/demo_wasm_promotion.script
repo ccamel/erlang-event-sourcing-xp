@@ -1,0 +1,79 @@
+%% QuickJS/WASM event-sourced domain demonstration.
+%% Downloads and verifies the pinned QuickJS guest on first run.
+%%
+%% Run:
+%%     rebar3 shell < apps/es_xp/examples/demo_wasm_promotion.script
+
+QjsPath = filename:join([filename:basedir(user_cache, "es_xp"), "qjs.wasm"]),
+QjsUrl = "https://github.com/second-state/wasmedge-quickjs/releases/download/v0.5.0-alpha/wasmedge_quickjs.wasm",
+QjsSha256 = binary:decode_hex(<<"b8451261a244b7bc62ae95acb43882044aed2f3d5f08355889252b418ec89231">>),
+EnsureQjs = fun() ->
+    {ok, _} = application:ensure_all_started(crypto),
+    Valid = case file:read_file(QjsPath) of
+        {ok, Qjs} -> crypto:hash(sha256, Qjs) =:= QjsSha256;
+        _ -> false
+    end,
+    case Valid of
+        true ->
+            ok;
+        false ->
+            io:format("[0] downloading pinned QuickJS WASM guest~n", []),
+            PartPath = QjsPath ++ ".part",
+            ok = filelib:ensure_dir(PartPath),
+            _ = os:cmd("curl -fsSL " ++ QjsUrl ++ " -o " ++ PartPath),
+            try
+                {ok, DownloadedQjs} = file:read_file(PartPath),
+                true = (crypto:hash(sha256, DownloadedQjs) =:= QjsSha256),
+                ok = file:rename(PartPath, QjsPath)
+            after
+                _ = file:delete(PartPath)
+            end
+    end
+end,
+ok = EnsureQjs(),
+
+application:load(es_xp),
+application:set_env(es_xp, qjs_module, QjsPath),
+
+application:load(es_kernel),
+application:set_env(es_kernel, event_store, es_store_ets),
+application:set_env(es_kernel, snapshot_store, es_store_ets),
+application:set_env(es_kernel, snapshot_interval, 0),
+application:load(es_projection),
+application:set_env(
+    es_projection, checkpoint_store, es_projection_checkpoint_ets
+),
+
+io:format("~n[1] starting the Erlang event-sourcing stack~n", []),
+{ok, _} = application:ensure_all_started(es_xp),
+
+CampaignId = <<"autumn-2026">>,
+Dispatch = fun(Type, Payload) ->
+    Command = es_contract_command:new(
+        promotion_campaign,
+        Type,
+        CampaignId,
+        0,
+        #{},
+        Payload
+    ),
+    es_kernel:dispatch(Command)
+end,
+
+io:format("[2] open a campaign with a 1000 credit budget~n", []),
+ok = Dispatch(open_campaign, #{budget => 1000}),
+
+io:format("[3] grant a gold customer 20% of a 200 credit cart~n", []),
+ok = Dispatch(claim_discount, #{customer_id => <<"alice">>, cart_total => 200, tier => gold}),
+
+io:format("[4] reject the duplicate claim~n", []),
+{error, <<"already_claimed">>} =
+    Dispatch(claim_discount, #{customer_id => <<"alice">>, cart_total => 200, tier => gold}),
+
+io:format("[5] wait for passivation, then reject it again after WASM replay~n", []),
+timer:sleep(5500),
+{error, <<"already_claimed">>} =
+    Dispatch(claim_discount, #{customer_id => <<"alice">>, cart_total => 200, tier => gold}),
+
+io:format(" -> QuickJS decided commands and replayed persisted events successfully~n", []),
+ok.

@@ -3,7 +3,7 @@
     {vsn, "0.1.0"},
     {registered, [es_kernel_sup, es_kernel_aggregate_sup, es_kernel_mgr_aggregate]},
     {mod, {es_kernel_app, []}},
-    {applications, [kernel, stdlib]},
+    {applications, [kernel, stdlib, wasm]},
     {env, [
         {event_store, es_store_ets},
         {snapshot_store, es_store_ets},
@@ -18,6 +18,8 @@
         es_contract_snapshot_store,
         es_contract_snapshot,
         es_kernel_store,
+        es_kernel_domain,
+        es_kernel_wasm_qjs,
         es_kernel_mgr_aggregate,
         es_kernel_aggregate,
         es_kernel_aggregate_sup,
