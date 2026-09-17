@@ -87,9 +87,9 @@ start() ->
 
 -spec stop() -> ok.
 stop() ->
-    ets:delete(event_table_name()),
-    ets:delete(snapshot_table_name()),
-    ets:delete(position_counter_table_name()),
+    delete_table(event_table_name()),
+    delete_table(snapshot_table_name()),
+    delete_table(position_counter_table_name()),
     ok.
 
 -spec append(StreamId, Events) -> ok | {error, Reason} when
@@ -164,6 +164,14 @@ event_to_record(Event, Position) ->
         position = Position,
         event = Event
     }.
+
+delete_table(Table) ->
+    case ets:info(Table) of
+        undefined ->
+            ok;
+        _ ->
+            ets:delete(Table)
+    end.
 
 -spec store(Snapshot) -> ok | {warning, Reason} when
     Snapshot :: snapshot(),
