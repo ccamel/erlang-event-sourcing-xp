@@ -1,5 +1,89 @@
 # erlang-event-sourcing-xp changelog
 
+## [3.0.0](https://github.com/ccamel/erlang-event-sourcing-xp/compare/v2.0.0...v3.0.0) (2026-09-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **projection:** separate live and continuous consumption
+
+### Features
+
+* **kernel:** add WASM/QuickJS aggregate domains ([41e6d43](https://github.com/ccamel/erlang-event-sourcing-xp/commit/41e6d4399c15cf7e30de20f7c0d3edf9d2008bd3))
+* **projection:** add file-backed checkpoint store ([16a5c75](https://github.com/ccamel/erlang-event-sourcing-xp/commit/16a5c7517cb15be3117dc5539a0ea90e89de4527))
+* **xp:** add promotion campaign wasm demo ([a032144](https://github.com/ccamel/erlang-event-sourcing-xp/commit/a03214492c06c9f006d16729ae2f52553a9d6a85))
+
+
+### Bug Fixes
+
+* **kernel:** address code review feedback on test implementation ([7ff425a](https://github.com/ccamel/erlang-event-sourcing-xp/commit/7ff425a6fc5d8ada3a49471029296424791f83a5))
+* **kernel:** harden ETS start/stop against TOCTOU races in snapshot stub ([e1bdabf](https://github.com/ccamel/erlang-event-sourcing-xp/commit/e1bdabfc645dc378dcd3925b6a979ac167976dd7))
+* **projection:** scope checkpoint table config to es_projection ([40928c6](https://github.com/ccamel/erlang-event-sourcing-xp/commit/40928c6c8f144891ce731bec60a242b7a7aeeaa9))
+
+
+### Documentation
+
+* **projection:** document checkpoint recovery contract ([27fb2c4](https://github.com/ccamel/erlang-event-sourcing-xp/commit/27fb2c47696fd8aa52ebd91fec7f184fb4ee95ee))
+* **README:** add Nix badge ([dd56829](https://github.com/ccamel/erlang-event-sourcing-xp/commit/dd56829445a5d6ce920b97d13bae9f5296eb8181))
+* **README:** document file projection checkpoints ([c43a640](https://github.com/ccamel/erlang-event-sourcing-xp/commit/c43a6404f1eabaaa48a2a9e3c1cff0f9e8a8a293))
+* **README:** include WASM domain integration details ([d56748c](https://github.com/ccamel/erlang-event-sourcing-xp/commit/d56748c575be484799f7fe6bfc0a9ad4c5f4c8b4))
+* **README:** update badges to lint-erlang.yml, build-erlang.yml, and test-erlang.yml ([7658363](https://github.com/ccamel/erlang-event-sourcing-xp/commit/7658363d2c5168580c4eacda79899571ee5cac71))
+
+
+### Refactors
+
+* **projection:** separate live and continuous consumption ([978f070](https://github.com/ccamel/erlang-event-sourcing-xp/commit/978f0700e556a66063a51251d580126d383a6b2f))
+* **script:** use lists:nthtail for marker scanning ([c2daf0f](https://github.com/ccamel/erlang-event-sourcing-xp/commit/c2daf0f644401180782f75d01cd4d45a978eb604))
+
+
+### Performance Improvements
+
+* **store_mnesia:** cache Mnesia table names at startup ([6ee16b4](https://github.com/ccamel/erlang-event-sourcing-xp/commit/6ee16b4ef75ae69029df4e3587ad0419654e5288))
+
+
+### Tests
+
+* **kernel:** cover WASM/QuickJS aggregate domains ([2fb1740](https://github.com/ccamel/erlang-event-sourcing-xp/commit/2fb17408779a3792edea05d5f571bdc74f3d5a1f))
+* **projection:** cover consumer recovery semantics ([1750069](https://github.com/ccamel/erlang-event-sourcing-xp/commit/1750069a2e063bafdea776617cd1a6721f45b71d))
+* **projection:** cover persistent file checkpoints ([520cd69](https://github.com/ccamel/erlang-event-sourcing-xp/commit/520cd69f83eb41e51b6d5e920657fb22f41c5b44))
+* **store_mnesia:** cover post-start environment changes ([d43d976](https://github.com/ccamel/erlang-event-sourcing-xp/commit/d43d976487979d744c34ebc571574540d8076029))
+
+
+### Build System
+
+* **deps:** add benoitc/erlang_wasm v0.2.2 ([0972e90](https://github.com/ccamel/erlang-event-sourcing-xp/commit/0972e9080d73deca471933ffff2177c277259318))
+* **deps:** bump actions/cache from 5 to 6 ([b8abc96](https://github.com/ccamel/erlang-event-sourcing-xp/commit/b8abc96307ef37001f491b726faecd9ecb16f5a7))
+* **deps:** bump actions/checkout from 6 to 7 ([a593ad2](https://github.com/ccamel/erlang-event-sourcing-xp/commit/a593ad2d19bb33598bc03cb9a4cddd11241ced30))
+* **deps:** bump astral-sh/setup-uv from 8.3.2 to 10.0.1 ([b7a4623](https://github.com/ccamel/erlang-event-sourcing-xp/commit/b7a4623913b4614069878c3971358983c2f031b6))
+* **deps:** bump codecov/codecov-action from 6 to 7 ([558d685](https://github.com/ccamel/erlang-event-sourcing-xp/commit/558d685bc76afdf852393dd692663dfee4b8dbcc))
+* **deps:** bump DeterminateSystems/nix-installer-action ([13139ee](https://github.com/ccamel/erlang-event-sourcing-xp/commit/13139ee1e5380fc433d14f517ce60b27b2434fff))
+* **deps:** bump Erlang / OTP from 27 to 29 ([949d520](https://github.com/ccamel/erlang-event-sourcing-xp/commit/949d520aa17f0490e13cf3f3eaedee1f51b67ae9))
+* **deps:** bump rebar3 from 3.24 to 3.27 ([c24f7f7](https://github.com/ccamel/erlang-event-sourcing-xp/commit/c24f7f7a6345a28fd5bd2020c22d25e1741a1f8e))
+* **deps:** bump rebar3_lint to 5.0.4, erlfmt to 1.8.0 ([c6337f0](https://github.com/ccamel/erlang-event-sourcing-xp/commit/c6337f027dc1061a85f1efb08bdcd1444bdb21ea))
+* **deps:** bump the github-actions group with 5 updates ([96924b5](https://github.com/ccamel/erlang-event-sourcing-xp/commit/96924b5732f31c2461da3c28b1aedca908eae66c))
+* **deps:** expose actionlint, nodejs and uv to nix dev shell ([f77c5ed](https://github.com/ccamel/erlang-event-sourcing-xp/commit/f77c5ed9145471d96a042851b448a573c20638bf))
+* **deps:** expose Erlang language platform to nix dev shell ([c6bb709](https://github.com/ccamel/erlang-event-sourcing-xp/commit/c6bb709e4d479cdfa251dde6a7a90e8582eaa02a))
+* **project:** add Nix dev environment ([c157070](https://github.com/ccamel/erlang-event-sourcing-xp/commit/c157070c971219d1e2ec60cf11b76ffdb51c6f94))
+* **project:** add Nix stuff to gitignore ([e717196](https://github.com/ccamel/erlang-event-sourcing-xp/commit/e717196d4b9cba8b503239129d44658306f84086))
+
+
+### Continuous Integration
+
+* **dependabot:** tune dependabot ([359eacd](https://github.com/ccamel/erlang-event-sourcing-xp/commit/359eacd419a18664cc60b771e3504da64fcd63fd))
+* **worfklow:** add lint-skills workflow ([0d1d868](https://github.com/ccamel/erlang-event-sourcing-xp/commit/0d1d8682fbb22ed100eb0eb135e5f2a77d85ceba))
+* **workflow:** add lint-github-actions workflow ([6fdc170](https://github.com/ccamel/erlang-event-sourcing-xp/commit/6fdc17008ea68f4955c511d4c871bfdc4ad74606))
+* **workflow:** add lint-nix workflow ([785ca61](https://github.com/ccamel/erlang-event-sourcing-xp/commit/785ca6198a513b2496f98b8195f5e1641f2fae9b))
+* **workflow:** enforce least-privilege GITHUB_TOKEN permissions on build-erlang job ([#66](https://github.com/ccamel/erlang-event-sourcing-xp/issues/66)) ([a301bbe](https://github.com/ccamel/erlang-event-sourcing-xp/commit/a301bbed1935cae40cc767e51e437ab6a36a5053)), closes [#2](https://github.com/ccamel/erlang-event-sourcing-xp/issues/2)
+* **workflow:** fix GitHub Actions shell lint errors ([fe49704](https://github.com/ccamel/erlang-event-sourcing-xp/commit/fe49704a3427edcd118a09117ed1899690b652cd))
+* **workflow:** implement the one-job-per-workflow cutover ([5894999](https://github.com/ccamel/erlang-event-sourcing-xp/commit/58949996003fa94ae7441571fc4927a3f263326b))
+* **workflow:** pin GitHub Actions ([01b1b16](https://github.com/ccamel/erlang-event-sourcing-xp/commit/01b1b16e71f21cbbc04787388bf61d127460a037))
+* **workflow:** restrict GITHUB_TOKEN permissions to least privilege ([#67](https://github.com/ccamel/erlang-event-sourcing-xp/issues/67)) ([67d6b63](https://github.com/ccamel/erlang-event-sourcing-xp/commit/67d6b630e3aee4e207d4df4df11e0e04bbe7e93c)), closes [#1](https://github.com/ccamel/erlang-event-sourcing-xp/issues/1)
+
+
+### Chores
+
+* **skills:** migrate Erlang OTP agent to skill ([7eba08e](https://github.com/ccamel/erlang-event-sourcing-xp/commit/7eba08e8327eb4b30fc46cf24cef747fb8160cc2))
+
 ## [2.0.0](https://github.com/ccamel/erlang-event-sourcing-xp/compare/v1.1.0...v2.0.0) (2026-05-09)
 
 
