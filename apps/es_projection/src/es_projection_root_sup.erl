@@ -24,6 +24,14 @@ init([]) ->
     },
     ChildSpecs = [
         #{
+            id => es_projection_pg,
+            start => {pg, start_link, [es_projection_pg]},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [pg]
+        },
+        #{
             id => es_projection_checkpoint_ets,
             start => {es_projection_checkpoint_ets, start_link, []},
             restart => permanent,

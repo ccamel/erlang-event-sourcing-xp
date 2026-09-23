@@ -5,12 +5,11 @@ Projection runtime built on the global event log.
 
 `run_once/3` is an independent fold that returns its projection state and never
 reads or writes checkpoints. `start/3` and `start_link/3` run fail-fast,
-at-least-once continuous consumers. A continuous consumer requires a checkpoint
-store configured in its options or the `es_projection` application environment.
-
-Projection callback state is opaque and is never persisted by this runtime.
-Continuous projections must durably update their own materialized views before
-returning `{ok, NewState}`; the runner then commits the global position.
+at-least-once continuous consumers. When the projection application's `pg`
+service is running, they wake immediately after successful kernel-store appends;
+polling remains the recovery path for missed notifications and direct backend
+writes. A continuous consumer requires a checkpoint store configured in its
+options or the `es_projection` application environment.
 """.
 
 -behaviour(gen_server).
@@ -34,6 +33,8 @@ returning `{ok, NewState}`; the runner then commits the global position.
 
 -define(DEFAULT_START_POSITION, 0).
 -define(DEFAULT_POLL_INTERVAL, 200).
+-define(PROJECTION_PG_SCOPE, es_projection_pg).
+-define(PG_RETRY_INTERVAL, 100).
 
 -record(state, {
     store_context :: es_kernel_store:store_context(),
@@ -43,7 +44,8 @@ returning `{ok, NewState}`; the runner then commits the global position.
     projection_state :: es_contract_projection:projection_state(),
     next_position :: es_contract_event_store:position(),
     last_position :: es_contract_event_store:position() | undefined,
-    poll_interval :: pos_integer()
+    poll_interval :: pos_integer(),
+    pg_monitor = undefined :: reference() | undefined
 }).
 
 -opaque state() :: #state{}.
@@ -77,8 +79,9 @@ run_once(StoreContext, ProjectionModule, Options) ->
     catch_up_once(StoreContext, ProjectionModule, StartPosition, ProjectionState).
 
 -doc """
-Start a managed, persistent polling projection runner.
+Starts a managed, persistent projection runner.
 
+A managed runner is woken after successful appends through `es_kernel_store`.
 A checkpoint store must be configured with `checkpoint_store` in `Options` or
 the `es_projection` application environment. Otherwise this returns
 `{error, checkpoint_store_not_configured}`.
@@ -99,10 +102,12 @@ lookup(ProjectionName) ->
     es_projection_mgr:lookup(ProjectionName).
 
 -doc """
-Start a linked, persistent polling projection runner.
+Starts a linked, persistent projection runner.
 
-A checkpoint store must be configured with `checkpoint_store` in `Options` or
-the `es_projection` application environment. Otherwise this returns
+When the projection application's `pg` service is running, the runner is woken
+after successful appends through `es_kernel_store`. A checkpoint store must be
+configured with `checkpoint_store` in `Options` or the `es_projection`
+application environment. Otherwise this returns
 `{error, checkpoint_store_not_configured}`.
 """.
 -spec start_link(StoreContext, ProjectionModule, Options) -> gen_server:start_ret() when
@@ -151,8 +156,9 @@ when
 init({StoreContext, ProjectionModule, Options}) ->
     case init_runtime(StoreContext, ProjectionModule, Options) of
         {ok, State} ->
+            State1 = subscribe_to_appends(State),
             self() ! tick,
-            {ok, State};
+            {ok, State1};
         {error, Reason} ->
             {stop, Reason}
     end.
@@ -167,10 +173,64 @@ handle_cast(_Request, State) ->
 
 -spec handle_info(term(), state()) -> {noreply, state()} | {stop, term(), state()}.
 handle_info(tick, State) ->
+    catch_up_and_continue(State, true);
+handle_info(events_appended, State) ->
+    catch_up_and_continue(State, false);
+handle_info(retry_pg_subscription, #state{pg_monitor = undefined} = State) ->
+    {noreply, subscribe_to_appends(State)};
+handle_info(retry_pg_subscription, State) ->
+    {noreply, State};
+handle_info(
+    {'DOWN', MonitorRef, process, _Pid, _Reason},
+    #state{pg_monitor = MonitorRef} = State
+) ->
+    schedule_pg_retry(),
+    {noreply, State#state{pg_monitor = undefined}};
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+-spec subscribe_to_appends(state()) -> state().
+subscribe_to_appends(#state{store_context = StoreContext} = State) ->
+    case erlang:whereis(?PROJECTION_PG_SCOPE) of
+        undefined ->
+            schedule_pg_retry(),
+            State;
+        Pid ->
+            MonitorRef = erlang:monitor(process, Pid),
+            try
+                pg:join(
+                    ?PROJECTION_PG_SCOPE,
+                    {es_projection_wakeup, StoreContext},
+                    self()
+                )
+            of
+                ok ->
+                    State#state{pg_monitor = MonitorRef}
+            catch
+                _:_ ->
+                    _ = erlang:demonitor(MonitorRef, [flush]),
+                    schedule_pg_retry(),
+                    State
+            end
+    end.
+
+-spec schedule_pg_retry() -> reference().
+schedule_pg_retry() ->
+    erlang:send_after(?PG_RETRY_INTERVAL, self(), retry_pg_subscription).
+
+-spec catch_up_and_continue(state(), boolean()) ->
+    {noreply, state()} | {stop, term(), state()}.
+catch_up_and_continue(State, SchedulePoll) ->
     case catch_up(State) of
         {ok, ProjectionState, LastPosition} ->
             NextPosition = next_position(LastPosition, State#state.next_position),
-            erlang:send_after(State#state.poll_interval, self(), tick),
+            _ =
+                case SchedulePoll of
+                    true ->
+                        _ = erlang:send_after(State#state.poll_interval, self(), tick);
+                    false ->
+                        ok
+                end,
             {noreply, State#state{
                 projection_state = ProjectionState,
                 last_position = LastPosition,
@@ -178,10 +238,7 @@ handle_info(tick, State) ->
             }};
         {error, Reason} ->
             {stop, Reason, State}
-    end;
-handle_info(_Info, State) ->
-    {noreply, State}.
-
+    end.
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, _State) ->
     ok.

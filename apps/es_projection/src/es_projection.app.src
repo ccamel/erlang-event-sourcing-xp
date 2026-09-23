@@ -1,7 +1,7 @@
 {application, es_projection, [
     {description, "Projection runtime for event sourcing implementation in Erlang"},
     {vsn, "0.1.0"},
-    {registered, [es_projection_root_sup, es_projection_sup, es_projection_mgr]},
+    {registered, [es_projection_root_sup, es_projection_sup, es_projection_mgr, es_projection_pg]},
     {applications, [kernel, stdlib, es_kernel]},
     {mod, {es_projection_app, []}},
     {modules, [
