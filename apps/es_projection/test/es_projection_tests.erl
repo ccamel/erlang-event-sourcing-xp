@@ -5,6 +5,7 @@
 -define(STORE, {es_store_ets, es_store_ets}).
 -define(STREAM_A, {user, <<"account-A">>}).
 -define(STREAM_B, {order, <<"order-B">>}).
+-define(PROJECTION_PG_SCOPE, es_projection_pg).
 
 suite_test_() ->
     Tests = [
@@ -40,6 +41,7 @@ suite_test_() ->
         {"ets_checkpoint_start_reports_invalid_table_configuration",
             fun ets_checkpoint_start_reports_invalid_table_configuration/0},
         {"polling_processes_later_events", fun polling_processes_later_events/0},
+        {"projection_recovers_from_failed_pg_join", fun projection_recovers_from_failed_pg_join/0},
         {"checkpoint_table_uses_projection_application_env",
             fun checkpoint_table_uses_projection_application_env/0},
         {"named_runner_can_be_stopped_by_name", fun named_runner_can_be_stopped_by_name/0}
@@ -308,6 +310,34 @@ polling_processes_later_events() ->
         es_projection:stop(Pid)
     end.
 
+projection_recovers_from_failed_pg_join() ->
+    ?assertEqual(undefined, erlang:whereis(?PROJECTION_PG_SCOPE)),
+    FailingPg = spawn(fun failing_pg_scope/0),
+    true = erlang:register(?PROJECTION_PG_SCOPE, FailingPg),
+    {ok, Pid} = es_projection:start_link(
+        ?STORE,
+        es_projection_collect,
+        #{checkpoint_store => es_projection_checkpoint_ets, poll_interval => 60000}
+    ),
+    try
+        wait_for_scope_stopped(20),
+        {ok, ProjectionPg} = pg:start_link(?PROJECTION_PG_SCOPE),
+        unlink(ProjectionPg),
+        wait_for_pg_member(Pid, 20),
+        Timestamp = erlang:system_time(),
+        Event = new_event(?STREAM_A, user, created, 1, Timestamp),
+        ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [Event])),
+        wait_for_checkpoint(collect_projection, 0, 20)
+    after
+        es_projection:stop(Pid),
+        case erlang:whereis(?PROJECTION_PG_SCOPE) of
+            undefined ->
+                ok;
+            ScopeProcess ->
+                exit(ScopeProcess, shutdown)
+        end
+    end.
+
 named_runner_can_be_stopped_by_name() ->
     RunnerName = named_projection_runner,
     {ok, Pid} = es_projection:start_link(
@@ -360,6 +390,35 @@ wait_for_checkpoint(ProjectionName, ExpectedPosition, AttemptsLeft) ->
             timer:sleep(20),
 
             wait_for_checkpoint(ProjectionName, ExpectedPosition, AttemptsLeft - 1)
+    end.
+
+wait_for_pg_member(_Pid, 0) ->
+    ?assert(false);
+wait_for_pg_member(Pid, AttemptsLeft) ->
+    Members = pg:get_members(?PROJECTION_PG_SCOPE, {es_projection_wakeup, ?STORE}),
+    case lists:member(Pid, Members) of
+        true ->
+            ok;
+        false ->
+            timer:sleep(10),
+            wait_for_pg_member(Pid, AttemptsLeft - 1)
+    end.
+
+wait_for_scope_stopped(0) ->
+    ?assert(false);
+wait_for_scope_stopped(AttemptsLeft) ->
+    case erlang:whereis(?PROJECTION_PG_SCOPE) of
+        undefined ->
+            ok;
+        _ ->
+            timer:sleep(10),
+            wait_for_scope_stopped(AttemptsLeft - 1)
+    end.
+
+failing_pg_scope() ->
+    receive
+        {'$gen_call', _From, _Request} ->
+            exit(unavailable)
     end.
 
 start_link_result(Options) ->
