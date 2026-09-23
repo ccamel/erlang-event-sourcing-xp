@@ -11,6 +11,8 @@ A `store_context()` tuple `{EventStore, SnapshotStore}` identifies the backend m
 Both may be the same module if it implements both event and snapshot storage.
 """.
 
+-define(PROJECTION_PG_SCOPE, es_projection_pg).
+
 -export([
     append/3,
     fold/5,
@@ -41,7 +43,7 @@ atomic persistence and maintains sequence ordering.
     StreamId :: es_contract_event:stream_id(),
     Events :: [es_contract_event:t()],
     Reason :: term().
-append({EventModule, _}, StreamId, Events) when is_list(Events) ->
+append({EventModule, _} = StoreContext, StreamId, Events) when is_list(Events) ->
     %% Validate that all events target the same StreamId
     ok = lists:foreach(
         fun(#{stream_id := EventStreamId}) ->
@@ -59,11 +61,27 @@ append({EventModule, _}, StreamId, Events) when is_list(Events) ->
     SeenIds = [es_contract_event:key(E) || E <- Events],
     case length(SeenIds) =:= length(lists:usort(SeenIds)) of
         true ->
-            EventModule:append(StreamId, Events);
+            case EventModule:append(StreamId, Events) of
+                ok ->
+                    notify_projections(StoreContext),
+                    ok;
+                {error, _} = Error ->
+                    Error
+            end;
         false ->
             {error, duplicate_event}
     end.
 
+-spec notify_projections(store_context()) -> ok.
+notify_projections(StoreContext) ->
+    case erlang:whereis(?PROJECTION_PG_SCOPE) of
+        undefined ->
+            ok;
+        _Pid ->
+            Members = pg:get_members(?PROJECTION_PG_SCOPE, {es_projection_wakeup, StoreContext}),
+            lists:foreach(fun(Pid) -> Pid ! events_appended end, Members),
+            ok
+    end.
 -doc """
 Folds events from the event store into an accumulator using the specified persistence module.
 
