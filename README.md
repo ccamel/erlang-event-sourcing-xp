@@ -190,9 +190,11 @@ as emails, webhooks, or commands.
 - `start/3` and `start_link/3` run fail-fast, continuous consumers. They load
   the last committed global position, resume at its successor (or
   `start_position` when absent), and commit each event position only after
-  `handle_event/3` returns `{ok, NewState}`. Positions of filtered events are
-  committed without invoking the callback. Event-store, checkpoint-store, and
-  projection failures stop the runner.
+  `handle_event/3` returns `{ok, NewState}`. Managed runners wake immediately
+  after successful `es_kernel_store:append/3` calls; polling remains the
+  recovery path for missed notifications and direct backend writes. Positions of
+  filtered events are committed without invoking the callback. Event-store,
+  checkpoint-store, and projection failures stop the runner.
 
 Continuous runners require a checkpoint store. Configure one per runner or for
 the application:
@@ -267,7 +269,6 @@ Setting `snapshot_interval => 0` (default) disables automatic snapshotting.
 
 #### Additional future features
 
-- Add notification-driven wakeups for continuous projections.
 - Add fault-tolerant projection state stores, snapshots, or changelogs.
 - Implement snapshot retention policies (e.g., keep only last N snapshots).
 
