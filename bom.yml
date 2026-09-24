@@ -1,5 +1,5 @@
-release: 3.0.0
-generated_at: 2026-09-17
+release: 3.1.0
+generated_at: 2026-09-24
 apps:
   es_kernel: "0.1.0"
   es_projection: "0.1.0"

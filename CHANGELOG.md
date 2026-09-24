@@ -1,5 +1,36 @@
 # erlang-event-sourcing-xp changelog
 
+## [3.1.0](https://github.com/ccamel/erlang-event-sourcing-xp/compare/v3.0.0...v3.1.0) (2026-09-24)
+
+
+### Features
+
+* **kernel:** define the event append notification contract ([c43a591](https://github.com/ccamel/erlang-event-sourcing-xp/commit/c43a591cabdeabebba957c1e027a517e8225720b))
+* **projection:** consume append notifications to wake runners ([2b91532](https://github.com/ccamel/erlang-event-sourcing-xp/commit/2b915326bf1269c30617e0f657af5c0c1b294c56))
+
+
+### Bug Fixes
+
+* **store_ets:** make stop idempotent ([#80](https://github.com/ccamel/erlang-event-sourcing-xp/issues/80)) ([b62f502](https://github.com/ccamel/erlang-event-sourcing-xp/commit/b62f5021aec946ac07f86ab6f482e4f055934eaf))
+
+
+### Documentation
+
+* **README:** add domain runtime roadmap ([aba37e3](https://github.com/ccamel/erlang-event-sourcing-xp/commit/aba37e312e8c2c8303dfa2a9a69cfe3c8dd477df))
+* **README:** document append-driven wakeups ([6260ccd](https://github.com/ccamel/erlang-event-sourcing-xp/commit/6260ccdce02868e8050f647d19c4ea7ce5fbdc17))
+
+
+### Tests
+
+* **projection:** cover wakeups and pg recovery ([16f77c9](https://github.com/ccamel/erlang-event-sourcing-xp/commit/16f77c9d26388d7728b407313909417fd42e74f0))
+
+
+### Build System
+
+* **deps:** bump astral-sh/setup-uv in the github-actions group ([013f43c](https://github.com/ccamel/erlang-event-sourcing-xp/commit/013f43cd1cda07ff062ae760aee6359c33054cca))
+* **deps:** bump codecov/codecov-action in the github-actions group ([#81](https://github.com/ccamel/erlang-event-sourcing-xp/issues/81)) ([fe5ed45](https://github.com/ccamel/erlang-event-sourcing-xp/commit/fe5ed4585cf978618247d21010e3be88dc36816e))
+* **deps:** bump codecov/codecov-action in the github-actions group ([#83](https://github.com/ccamel/erlang-event-sourcing-xp/issues/83)) ([ecd5dba](https://github.com/ccamel/erlang-event-sourcing-xp/commit/ecd5dba34ef5e5c641e7ac14ab7b8c8ee07ec933))
+
 ## [3.0.0](https://github.com/ccamel/erlang-event-sourcing-xp/compare/v2.0.0...v3.0.0) (2026-09-17)
 
 
