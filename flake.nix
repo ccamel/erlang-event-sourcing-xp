@@ -34,6 +34,7 @@
               pkgs.beam29Packages.erlang
               pkgs.erlang-language-platform
               pkgs.git
+              pkgs.just
               pkgs.markdownlint-cli2
               pkgs.marksman
               pkgs.nil
