@@ -3,7 +3,7 @@
  {<<"uuid">>,{pkg,<<"uuid_erl">>,<<"2.0.7">>},0},
  {<<"wasm">>,
   {git,"https://github.com/benoitc/erlang_wasm.git",
-       {ref,"38642c7f216be20b6efa3bdcbf794a1302ebbb05"}},
+       {ref,"28532a92c923eef4dfb1780ebb1f49b24a851a0c"}},
   0}]}.
 [
 {pkg_hash,[
