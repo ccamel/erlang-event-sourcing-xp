@@ -515,22 +515,30 @@ The manager options are applied to the aggregates it starts:
 - `timeout`: Inactivity timeout passed to aggregates.
 - `now_fun`: Function to provide timestamps for events/snapshots.
 
+## Development
+
+`just` lists the available development recipes:
+
+```sh
+just
+```
+
 ## Build
 
 ```sh
-rebar3 compile
+just compile
 ```
 
 ## Test
 
 ```sh
-rebar3 eunit
+just test
 ```
 
 ## Lint
 
 ```sh
-rebar3 do dialyzer, fmt --check
+just check
 ```
 
-`dialyzer` runs the type analysis, while `fmt --check` makes sure all Erlang sources are already formatted.
+`check` runs linting, Dialyzer, format checking, and EUnit tests.
