@@ -529,6 +529,37 @@ just
 just compile
 ```
 
+## Docker
+
+The Docker image builds the OTP 29 production release and runs it as an
+unprivileged user.
+
+```sh
+just docker-build
+just docker-up
+```
+
+Published images are available from GitHub Container Registry:
+
+```sh
+docker pull ghcr.io/ccamel/erlang-event-sourcing-xp:<tag>
+```
+
+The HTTP API listens on port `8080`:
+
+```sh
+curl http://localhost:8080/healthz
+curl -X POST http://localhost:8080/api/accounts/123/deposit \
+  -H 'content-type: application/json' \
+  -d '{"amount":100}'
+curl http://localhost:8080/api/accounts/123
+```
+
+The default Docker configuration uses `es_store_ets`. Events and snapshots are
+therefore lost when the container restarts; `compose.yaml` intentionally has no
+data volume. Add a persistent store backend before using the container for
+durable data.
+
 ## Test
 
 ```sh
