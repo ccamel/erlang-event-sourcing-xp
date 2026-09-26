@@ -1,0 +1,12 @@
+.direnv/
+.eunit
+.git/
+.github/
+_checkouts/
+_build/
+deps/
+doc/
+data/
+erl_crash.dump
+*.beam
+*.plt
