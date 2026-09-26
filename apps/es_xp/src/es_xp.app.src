@@ -3,12 +3,14 @@
     {vsn, "0.1.0"},
     {registered, []},
     {mod, {es_xp_app, []}},
-    {applications, [kernel, stdlib, es_store_ets, es_kernel, es_projection]},
-    {env, []},
+    {applications, [kernel, stdlib, cowboy, es_store_ets, es_kernel, es_projection]},
+    {env, [{http_port, 8080}]},
     {modules, [
         bank_account_aggregate,
         bank_account_balance_projection,
+        es_xp_account_query,
         es_xp_app,
+        es_xp_http,
         es_xp_sup
     ]},
     {licenses, ["BSD 3-Clause"]},

@@ -6,6 +6,14 @@ default:
 compile:
     rebar3 compile
 
+# Build the production Docker image.
+docker-build:
+    docker build --tag es-xp:local .
+
+# Start the Docker Compose project.
+docker-up:
+    docker compose up --build
+
 # Run all EUnit tests.
 test:
     rebar3 eunit

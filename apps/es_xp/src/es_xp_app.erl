@@ -38,8 +38,11 @@ start(_StartType, _StartArgs) ->
     case es_xp_sup:start_link() of
         {ok, Pid} ->
             StoreContext = es_kernel_app:get_store_context(),
-            {ok, _ProjectionPid} =
-                es_projection:start(StoreContext, bank_account_balance_projection, #{}),
+            {ok, _ProjectionPid} = es_projection:start(
+                StoreContext,
+                bank_account_balance_projection,
+                #{checkpoint_store => es_projection_checkpoint_ets}
+            ),
             {ok, Pid};
         Error ->
             Error

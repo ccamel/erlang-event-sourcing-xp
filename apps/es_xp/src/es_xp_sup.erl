@@ -31,7 +31,16 @@ init([]) ->
             intensity => 0,
             period => 1
         },
-    ChildSpecs = [],
+    ChildSpecs = [
+        #{
+            id => es_xp_http,
+            start => {es_xp_http, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [es_xp_http]
+        }
+    ],
     {ok, {SupFlags, ChildSpecs}}.
 
 %% internal functions
