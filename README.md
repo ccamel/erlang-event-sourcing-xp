@@ -27,7 +27,7 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 - **Kernel OTP app** — packaged as an OTP application with a supervision tree (`es_kernel_sup`) that boots a dynamic aggregate supervisor and a singleton aggregate manager. Configure stores via application env, start with `application:ensure_all_started/1`, and dispatch commands through `es_kernel:dispatch/1`.
 - **Aggregate** — a reusable [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) harness that keeps domain logic pure while delegating event sourcing boilerplate.
 - **Aggregate Manager** — a singleton router that spins up aggregates on demand via the dynamic supervisor, rehydrates them from persisted events, monitors them, and passivates idle instances.
-- **Event Store** — a behaviour-driven abstraction with drop-in backends, per-stream replay for aggregates, and global-position replay for read-side projections.
+- **Event Store** — a behaviour-driven abstraction with ETS, file, Mnesia, and PostgreSQL backends; per-stream replay for aggregates; and global-position replay for read-side projections.
 - **WASM domains** — aggregates may execute domain decisions and event reducers in sandboxed QuickJS/WebAssembly while the Erlang kernel retains persistence, replay, snapshots, and supervision.
 - **Snapshots** — automatic checkpointing at configurable intervals to avoid replaying entire streams.
 - **Passivation** — idle aggregates are shut down cleanly and will rehydrate from the store on the next command.
@@ -279,8 +279,13 @@ Setting `snapshot_interval => 0` (default) disables automatic snapshotting.
 | [ETS](https://www.erlang.org/doc/apps/stdlib/ets.html)       | ✅ Ready   | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png" alt="ets-logo">     | Events + snapshots | In-memory tables backed by the BEAM VM, blazing-fast reads/writes, zero external dependencies. | Local development, benchmarks, ephemeral environments where latency matters more than durability. |
 | File (pedagogical)                                                          | ✅ Ready   | 📁                                                                                                                                  | Events + snapshots | Plain files (one Erlang term per line) under a configurable root dir, zero dependencies.        | Learning/teaching runs where you want to peek at persisted state without external services.       |
 | [Mnesia](https://www.erlang.org/docs/29/apps/mnesia/mnesia.html) | ✅ Ready   | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/erlang.png" alt="mnesia-logo">     | Events + snapshots | Distributed, transactional, and replicated storage built into Erlang/OTP.                      | Clusters that need lightweight distribution without introducing an external database.             |
-| [PostgreSQL](https://www.postgresql.org/)                                   | 🛠️ Planned | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/postgresql.png" alt="postgresql-logo"> | Events + snapshots | Durable SQL store with strong transactional guarantees and easy horizontal scaling.            | Production setups that already rely on Postgres or need rock-solid consistency.                   |
+| [PostgreSQL](https://www.postgresql.org/)                                   | ✅ Ready   | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/postgresql.png" alt="postgresql-logo"> | Events + snapshots | Transactional event batches, durable global positions, indexed event metadata, and snapshots encoded as Erlang terms. | Docker deployments and production setups that rely on PostgreSQL.                                |
 | [MongoDB](https://www.mongodb.com/)                                         | 🛠️ Planned | <img height="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/mongodb.png" alt="mongodb-logo">    | Events + snapshots | Flexible document database with built-in replication and sharding.                             | Event streams that benefit from schemaless payload storage or multi-region clusters.              |
+
+PostgreSQL retains the complete event as an Erlang term in `BYTEA` for replay,
+and exposes `aggregate_type`, `event_type`, and `metadata.timestamp` as indexed
+columns for inspection. The unique `(stream_id, sequence)` constraint is also
+the per-stream replay index.
 
 ### Aggregate
 
@@ -555,10 +560,13 @@ curl -X POST http://localhost:8080/api/accounts/123/deposit \
 curl http://localhost:8080/api/accounts/123
 ```
 
-The default Docker configuration uses `es_store_ets`. Events and snapshots are
-therefore lost when the container restarts; `compose.yaml` intentionally has no
-data volume. Add a persistent store backend before using the container for
-durable data.
+`compose.yaml` starts PostgreSQL and configures the release to use
+`es_store_postgres` for events and snapshots. Its named `postgres_data` volume
+survives container recreation and `docker compose down`; remove it only with
+`docker compose down -v`.
+
+Connection settings are supplied through `POSTGRES_DB`, `POSTGRES_USER`, and
+`POSTGRES_PASSWORD`, each defaulting to `es_xp`.
 
 ## Test
 

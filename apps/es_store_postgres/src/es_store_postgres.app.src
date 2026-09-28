@@ -1,0 +1,11 @@
+{application, es_store_postgres, [
+    {description, "PostgreSQL backend for es_kernel"},
+    {vsn, "0.1.0"},
+    {registered, [es_store_postgres, es_store_postgres_sup]},
+    {applications, [kernel, stdlib, epgsql, es_kernel]},
+    {env, []},
+    {modules, [es_store_postgres, es_store_postgres_app, es_store_postgres_sup]},
+    {mod, {es_store_postgres_app, []}},
+    {licenses, ["BSD 3-Clause"]},
+    {links, []}
+]}.

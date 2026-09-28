@@ -1,8 +1,37 @@
 services:
+  postgres:
+    image: postgres:17.5-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-es_xp}
+      POSTGRES_USER: ${POSTGRES_USER:-es_xp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-es_xp}
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   es_xp:
     build: .
     image: es-xp:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ES_POSTGRES_HOST: postgres
+      ES_POSTGRES_PORT: "5432"
+      ES_POSTGRES_DATABASE: ${POSTGRES_DB:-es_xp}
+      ES_POSTGRES_USERNAME: ${POSTGRES_USER:-es_xp}
+      ES_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-es_xp}
     ports:
       - "8080:8080"
     init: true
     restart: unless-stopped
+
+volumes:
+  postgres_data:

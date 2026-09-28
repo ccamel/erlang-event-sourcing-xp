@@ -33,6 +33,21 @@ jobs:
       ERL_FLAGS: "-enable-feature all"
       OTP_VERSION: "29"
       REBAR3_VERSION: "3.27.0"
+      ES_POSTGRES_TEST: "true"
+    services:
+      postgres:
+        image: postgres:17.5-alpine
+        env:
+          POSTGRES_DB: es_xp
+          POSTGRES_USER: es_xp
+          POSTGRES_PASSWORD: es_xp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U es_xp -d es_xp"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
