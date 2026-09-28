@@ -24,8 +24,8 @@ sequence numbers and global positions are both ordered by SQL queries.
 -define(APP, es_store_postgres).
 -define(SERVER, ?MODULE).
 -define(INSERT_EVENT_SQL,
-    "INSERT INTO es_events (stream_id, sequence, event) VALUES ($1, $2, $3) "
-    "ON CONFLICT (stream_id, sequence) DO NOTHING"
+    "INSERT INTO es_events (aggregate_type, event_type, occurred_at, stream_id, sequence, event) "
+    "VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (stream_id, sequence) DO NOTHING"
 ).
 -define(UPSERT_SNAPSHOT_SQL,
     "INSERT INTO es_snapshots (stream_id, sequence, snapshot) VALUES ($1, $2, $3) "
@@ -203,13 +203,18 @@ to_string(Value) when is_atom(Value) ->
 ensure_schema(Connection) ->
     execute_statements(Connection, [
         "CREATE TABLE IF NOT EXISTS es_events ("
+        "aggregate_type TEXT NOT NULL, "
+        "event_type BYTEA NOT NULL, "
+        "occurred_at BIGINT, "
         "stream_id BYTEA NOT NULL, "
         "sequence BIGINT NOT NULL CHECK (sequence >= 0), "
         "position BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, "
         "event BYTEA NOT NULL, "
         "UNIQUE (stream_id, sequence))",
-        "CREATE INDEX IF NOT EXISTS es_events_stream_sequence_idx "
-        "ON es_events (stream_id, sequence)",
+        "CREATE INDEX IF NOT EXISTS es_events_type_position_idx "
+        "ON es_events (aggregate_type, event_type, position)",
+        "CREATE INDEX IF NOT EXISTS es_events_type_occurred_at_position_idx "
+        "ON es_events (aggregate_type, occurred_at, position) WHERE occurred_at IS NOT NULL",
         "CREATE TABLE IF NOT EXISTS es_snapshots ("
         "stream_id BYTEA PRIMARY KEY, "
         "sequence BIGINT NOT NULL CHECK (sequence >= 0), "
@@ -221,6 +226,8 @@ execute_statements(_Connection, []) ->
 execute_statements(Connection, [Statement | Rest]) ->
     case epgsql:equery(Connection, Statement) of
         {ok, _Count} ->
+            execute_statements(Connection, Rest);
+        {ok, _Columns, []} ->
             execute_statements(Connection, Rest);
         {error, Reason} ->
             {error, Reason}
@@ -263,9 +270,28 @@ append_events(Connection, Events) ->
 -spec insert_events(pid(), [event()]) -> ok.
 insert_events(_Connection, []) ->
     ok;
-insert_events(Connection, [#{stream_id := StreamId, sequence := Sequence} = Event | Rest]) ->
+insert_events(
+    Connection,
+    [
+        #{
+            aggregate_type := AggregateType,
+            type := EventType,
+            stream_id := StreamId,
+            sequence := Sequence,
+            metadata := Metadata
+        } = Event
+        | Rest
+    ]
+) ->
     case
-        epgsql:equery(Connection, ?INSERT_EVENT_SQL, [encode(StreamId), Sequence, encode(Event)])
+        epgsql:equery(Connection, ?INSERT_EVENT_SQL, [
+            atom_to_binary(AggregateType, utf8),
+            type_to_binary(EventType),
+            maps:get(timestamp, Metadata, null),
+            encode(StreamId),
+            Sequence,
+            encode(Event)
+        ])
     of
         {ok, 1} ->
             insert_events(Connection, Rest);
@@ -275,6 +301,11 @@ insert_events(Connection, [#{stream_id := StreamId, sequence := Sequence} = Even
             error({insert_failed, Reason})
     end.
 
+-spec type_to_binary(es_contract_event:type()) -> binary().
+type_to_binary(Type) when is_atom(Type) ->
+    atom_to_binary(Type, utf8);
+type_to_binary(Type) when is_binary(Type) ->
+    Type.
 -spec fold_stream(
     pid(), stream_id(), fun((event(), sequence(), AccIn) -> AccOut), Acc0, es_contract_range:range()
 ) -> {ok, AccOut} | {error, term()} when
