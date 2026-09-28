@@ -1,9 +1,10 @@
-release: 3.1.0
-generated_at: 2026-09-24
+release: 3.2.0
+generated_at: 2026-09-28
 apps:
   es_kernel: "0.1.0"
   es_projection: "0.1.0"
   es_store_ets: "0.1.0"
   es_store_file: "0.1.0"
   es_store_mnesia: "0.1.0"
+  es_store_postgres: "0.1.0"
   es_xp: "0.1.0"

@@ -1,5 +1,49 @@
 # erlang-event-sourcing-xp changelog
 
+## [3.2.0](https://github.com/ccamel/erlang-event-sourcing-xp/compare/v3.1.0...v3.2.0) (2026-09-28)
+
+
+### Features
+
+* **store_psql:** add PostgreSQL event and snapshot store ([599ae57](https://github.com/ccamel/erlang-event-sourcing-xp/commit/599ae573426460c2349945dbb1e624e5868ca5ec))
+* **store_psql:** expose indexed event metadata ([f41c67f](https://github.com/ccamel/erlang-event-sourcing-xp/commit/f41c67fe8fe62da3752e9dca547eaae0461ad729))
+* **xp:** add bank account HTTP API ([40cbbab](https://github.com/ccamel/erlang-event-sourcing-xp/commit/40cbbabd10974cb40710807d71870a82861077fa))
+* **xp:** use PostgreSQL event storage ([b216ceb](https://github.com/ccamel/erlang-event-sourcing-xp/commit/b216cebe8d2cbee556ca9ce73442efe9bf8a4e4b))
+
+
+### Documentation
+
+* **README:** describe PostgreSQL event indexes ([cfb2a92](https://github.com/ccamel/erlang-event-sourcing-xp/commit/cfb2a92b2174b17f5ecac03f4551ee6163649d34))
+* **README:** document Docker deployment ([d1eeb0d](https://github.com/ccamel/erlang-event-sourcing-xp/commit/d1eeb0dd1a3869e4aefa551003c2ceb19b441d6a))
+* **README:** document PostgreSQL persistence ([34e5301](https://github.com/ccamel/erlang-event-sourcing-xp/commit/34e5301c3a37134e20a9636a1ecd100cc1036806))
+
+
+### Tests
+
+* **store_psql:** cover PostgreSQL store contract ([69ddd3e](https://github.com/ccamel/erlang-event-sourcing-xp/commit/69ddd3e507d1339d3fe9b43891ee653116e5c951))
+* **store_psql:** cover PostgreSQL store edge cases ([8b7f6ae](https://github.com/ccamel/erlang-event-sourcing-xp/commit/8b7f6ae5a297a13e94189f65f4e9e5d388d60028))
+* **store_psql:** verify indexed event metadata ([8e61762](https://github.com/ccamel/erlang-event-sourcing-xp/commit/8e61762ba5330c396e0ec788c19697cf29f25ef9))
+
+
+### Build System
+
+* **deps:** add cowboy v2.19.0 ([99cb0e5](https://github.com/ccamel/erlang-event-sourcing-xp/commit/99cb0e578983bf0556c4a51dc3cc5f322984e623))
+* **deps:** add epgsql PostgreSQL driver ([8f2fee8](https://github.com/ccamel/erlang-event-sourcing-xp/commit/8f2fee8c5a621fb590010823280b816fe0390bd6))
+* **deps:** bump benoitc/erlang_wasm from v0.2.2 to v0.5.0 ([426ae0f](https://github.com/ccamel/erlang-event-sourcing-xp/commit/426ae0fe46df0ad776a8f2b32e36a0708e87f4e7))
+* **deps:** bump the github-actions group with 2 updates ([45d9c31](https://github.com/ccamel/erlang-event-sourcing-xp/commit/45d9c3142ce8073f641fae382b27ed2615d81339))
+* **docker:** add Docker image and Compose configuration ([83b8d5b](https://github.com/ccamel/erlang-event-sourcing-xp/commit/83b8d5b08b967ec6e31da4a2ce0e802354c0e148))
+* **docker:** add persistent PostgreSQL service ([c18f0b1](https://github.com/ccamel/erlang-event-sourcing-xp/commit/c18f0b1e1d83f9421894aa5d9c25360e155e330a))
+* **just:** add Docker recipes ([4082ac3](https://github.com/ccamel/erlang-event-sourcing-xp/commit/4082ac376aa1129491d310df5ad505bce66031fe))
+* **nix:** declare Just to dev shell ([83a6885](https://github.com/ccamel/erlang-event-sourcing-xp/commit/83a68856358be01f448a25afeb48ef954e7fc6a0))
+* **project:** add Justfile development commands ([4635ade](https://github.com/ccamel/erlang-event-sourcing-xp/commit/4635ade33e6d95c54332fda43aa445d023d43a45))
+
+
+### Continuous Integration
+
+* **workflow:** add build-docker workflow ([408b145](https://github.com/ccamel/erlang-event-sourcing-xp/commit/408b1457e891936563c21ee3720621a6e78723c9))
+* **workflow:** add lint-dockerfile workflow ([6ecc15e](https://github.com/ccamel/erlang-event-sourcing-xp/commit/6ecc15e91dbd96cdbbad58b58155d3816fd9ce62))
+* **workflow:** add publish-docker-image workflow ([6a1587d](https://github.com/ccamel/erlang-event-sourcing-xp/commit/6a1587d3e6933b929a82b0523c55ae1d14d4ecb9))
+
 ## [3.1.0](https://github.com/ccamel/erlang-event-sourcing-xp/compare/v3.0.0...v3.1.0) (2026-09-24)
 
 
