@@ -28,6 +28,10 @@ store_contract(StreamId) ->
     [
         ?_assertEqual(ok, es_store_postgres:append(StreamId, [Event0])),
         ?_assertEqual(
+            {ok, {<<"postgres_store_test">>, <<"created">>, 0}},
+            indexed_event_fields(StreamId)
+        ),
+        ?_assertEqual(
             {error, duplicate_event}, es_store_postgres:append(StreamId, [Event1, Event0])
         ),
         ?_assertEqual({ok, [created]}, event_types(StreamId)),
@@ -64,8 +68,38 @@ env_port(Key, Default) ->
         Value -> list_to_integer(Value)
     end.
 
+test_connection_options() ->
+    [
+        {host, env("ES_POSTGRES_TEST_HOST", "127.0.0.1")},
+        {port, env_port("ES_POSTGRES_TEST_PORT", 5432)},
+        {database, env("ES_POSTGRES_TEST_DATABASE", "es_xp")},
+        {username, env("ES_POSTGRES_TEST_USERNAME", "es_xp")},
+        {password, env("ES_POSTGRES_TEST_PASSWORD", "es_xp")}
+    ].
+
 event(StreamId, Sequence, Type) ->
     es_kernel_store:new_event(StreamId, postgres_store_test, Type, Sequence, Sequence, #{}).
+
+indexed_event_fields(StreamId) ->
+    {ok, Connection} = epgsql:connect(test_connection_options()),
+    try
+        case
+            epgsql:equery(
+                Connection,
+                "SELECT aggregate_type, event_type, occurred_at FROM es_events WHERE stream_id = $1",
+                [term_to_binary(StreamId, [compressed])]
+            )
+        of
+            {ok, _Columns, [Fields]} ->
+                {ok, Fields};
+            {ok, _Columns, []} ->
+                {error, not_found};
+            {error, Reason} ->
+                {error, Reason}
+        end
+    after
+        ok = epgsql:close(Connection)
+    end.
 
 event_types(StreamId) ->
     case
