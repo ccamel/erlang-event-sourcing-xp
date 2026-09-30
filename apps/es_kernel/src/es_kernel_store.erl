@@ -1,11 +1,11 @@
 -module(es_kernel_store).
 -moduledoc """
-Kernel API for event store operations.
+Kernel API for event and snapshot storage.
 
 This module provides:
-- **Domain types**: event, snapshot, sequence, stream_id, etc.
-- **Constructors and accessors**: `new_event/...`, `new_snapshot/...`, field getters
-- **Storage operations**: wrappers around backend implementations
+- The `store_context()` type identifying the backend modules
+- Event and snapshot constructors
+- Storage operations delegated to the backends
 
 A `store_context()` tuple `{EventStore, SnapshotStore}` identifies the backend modules.
 Both may be the same module if it implements both event and snapshot storage.
@@ -215,9 +215,9 @@ new_event(StreamId, AggregateType, Type, Sequence, Timestamp, Payload) ->
     new_event(StreamId, AggregateType, Type, Sequence, [], Timestamp, #{}, Payload).
 
 -doc """
-Creates a new snapshot record.
+Create a snapshot map.
 
-- AggregateType is the aggregate type (aggregate module) to which the stream belongs.
+- AggregateType is the aggregate type identifier.
 - StreamId is the unique identifier for the stream.
 - Sequence is the sequence number of the last event included in the snapshot.
 - Timestamp is the timestamp when the snapshot was created.
@@ -237,18 +237,13 @@ new_snapshot(AggregateType, StreamId, Sequence, Timestamp, State) ->
     es_contract_snapshot:new(AggregateType, StreamId, Sequence, Metadata, State).
 
 -doc """
-Stores a snapshot using the specified store module.
+Store a snapshot using the snapshot backend in `StoreContext`.
 
-This function delegates snapshot storage to the backend implementation. The snapshot
-captures aggregate state at a specific sequence number, enabling faster rehydration
-by avoiding full event replay from the stream's beginning.
+`Snapshot` contains `aggregate_type`, `stream_id`, `sequence`, `metadata`, and
+`state`. Its timestamp is stored in `metadata.timestamp`.
 
-The snapshot map contains all necessary information (domain, stream_id, sequence,
-metadata, state), consistent with event persistence where complete records are
-passed rather than individual fields. The timestamp is available inside the metadata.
-
-Returns `ok` on success, or `{warning, Reason}` if persistence fails. Warnings are
-preferred over exceptions since snapshots are optimizations, not requirements.
+Returns `ok` on success, or `{warning, Reason}` if persistence fails. Snapshot
+failures should not crash aggregates; events remain the source of truth.
 """.
 -spec store(StoreContext, Snapshot) -> ok | {warning, Reason} when
     StoreContext :: store_context(),
