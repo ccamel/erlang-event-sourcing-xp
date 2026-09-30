@@ -12,6 +12,7 @@ suite_test_() ->
             {"aggregate_snapshot_rehydration", fun aggregate_snapshot_rehydration/0},
             {"aggregate_custom_now_fun", fun aggregate_custom_now_fun/0},
             {"aggregate_concurrent_writers", fun aggregate_concurrent_writers/0},
+            {"aggregate_async_conflict_refreshes", fun aggregate_async_conflict_refreshes/0},
             {"aggregate_event_context", fun aggregate_event_context/0}
         ],
     {foreach, fun setup/0, fun teardown/1, TestCases}.
@@ -318,6 +319,25 @@ aggregate_concurrent_writers() ->
             end,
             Writers
         ),
+        gen_server:stop(A),
+        gen_server:stop(B)
+    end.
+
+aggregate_async_conflict_refreshes() ->
+    {Id, A} = start_test_account(5000),
+    Store = es_kernel_app:get_store_context(),
+    {ok, B} = es_kernel_aggregate:start_link(bank_account, Id, Store),
+    try
+        ?assertEqual(ok, es_kernel_aggregate:execute(A, cmd(deposit, Id, #{amount => 100}))),
+        gen_server:cast(B, cmd(deposit, Id, #{amount => 200})),
+        ?assertState(B, Id, #{balance := 100}, 1),
+        ?assertEqual(ok, es_kernel_aggregate:execute(B, cmd(withdraw, Id, #{amount => 100}))),
+        gen_server:cast(B, invalid),
+        ?assertEqual(
+            {error, insufficient_funds},
+            es_kernel_aggregate:execute(B, cmd(withdraw, Id, #{amount => 1}))
+        )
+    after
         gen_server:stop(A),
         gen_server:stop(B)
     end.
