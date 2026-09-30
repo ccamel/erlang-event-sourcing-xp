@@ -58,7 +58,7 @@ managed_runner_wakes_on_append() ->
     Timestamp = erlang:system_time(),
     FirstEvent = es_kernel_store:new_event(?STREAM_A, user, created, 1, Timestamp, #{}),
     SecondEvent = es_kernel_store:new_event(?STREAM_A, user, updated, 2, Timestamp, #{}),
-    ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [FirstEvent])),
+    ?assertEqual({ok, 1}, es_kernel_store:append(?STORE, ?STREAM_A, 0, [FirstEvent])),
     {ok, _Pid} = es_projection:start(
         ?STORE,
         es_projection_collect,
@@ -66,7 +66,7 @@ managed_runner_wakes_on_append() ->
     ),
     try
         wait_for_checkpoint(collect_projection, 0, 20),
-        ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [SecondEvent])),
+        ?assertEqual({ok, 2}, es_kernel_store:append(?STORE, ?STREAM_A, 1, [SecondEvent])),
         wait_for_checkpoint(collect_projection, 1, 20)
     after
         es_projection:stop(collect_projection)
@@ -76,7 +76,7 @@ managed_runner_recovers_after_pg_restart() ->
     Timestamp = erlang:system_time(),
     FirstEvent = es_kernel_store:new_event(?STREAM_A, user, created, 1, Timestamp, #{}),
     SecondEvent = es_kernel_store:new_event(?STREAM_A, user, updated, 2, Timestamp, #{}),
-    ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [FirstEvent])),
+    ?assertEqual({ok, 1}, es_kernel_store:append(?STORE, ?STREAM_A, 0, [FirstEvent])),
     {ok, Pid} = es_projection:start(
         ?STORE,
         es_projection_collect,
@@ -88,7 +88,7 @@ managed_runner_recovers_after_pg_restart() ->
         exit(OldPg, kill),
         wait_for_pg_restart(OldPg, 100),
         wait_for_pg_member(Pid, 100),
-        ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [SecondEvent])),
+        ?assertEqual({ok, 2}, es_kernel_store:append(?STORE, ?STREAM_A, 1, [SecondEvent])),
         wait_for_checkpoint(collect_projection, 1, 20)
     after
         es_projection:stop(Pid)
@@ -127,7 +127,7 @@ managed_runner_ignores_stale_subscription_messages() ->
         Pid ! unexpected_message,
         Timestamp = erlang:system_time(),
         Event = es_kernel_store:new_event(?STREAM_A, user, created, 1, Timestamp, #{}),
-        ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [Event])),
+        ?assertEqual({ok, 1}, es_kernel_store:append(?STORE, ?STREAM_A, 0, [Event])),
         wait_for_checkpoint(collect_projection, 0, 20)
     after
         es_projection:stop(Pid)
@@ -136,7 +136,7 @@ managed_runner_ignores_stale_subscription_messages() ->
 dead_runner_is_removed_from_registry() ->
     Timestamp = erlang:system_time(),
     Event = es_kernel_store:new_event(?STREAM_A, user, fail, 1, Timestamp, #{}),
-    ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [Event])),
+    ?assertEqual({ok, 1}, es_kernel_store:append(?STORE, ?STREAM_A, 0, [Event])),
 
     {ok, Pid} = es_projection:start(
         ?STORE, es_projection_failing, #{

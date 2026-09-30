@@ -77,6 +77,8 @@ Executes a command on an aggregate process.
 Sends a command to a running aggregate and waits for the result. Returns
 `ok` if the command was handled successfully, or `{error, Reason}` if
 it failed.
+Version conflicts leave the process alive and reload committed state before the
+next command. The rejected command is not retried or applied.
 
 The call waits for the aggregate reply; WASM domain descriptors bound guest work.
 """.
@@ -197,8 +199,10 @@ handle_call(Command, _From, State) ->
                 sequence = Sequence1,
                 timer_ref = NewTimerRef
             }};
+        {error, {wrong_expected_sequence, _, _} = Reason} ->
+            {reply, {error, Reason}, refresh_state(State#state{timer_ref = NewTimerRef})};
         {error, Reason} ->
-            {reply, {error, Reason}, State}
+            {reply, {error, Reason}, State#state{timer_ref = NewTimerRef}}
     end.
 
 -doc """
@@ -218,8 +222,10 @@ handle_cast(Command, State) ->
                 sequence = Sequence1,
                 timer_ref = NewTimerRef
             }};
+        {error, {wrong_expected_sequence, _, _}} ->
+            {noreply, refresh_state(State#state{timer_ref = NewTimerRef})};
         {error, _} ->
-            {noreply, State}
+            {noreply, State#state{timer_ref = NewTimerRef}}
     end.
 
 terminate(_Reason, _State) ->
@@ -232,6 +238,13 @@ handle_info(_Info, State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+-spec refresh_state(state()) -> state().
+refresh_state(
+    #state{domain = Domain, store = Store, aggregate_type = Type, aggregate_id = Id} = State
+) ->
+    {DomainState, Sequence} = rehydrate(Domain, Store, {Type, Id}),
+    State#state{state = DomainState, sequence = Sequence}.
 
 -doc """
 Installs or refreshes the passivation timer for the aggregate.
@@ -285,12 +298,18 @@ process_command(
         {ok, []} ->
             {ok, {State0, Sequence0}};
         {ok, PayloadEvents} when is_list(PayloadEvents) ->
-            ok = persist_events(
-                PayloadEvents, {Domain, StoreContext, StreamId, Sequence0, NowFun}
-            ),
-            {State1, Sequence1} =
-                apply_events(PayloadEvents, {Domain, State0, Sequence0}),
-            {ok, {State1, Sequence1}};
+            case
+                persist_events(
+                    PayloadEvents, {Domain, StoreContext, StreamId, Sequence0, NowFun}, Command
+                )
+            of
+                {ok, _} ->
+                    {State1, Sequence1} =
+                        apply_events(PayloadEvents, {Domain, State0, Sequence0}),
+                    {ok, {State1, Sequence1}};
+                {error, _} = Error ->
+                    Error
+            end;
         {error, Reason} ->
             {error, Reason}
     end.
@@ -323,9 +342,10 @@ apply_events(PayloadEvents, {Domain, State0, Sequence0}) ->
         StreamId :: es_contract_event:stream_id(),
         Sequence0 :: es_contract_event:sequence(),
         NowFun :: fun(() -> non_neg_integer())
-    }
-) -> ok.
-persist_events(PayloadEvents, {Domain, StoreContext, StreamId, Sequence0, NowFun}) ->
+    },
+    es_contract_command:t()
+) -> {ok, es_contract_event:sequence()} | {error, term()}.
+persist_events(PayloadEvents, {Domain, StoreContext, StreamId, Sequence0, NowFun}, Command) ->
     {AggregateType, _AggregateId} = StreamId,
     {Events, _} =
         lists:mapfoldl(
@@ -339,7 +359,9 @@ persist_events(PayloadEvents, {Domain, StoreContext, StreamId, Sequence0, NowFun
                         AggregateType,
                         EventType,
                         SequenceN1,
+                        maps:get(tags, Command, []),
                         Now,
+                        maps:get(metadata, Command, #{}),
                         PayloadEvent
                     ),
                 {Event, SequenceN1}
@@ -353,7 +375,7 @@ persist_events(PayloadEvents, {Domain, StoreContext, StreamId, Sequence0, NowFun
         end,
         Events
     ),
-    es_kernel_store:append(StoreContext, StreamId, Events).
+    es_kernel_store:append(StoreContext, StreamId, Sequence0, Events).
 
 -doc """
 Saves a snapshot when a snapshot interval is configured and the current
