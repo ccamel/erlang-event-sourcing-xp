@@ -158,7 +158,7 @@ continuous_runner_uses_application_checkpoint_store() ->
     try
         Timestamp = erlang:system_time(),
         Event = new_event(?STREAM_A, user, created, 1, Timestamp),
-        ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [Event])),
+        ?assertEqual({ok, 1}, es_kernel_store:append(?STORE, ?STREAM_A, 0, [Event])),
         wait_for_checkpoint(collect_projection, 0, 20)
     after
         es_projection:stop(Pid),
@@ -182,7 +182,7 @@ continuous_failure_does_not_advance_checkpoint() ->
     Timestamp = erlang:system_time(),
     EventOk = new_event(?STREAM_A, user, created, 1, Timestamp),
     EventFail = new_event(?STREAM_A, user, fail, 2, Timestamp),
-    ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [EventOk, EventFail])),
+    ?assertEqual({ok, 2}, es_kernel_store:append(?STORE, ?STREAM_A, 0, [EventOk, EventFail])),
     Parent = self(),
     _Owner = spawn(fun() ->
         process_flag(trap_exit, true),
@@ -213,7 +213,7 @@ empty_tick_preserves_start_position() ->
         new_event(?STREAM_A, user, created, 1, Timestamp),
         new_event(?STREAM_A, user, fail, 2, Timestamp)
     ],
-    ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, InitialEvents)),
+    ?assertEqual({ok, 2}, es_kernel_store:append(?STORE, ?STREAM_A, 0, InitialEvents)),
     ok = es_projection_checkpoint_ets:store_checkpoint(failing_projection, 0),
     {ok, Pid} = es_projection:start_link(
         ?STORE,
@@ -230,7 +230,7 @@ empty_tick_preserves_start_position() ->
             new_event(?STREAM_A, user, created, Sequence, Timestamp)
          || Sequence <- lists:seq(3, 11)
         ],
-        ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, LaterEvents)),
+        ?assertEqual({ok, 11}, es_kernel_store:append(?STORE, ?STREAM_A, 2, LaterEvents)),
         wait_for_checkpoint(failing_projection, 10, 20),
         ?assert(is_process_alive(Pid))
     after
@@ -304,7 +304,7 @@ polling_processes_later_events() ->
     try
         Timestamp = erlang:system_time(),
         Event = new_event(?STREAM_A, user, created, 1, Timestamp),
-        ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [Event])),
+        ?assertEqual({ok, 1}, es_kernel_store:append(?STORE, ?STREAM_A, 0, [Event])),
         wait_for_checkpoint(collect_projection, 0, 20)
     after
         es_projection:stop(Pid)
@@ -326,7 +326,7 @@ projection_recovers_from_failed_pg_join() ->
         wait_for_pg_member(Pid, 20),
         Timestamp = erlang:system_time(),
         Event = new_event(?STREAM_A, user, created, 1, Timestamp),
-        ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [Event])),
+        ?assertEqual({ok, 1}, es_kernel_store:append(?STORE, ?STREAM_A, 0, [Event])),
         wait_for_checkpoint(collect_projection, 0, 20)
     after
         es_projection:stop(Pid),
@@ -372,9 +372,9 @@ append_sample_events() ->
     EventA1 = new_event(?STREAM_A, user, created, 1, Timestamp),
     EventB1 = new_event(?STREAM_B, order, ordered, 1, Timestamp),
     EventA2 = new_event(?STREAM_A, user, updated, 2, Timestamp),
-    ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [EventA1])),
-    ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_B, [EventB1])),
-    ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM_A, [EventA2])),
+    ?assertEqual({ok, 1}, es_kernel_store:append(?STORE, ?STREAM_A, 0, [EventA1])),
+    ?assertEqual({ok, 1}, es_kernel_store:append(?STORE, ?STREAM_B, 0, [EventB1])),
+    ?assertEqual({ok, 2}, es_kernel_store:append(?STORE, ?STREAM_A, 1, [EventA2])),
     [EventA1, EventB1, EventA2].
 
 new_event(StreamId, AggregateType, Type, Sequence, Timestamp) ->

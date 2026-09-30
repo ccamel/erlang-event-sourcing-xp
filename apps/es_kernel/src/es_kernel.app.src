@@ -3,7 +3,7 @@
     {vsn, "0.1.0"},
     {registered, [es_kernel_sup, es_kernel_aggregate_sup, es_kernel_mgr_aggregate]},
     {mod, {es_kernel_app, []}},
-    {applications, [kernel, stdlib, wasm]},
+    {applications, [kernel, stdlib, crypto, wasm]},
     {env, [
         {event_store, es_store_ets},
         {snapshot_store, es_store_ets},

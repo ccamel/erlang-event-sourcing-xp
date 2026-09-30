@@ -11,6 +11,7 @@
 ]).
 
 -export_type([
+    id/0,
     aggregate_type/0,
     stream_id/0,
     sequence/0,
@@ -48,9 +49,8 @@ across different aggregate types and instances.
 -type stream_id() :: {aggregate_type(), aggregate_id()}.
 
 -doc """
-Sequence number of the event within its stream, starting from 0.
-
-Sequence values are monotonically increasing within a given stream.
+Last committed stream sequence: `0` means empty, events start at `1`.
+Committed events are contiguous and strictly increasing within a stream.
 """.
 -type sequence() :: non_neg_integer().
 
@@ -79,15 +79,17 @@ The payload is the actual domain data that describes what changed in the system.
 Event data structure.
 
 An event represents a fact that something has happened in the system. It consists of:
+- `event_id`: Random 128-bit binary identity, generated once before persistence
 - `aggregate_type`: The aggregate type this event belongs to
 - `type`: The type of event that occurred
 - `stream_id`: Identifier of the stream this event belongs to
-- `sequence`: Position of this event in the stream (0-based)
+- `sequence`: One-based position of this event in its stream
 - `metadata`: Additional contextual information (timestamp, user, etc.)
 - `tags`: Labels for categorization or routing
 - `payload`: The actual event data describing what changed
 """.
 -type t() :: #{
+    event_id := id(),
     aggregate_type := aggregate_type(),
     type := type(),
     stream_id := stream_id(),
@@ -105,6 +107,9 @@ an event within the entire event store.
 """.
 -type key() :: {stream_id(), sequence()}.
 
+-doc "Opaque 128-bit event identity, preserved unchanged by storage and replay.".
+-type id() :: <<_:128>>.
+
 %%--------------------------------------------------------------------
 %% Functions
 %%--------------------------------------------------------------------
@@ -112,6 +117,7 @@ an event within the entire event store.
 -spec new(aggregate_type(), type(), stream_id(), sequence(), metadata(), payload()) -> t().
 new(AggregateType, Type, StreamId, Sequence, Metadata, Payload) ->
     #{
+        event_id => crypto:strong_rand_bytes(16),
         aggregate_type => AggregateType,
         type => Type,
         stream_id => StreamId,

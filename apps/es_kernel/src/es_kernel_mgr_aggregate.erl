@@ -40,14 +40,14 @@ supervisor.
 -export_type([state/0]).
 
 -doc """
-Starts the singleton aggregate manager with custom options.
+Start the singleton aggregate manager.
 
 - StoreContext is a `{EventStore, SnapshotStore}` tuple.
-- Opts is the configuration options:
-  - `timeout`: Timeout for operations (default: `infinity`).
-  - `now_fun`: Function to get current timestamp (default: system time).
+- Opts configures the aggregate processes:
+  - `timeout`: Inactivity delay before passivation, in milliseconds (default: `5000`).
+  - `now_fun`: Timestamp function (default: `erlang:system_time(millisecond)`).
 
-Function returns `{ok, Pid}` on success, or an error tuple if the server fails to start.
+Returns `{ok, Pid}` on success, or an error tuple if startup fails.
 The manager is registered with name `es_kernel_mgr_aggregate`.
 """.
 -spec start_link(StoreContext, Opts) -> gen_server:start_ret() when

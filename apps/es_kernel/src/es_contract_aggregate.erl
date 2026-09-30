@@ -2,10 +2,8 @@
 -moduledoc """
 Defines the aggregate behaviour for event-sourced domain modules.
 
-Modules implementing this behaviour encapsulate the pure domain logic
-for handling commands and applying events. This behaviour is intended
-to be used by `gen_aggregate`-based processes for executing commands,
-rehydrating state from events, and projecting changes to domain state.
+Modules implementing this behaviour provide the pure domain logic consumed by
+`es_kernel_aggregate` to handle commands and rebuild state from events.
 
 Implementers are responsible for:
 
@@ -20,34 +18,24 @@ Implementers are responsible for:
 -type aggregate_state() :: term().
 
 -doc """
-Initialize the aggregate's state.
+Return the initial domain state.
 
-This is called once when the aggregate process is started and before
-any events have been applied.
-
-Function shall return The initial aggregate state.
+Called before replay during each rehydration, including startup and conflict
+recovery.
 """.
 -callback init() -> aggregate_state().
 
 -doc """
-Return the event type identifier for a given domain event payload.
-
-This callback is responsible for mapping a payload to its canonical event type
-(e.g. `user_created`, `user_deleted`). It must return a valid
-`es_contract_event:type()` for the payload.
+Return the canonical event type identifier for a domain event payload.
 """.
 -callback event_type(Event) -> Type when
     Event :: es_contract_event:payload(),
     Type :: es_contract_event:type().
 
 -doc """
-Handle a domain command.
+Validate a command against the current aggregate state and return:
 
-This function is responsible for validating and transforming a command
-into one or more domain events. It receives the current state of the
-aggregate and returns either:
-
-- `{ok, [es_contract_event:payload()]}` — A list of events to persist and apply.
+- `{ok, Payloads}` — Zero or more domain event payloads to persist and apply.
 - `{error, Reason}` — A reason for rejecting the command.
 
 This function should be pure and side-effect free.
@@ -61,16 +49,14 @@ when
     Command :: es_contract_command:t(),
     State :: aggregate_state().
 -doc """
-Apply a domain event to the aggregate state.
+Return the state obtained by applying a domain event.
 
 This function must be deterministic and pure — given the same event and state,
 it should always return the same result. It is used both during rehydration
-(when replaying past events) and after handling a new command.
+(when replaying events) and after a successful append.
 
-- Event is The domain event to apply.
-- State0 the current aggregate state.
-
-Function shall return the updated aggregate state.
+- Event is the domain event payload.
+- State0 is the current aggregate state.
 """.
 -callback apply_event(Event, State0) -> State1 when
     Event :: es_contract_event:payload(),

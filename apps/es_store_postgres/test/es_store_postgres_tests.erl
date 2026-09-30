@@ -25,25 +25,48 @@ teardown(_StreamId) ->
     unset_store_configuration().
 
 store_contract(StreamId) ->
-    Event0 = event(StreamId, 0, created),
-    Event1 = event(StreamId, 1, updated),
-    Event2 = event(StreamId, 2, <<"archived">>),
-    Snapshot0 = es_kernel_store:new_snapshot(postgres_store_test, StreamId, 0, 1, #{value => 0}),
-    Snapshot1 = es_kernel_store:new_snapshot(postgres_store_test, StreamId, 1, 2, #{value => 1}),
+    Event1 = event(StreamId, 1, created, #{correlation_id => <<"postgres-round-trip">>}),
+    Event2 = event(StreamId, 2, updated),
+    Event3 = event(StreamId, 3, <<"archived">>),
+    InvalidEvent = event(StreamId, 3, skipped),
+    StaleEvent = event(StreamId, 1, stale),
+    ConcurrentStreamId = {postgres_store_test, {concurrent, element(2, StreamId)}},
+    ConcurrentEventA = event(ConcurrentStreamId, 1, concurrent_a),
+    ConcurrentEventB = event(ConcurrentStreamId, 1, concurrent_b),
+    Snapshot1 = es_kernel_store:new_snapshot(postgres_store_test, StreamId, 1, 1, #{value => 1}),
+    Snapshot2 = es_kernel_store:new_snapshot(postgres_store_test, StreamId, 2, 2, #{value => 2}),
     [
         ?_assertEqual(ok, es_store_postgres:start()),
-        ?_assertEqual(ok, es_store_postgres:append(StreamId, [])),
-        ?_assertEqual(ok, es_store_postgres:append(StreamId, [Event0])),
+        ?_assertEqual({ok, 0}, es_store_postgres:append(StreamId, 0, [])),
         ?_assertEqual(
-            {ok, {<<"postgres_store_test">>, <<"created">>, 0}},
+            {error, {wrong_expected_sequence, 1, 0}},
+            es_store_postgres:append(StreamId, 1, [])
+        ),
+        ?_assertEqual({ok, 1}, es_store_postgres:append(StreamId, 0, [Event1])),
+        ?_assertEqual(
+            {ok, {<<"postgres_store_test">>, <<"created">>, 1}},
             indexed_event_fields(StreamId)
         ),
+        ?_assertEqual({ok, [Event1]}, stored_events(StreamId)),
+        ?_assertEqual({ok, 1}, es_store_postgres:append(StreamId, 1, [])),
         ?_assertEqual(
-            {error, duplicate_event}, es_store_postgres:append(StreamId, [Event1, Event0])
+            {error, {wrong_expected_sequence, 0, 1}},
+            es_store_postgres:append(StreamId, 0, [])
+        ),
+        ?_assertEqual(
+            {error, invalid_sequence}, es_store_postgres:append(StreamId, 1, [InvalidEvent])
+        ),
+        ?_assertEqual(
+            {error, duplicate_event},
+            es_store_postgres:append(StreamId, 1, [Event2, Event2])
+        ),
+        ?_assertEqual(
+            {error, {wrong_expected_sequence, 0, 1}},
+            es_store_postgres:append(StreamId, 0, [StaleEvent])
         ),
         ?_assertEqual({ok, [created]}, event_types(StreamId)),
-        ?_assertEqual(ok, es_store_postgres:append(StreamId, [Event1])),
-        ?_assertEqual({ok, [updated]}, event_types(StreamId, es_contract_range:new(1, 2))),
+        ?_assertEqual({ok, 2}, es_store_postgres:append(StreamId, 1, [Event2])),
+        ?_assertEqual({ok, [updated]}, event_types(StreamId, es_contract_range:new(2, 3))),
         ?_assertEqual({ok, [created, updated]}, event_types(StreamId)),
         ?_assert(positions_are_increasing(StreamId)),
         ?_assert(global_range_is_bounded(StreamId)),
@@ -64,13 +87,14 @@ store_contract(StreamId) ->
                 es_contract_range:new(0, infinity)
             )
         ),
-        ?_assertEqual(ok, es_store_postgres:append(StreamId, [Event2])),
+        ?_assertEqual({ok, 3}, es_store_postgres:append(StreamId, 2, [Event3])),
         ?_assertEqual({ok, [created, updated, <<"archived">>]}, event_types(StreamId)),
         ?_assertEqual({error, not_found}, es_store_postgres:load_latest({missing, StreamId})),
-        ?_assertEqual(ok, es_store_postgres:store(Snapshot0)),
         ?_assertEqual(ok, es_store_postgres:store(Snapshot1)),
-        ?_assertEqual(ok, es_store_postgres:store(Snapshot0)),
-        ?_assertEqual({ok, Snapshot1}, es_store_postgres:load_latest(StreamId))
+        ?_assertEqual(ok, es_store_postgres:store(Snapshot2)),
+        ?_assertEqual(ok, es_store_postgres:store(Snapshot1)),
+        ?_assertEqual({ok, Snapshot2}, es_store_postgres:load_latest(StreamId)),
+        ?_test(concurrent_append_is_atomic(ConcurrentStreamId, ConcurrentEventA, ConcurrentEventB))
     ].
 
 configure_store() ->
@@ -114,7 +138,19 @@ test_connection_options() ->
     ].
 
 event(StreamId, Sequence, Type) ->
-    es_kernel_store:new_event(StreamId, postgres_store_test, Type, Sequence, Sequence, #{}).
+    event(StreamId, Sequence, Type, #{}).
+
+event(StreamId, Sequence, Type, Context) ->
+    es_kernel_store:new_event(
+        StreamId,
+        postgres_store_test,
+        Type,
+        Sequence,
+        [],
+        Sequence,
+        #{context => Context},
+        #{}
+    ).
 
 indexed_event_fields(StreamId) ->
     {ok, Connection} = epgsql:connect(test_connection_options()),
@@ -151,6 +187,21 @@ event_types(StreamId, Range) ->
     of
         {ok, Types} ->
             {ok, lists:reverse(Types)};
+        {error, _Reason} = Error ->
+            Error
+    end.
+
+stored_events(StreamId) ->
+    case
+        es_store_postgres:fold(
+            StreamId,
+            fun(Event, _Sequence, Events) -> [Event | Events] end,
+            [],
+            es_contract_range:new(0, infinity)
+        )
+    of
+        {ok, Events} ->
+            {ok, lists:reverse(Events)};
         {error, _Reason} = Error ->
             Error
     end.
@@ -211,4 +262,75 @@ global_event_types(StreamId, Range) ->
             {ok, lists:reverse(Types)};
         {error, _Reason} = Error ->
             Error
+    end.
+
+concurrent_append_is_atomic(StreamId, EventA, EventB) ->
+    Results = concurrent_append_results(StreamId, EventA, EventB),
+    ?assertEqual(1, length([ok || {ok, _} <- Results])),
+    ?assertEqual(
+        [{error, {wrong_expected_sequence, 0, 1}}, {ok, 1}],
+        lists:sort(Results)
+    ),
+    ?assertEqual(
+        {ok, 1},
+        es_store_postgres:fold(
+            StreamId,
+            fun(_Event, _Sequence, Count) -> Count + 1 end,
+            0,
+            es_contract_range:new(0, infinity)
+        )
+    ).
+
+concurrent_append_results(StreamId, EventA, EventB) ->
+    Parent = self(),
+    RefA = make_ref(),
+    RefB = make_ref(),
+    PidA = spawn(fun() -> append_from_connection(Parent, RefA, StreamId, EventA) end),
+    PidB = spawn(fun() -> append_from_connection(Parent, RefB, StreamId, EventB) end),
+    await_append_ready(RefA),
+    await_append_ready(RefB),
+    PidA ! {append, RefA},
+    PidB ! {append, RefB},
+    [await_append_result(RefA), await_append_result(RefB)].
+
+append_from_connection(Parent, Ref, StreamId, Event) ->
+    case epgsql:connect(test_connection_options()) of
+        {ok, Connection} ->
+            try
+                Parent ! {append_ready, Ref},
+                receive
+                    {append, Ref} ->
+                        try
+                            {reply, Result, _State} = es_store_postgres:handle_call(
+                                {append, StreamId, 0, [Event]},
+                                undefined,
+                                #{connection => Connection}
+                            ),
+                            Parent ! {append_result, Ref, Result}
+                        catch
+                            Class:Reason ->
+                                Parent ! {append_connection_error, Ref, {Class, Reason}}
+                        end
+                end
+            after
+                ok = epgsql:close(Connection)
+            end;
+        {error, Reason} ->
+            Parent ! {append_connection_error, Ref, Reason}
+    end.
+
+await_append_ready(Ref) ->
+    receive
+        {append_ready, Ref} ->
+            ok;
+        {append_connection_error, Ref, Reason} ->
+            error({postgres_connection_failed, Reason})
+    end.
+
+await_append_result(Ref) ->
+    receive
+        {append_result, Ref, Result} ->
+            Result;
+        {append_connection_error, Ref, Reason} ->
+            error({postgres_append_failed, Reason})
     end.

@@ -11,7 +11,7 @@ The ETS-based implementation of the event store.
     stop/0,
     fold/4,
     fold_all/3,
-    append/2,
+    append/3,
     store/1,
     load_latest/1
 ]).
@@ -92,31 +92,71 @@ stop() ->
     delete_table(position_counter_table_name()),
     ok.
 
--spec append(StreamId, Events) -> ok | {error, Reason} when
+-spec append(StreamId, ExpectedSequence, Events) ->
+    {ok, NewSequence} | {error, Reason}
+when
     StreamId :: stream_id(),
+    ExpectedSequence :: sequence(),
     Events :: [event()],
+    NewSequence :: sequence(),
     Reason :: term().
-append(_, []) ->
-    ok;
-append(_, Events) ->
-    %% Assign global positions to events
-    PositionCounterTable = position_counter_table_name(),
-    NumEvents = length(Events),
-    StartPosition = ets:update_counter(PositionCounterTable, global_position, NumEvents),
-    BasePosition = StartPosition - NumEvents,
-    RecordsWithPositions = lists:zipwith(
-        fun(Event, Offset) ->
-            event_to_record(Event, BasePosition + Offset)
-        end,
-        Events,
-        lists:seq(0, NumEvents - 1)
-    ),
-    case ets:insert_new(event_table_name(), RecordsWithPositions) of
-        true ->
-            ok;
+append(StreamId, ExpectedSequence, Events) ->
+    case es_contract_event_store:validate_append(StreamId, ExpectedSequence, Events) of
+        ok ->
+            %% ponytail: global append lock; partition only with a commit-ordered log.
+            global:trans(
+                {{?MODULE, append}, self()},
+                fun() -> append_locked(StreamId, ExpectedSequence, Events) end,
+                [node()],
+                infinity
+            );
+        {error, _} = Error ->
+            Error
+    end.
+
+append_locked(StreamId, ExpectedSequence, Events) ->
+    EventTable = event_table_name(),
+    ActualSequence = stream_sequence(EventTable, StreamId),
+    case ExpectedSequence =:= ActualSequence of
         false ->
+            {error, {wrong_expected_sequence, ExpectedSequence, ActualSequence}};
+        true ->
+            append_at_sequence(EventTable, ExpectedSequence, Events)
+    end.
+
+append_at_sequence(_EventTable, ExpectedSequence, []) ->
+    {ok, ExpectedSequence};
+append_at_sequence(EventTable, ExpectedSequence, Events) ->
+    NumEvents = length(Events),
+    PositionCounterTable = position_counter_table_name(),
+    NewPosition = ets:update_counter(PositionCounterTable, global_position, NumEvents),
+    Records = records_with_positions(Events, NewPosition - NumEvents),
+    case ets:insert_new(EventTable, Records) of
+        true ->
+            {ok, ExpectedSequence + NumEvents};
+        false ->
+            _ = ets:update_counter(PositionCounterTable, global_position, -NumEvents),
             {error, duplicate_event}
     end.
+
+records_with_positions([], _Position) ->
+    [];
+records_with_positions([Event | Rest], Position) ->
+    [event_to_record(Event, Position) | records_with_positions(Rest, Position + 1)].
+
+stream_sequence(EventTable, StreamId) ->
+    ets:foldl(
+        fun
+            (#event_record{stream_id = EventStream, sequence = Sequence}, Actual) when
+                EventStream =:= StreamId, Sequence > Actual
+            ->
+                Sequence;
+            (_, Actual) ->
+                Actual
+        end,
+        0,
+        EventTable
+    ).
 
 -spec fold(StreamId, Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
     StreamId :: stream_id(),
