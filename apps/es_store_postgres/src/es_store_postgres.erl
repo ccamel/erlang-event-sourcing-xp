@@ -12,7 +12,7 @@ sequence numbers and global positions are both ordered by SQL queries.
 -behaviour(es_contract_snapshot_store).
 -behaviour(gen_server).
 
--export([start/0, stop/0, start_link/0, append/2, fold/4, fold_all/3, store/1, load_latest/1]).
+-export([start/0, stop/0, start_link/0, append/3, fold/4, fold_all/3, store/1, load_latest/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -type stream_id() :: es_contract_event:stream_id().
@@ -25,8 +25,10 @@ sequence numbers and global positions are both ordered by SQL queries.
 -define(SERVER, ?MODULE).
 -define(INSERT_EVENT_SQL,
     "INSERT INTO es_events (aggregate_type, event_type, occurred_at, stream_id, sequence, event) "
-    "VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (stream_id, sequence) DO NOTHING"
+    "VALUES ($1, $2, $3, $4, $5, $6)"
 ).
+%% ponytail: global append lock; partition only with a commit-ordered position allocator.
+-define(EVENT_LOG_LOCK_SQL, "SELECT pg_advisory_xact_lock(1211474465, 1896208284)").
 -define(UPSERT_SNAPSHOT_SQL,
     "INSERT INTO es_snapshots (stream_id, sequence, snapshot) VALUES ($1, $2, $3) "
     "ON CONFLICT (stream_id) DO UPDATE SET sequence = EXCLUDED.sequence, "
@@ -55,11 +57,14 @@ stop() ->
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--spec append(stream_id(), [event()]) -> ok | {error, term()}.
-append(_StreamId, []) ->
-    ok;
-append(StreamId, Events) ->
-    gen_server:call(?SERVER, {append, StreamId, Events}, infinity).
+-spec append(stream_id(), sequence(), [event()]) -> {ok, sequence()} | {error, term()}.
+append(StreamId, ExpectedSequence, Events) ->
+    case es_contract_event_store:validate_append(StreamId, ExpectedSequence, Events) of
+        ok ->
+            gen_server:call(?SERVER, {append, StreamId, ExpectedSequence, Events}, infinity);
+        {error, _} = Error ->
+            Error
+    end.
 
 -spec fold(
     stream_id(), fun((event(), sequence(), AccIn) -> AccOut), Acc0, es_contract_range:range()
@@ -233,8 +238,8 @@ execute_statements(Connection, [Statement | Rest]) ->
             {error, Reason}
     end.
 
-execute_request({append, _StreamId, Events}, Connection) ->
-    append_events(Connection, Events);
+execute_request({append, StreamId, ExpectedSequence, Events}, Connection) ->
+    append_events(Connection, StreamId, ExpectedSequence, Events);
 execute_request({fold, StreamId, FoldFun, Acc0, Range}, Connection) ->
     fold_stream(Connection, StreamId, FoldFun, Acc0, Range);
 execute_request({fold_all, FoldFun, Acc0, Range}, Connection) ->
@@ -249,22 +254,57 @@ request_error({store, _Snapshot}, Reason) ->
 request_error(_Request, Reason) ->
     {error, Reason}.
 
--spec append_events(pid(), [event()]) -> ok | {error, term()}.
-append_events(Connection, Events) ->
+-spec append_events(pid(), stream_id(), sequence(), [event()]) ->
+    {ok, sequence()} | {error, term()}.
+append_events(Connection, StreamId, ExpectedSequence, Events) ->
     try
         epgsql:with_transaction(Connection, fun(TransactionConnection) ->
-            insert_events(TransactionConnection, Events)
+            ok = lock_event_log(TransactionConnection),
+            ActualSequence = stream_sequence(TransactionConnection, StreamId),
+            case ActualSequence of
+                ExpectedSequence ->
+                    ok = insert_events(TransactionConnection, Events),
+                    {ok, ExpectedSequence + length(Events)};
+                _ ->
+                    {error, {wrong_expected_sequence, ExpectedSequence, ActualSequence}}
+            end
         end)
     of
-        ok ->
-            ok;
-        {rollback, duplicate_event} ->
-            {error, duplicate_event};
+        {ok, _} = Result ->
+            Result;
+        {error, _} = Error ->
+            Error;
         {rollback, Reason} ->
             {error, Reason}
     catch
         Class:Reason ->
             {error, {Class, Reason}}
+    end.
+
+-spec lock_event_log(pid()) -> ok.
+lock_event_log(Connection) ->
+    case epgsql:equery(Connection, ?EVENT_LOG_LOCK_SQL) of
+        {ok, _Count} ->
+            ok;
+        {ok, _Columns, _Rows} ->
+            ok;
+        {error, Reason} ->
+            error({event_log_lock_failed, Reason})
+    end.
+
+-spec stream_sequence(pid(), stream_id()) -> sequence().
+stream_sequence(Connection, StreamId) ->
+    case
+        epgsql:equery(
+            Connection,
+            "SELECT COALESCE(MAX(sequence), 0) FROM es_events WHERE stream_id = $1",
+            [encode(StreamId)]
+        )
+    of
+        {ok, _Columns, [{ActualSequence}]} ->
+            ActualSequence;
+        {error, Reason} ->
+            error({stream_sequence_failed, Reason})
     end.
 
 -spec insert_events(pid(), [event()]) -> ok.
@@ -295,8 +335,6 @@ insert_events(
     of
         {ok, 1} ->
             insert_events(Connection, Rest);
-        {ok, 0} ->
-            error(duplicate_event);
         {error, Reason} ->
             error({insert_failed, Reason})
     end.

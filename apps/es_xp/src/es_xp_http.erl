@@ -122,6 +122,14 @@ reply_dispatch({error, insufficient_funds}, Req0) ->
     reply_json(422, #{error => <<"insufficient_funds">>}, Req0);
 reply_dispatch({error, invalid_command}, Req0) ->
     reply_json(400, #{error => <<"invalid_command">>}, Req0);
+reply_dispatch({error, {wrong_expected_sequence, Expected, Actual}}, Req0) ->
+    reply_json(
+        409,
+        #{
+            error => <<"wrong_expected_sequence">>, expected => Expected, actual => Actual
+        },
+        Req0
+    );
 reply_dispatch({error, _Reason}, Req0) ->
     reply_json(500, #{error => <<"internal_error">>}, Req0).
 

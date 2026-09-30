@@ -51,7 +51,7 @@ stores_latest_checkpoint_across_restart() ->
 
 projection_runner_uses_file_checkpoint_store() ->
     Event = es_kernel_store:new_event(?STREAM, user, created, 1, erlang:system_time(), #{}),
-    ?assertEqual(ok, es_kernel_store:append(?STORE, ?STREAM, [Event])),
+    ?assertEqual({ok, 1}, es_kernel_store:append(?STORE, ?STREAM, 0, [Event])),
     {ok, Pid} = es_projection:start_link(
         ?STORE,
         es_projection_collect,

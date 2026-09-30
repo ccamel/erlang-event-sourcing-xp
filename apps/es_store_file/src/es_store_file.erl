@@ -14,7 +14,7 @@ configurable root directory.
     stop/0,
     fold/4,
     fold_all/3,
-    append/2,
+    append/3,
     store/1,
     load_latest/1
 ]).
@@ -30,50 +30,114 @@ configurable root directory.
 -type snapshot() :: es_contract_snapshot:t().
 -type snapshot_data() :: es_contract_snapshot:state().
 
+-type journal_entry() :: {es_contract_event_store:position(), event()}.
+
 -define(DEFAULT_ROOT_DIR, "./data/store").
 -define(EVENTS_SUBDIR, "events").
 -define(SNAPSHOTS_SUBDIR, "snapshots").
 -define(EVENT_EXT, ".log").
 -define(SNAPSHOT_EXT, ".snap").
--define(POSITION_COUNTER_FILE, "position_counter").
--define(GLOBAL_INDEX_FILE, "global_index.dat").
+-define(JOURNAL_FILE, "event_log.dat").
+-define(LEGACY_GLOBAL_INDEX_FILE, "global_index.dat").
 
--spec start() -> ok.
+-spec start() -> ok | {error, term()}.
 start() ->
-    ok = ensure_dir(events_dir()),
-    ok = ensure_dir(snapshots_dir()),
-    ok = ensure_position_counter().
+    case ensure_dir(events_dir()) of
+        ok ->
+            case ensure_dir(snapshots_dir()) of
+                ok ->
+                    global:trans(lock_id(), fun initialize_journal/0);
+                {error, _} = Error ->
+                    Error
+            end;
+        {error, _} = Error ->
+            Error
+    end.
 
 -spec stop() -> ok.
 stop() ->
     ok.
 
--spec append(StreamId, Events) -> ok | {error, Reason} when
+-spec append(StreamId, ExpectedSequence, Events) ->
+    {ok, NewSequence} | {error, Reason}
+when
     StreamId :: stream_id(),
+    ExpectedSequence :: sequence(),
     Events :: [event()],
+    NewSequence :: sequence(),
     Reason :: term().
-append(_StreamId, []) ->
-    ok;
-append(StreamId, [#{aggregate_type := AggregateType} | _] = Events) ->
-    BaseName = stream_basename(AggregateType, StreamId),
-    Path = event_file_path(BaseName),
-    ensure_dir(events_dir()),
-    case ensure_unique(Path, Events) of
+append(StreamId, ExpectedSequence, Events) ->
+    case es_contract_event_store:validate_append(StreamId, ExpectedSequence, Events) of
         ok ->
-            case persist_events(Path, Events) of
-                ok ->
-                    NumEvents = length(Events),
-                    StartPosition = allocate_positions(NumEvents),
-                    EventsWithPositions = lists:zip(
-                        Events, lists:seq(StartPosition, StartPosition + NumEvents - 1)
-                    ),
-                    append_to_global_index(EventsWithPositions, Path);
-                {error, Reason} ->
-                    {error, Reason}
+            global:trans(
+                lock_id(),
+                fun() -> append_locked(StreamId, ExpectedSequence, Events) end
+            );
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+-spec append_locked(stream_id(), sequence(), [event()]) ->
+    {ok, sequence()} | {error, term()}.
+append_locked(StreamId, ExpectedSequence, Events) ->
+    case read_committed_entries() of
+        {ok, Entries} ->
+            ActualSequence = stream_sequence(StreamId, Entries),
+            case ActualSequence =:= ExpectedSequence of
+                true ->
+                    append_entries(Entries, ExpectedSequence, Events);
+                false ->
+                    {error, {wrong_expected_sequence, ExpectedSequence, ActualSequence}}
             end;
         {error, Reason} ->
             {error, Reason}
     end.
+
+-spec append_entries([journal_entry()], sequence(), [event()]) ->
+    {ok, sequence()} | {error, term()}.
+append_entries(_Entries, ExpectedSequence, []) ->
+    {ok, ExpectedSequence};
+append_entries(Entries, ExpectedSequence, Events) ->
+    NewEntries = Entries ++ events_with_positions(next_global_position(Entries), Events),
+    case replace_journal(NewEntries) of
+        ok ->
+            {ok, ExpectedSequence + length(Events)};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+-spec stream_sequence(stream_id(), [journal_entry()]) -> sequence().
+stream_sequence(StreamId, Entries) ->
+    lists:foldl(
+        fun
+            ({_, #{stream_id := EventStream, sequence := Sequence}}, ActualSequence) when
+                EventStream =:= StreamId
+            ->
+                max(Sequence, ActualSequence);
+            (_, ActualSequence) ->
+                ActualSequence
+        end,
+        0,
+        Entries
+    ).
+
+-spec events_with_positions(es_contract_event_store:position(), [event()]) -> [journal_entry()].
+events_with_positions(Position, Events) ->
+    events_with_positions(Position, Events, []).
+
+-spec events_with_positions(es_contract_event_store:position(), [event()], [journal_entry()]) ->
+    [journal_entry()].
+events_with_positions(_Position, [], Acc) ->
+    lists:reverse(Acc);
+events_with_positions(Position, [Event | Rest], Acc) ->
+    events_with_positions(Position + 1, Rest, [{Position, Event} | Acc]).
+
+-spec next_global_position([journal_entry()]) -> es_contract_event_store:position().
+next_global_position([]) ->
+    0;
+next_global_position(Entries) ->
+    {Position, _} = lists:last(Entries),
+    Position + 1.
 
 -spec fold(StreamId, Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
     StreamId :: stream_id(),
@@ -90,65 +154,31 @@ append(StreamId, [#{aggregate_type := AggregateType} | _] = Events) ->
     AccIn :: term(),
     AccOut :: term(),
     Reason :: term().
-fold(StreamId, FoldFun, InitialAcc, Range) when
-    is_function(FoldFun, 3)
-->
+fold(StreamId, FoldFun, InitialAcc, Range) when is_function(FoldFun, 3) ->
     From = es_contract_range:lower_bound(Range),
     To = es_contract_range:upper_bound(Range),
     case read_events_for_stream(StreamId) of
         {ok, Events} ->
-            Filtered = [
-                E
-             || E <- Events,
-                #{sequence := Seq} <- [E],
-                within_range(Seq, From, To)
-            ],
-            Result = lists:foldl(
-                fun(#{sequence := Seq} = Event, Acc) -> FoldFun(Event, Seq, Acc) end,
-                InitialAcc,
-                Filtered
-            ),
-            {ok, Result};
+            {ok, fold_stream_events(Events, FoldFun, InitialAcc, From, To)};
         {error, not_found} ->
             {ok, InitialAcc};
         {error, Reason} ->
             {error, Reason}
     end.
 
--spec ensure_unique(file:filename(), [event()]) -> ok | {error, term()}.
-ensure_unique(Path, Events) ->
-    case read_terms(Path) of
-        {ok, Existing} ->
-            ExistingIds = sets:from_list([es_contract_event:key(E) || E <- Existing]),
-            case
-                lists:any(
-                    fun(E) -> sets:is_element(es_contract_event:key(E), ExistingIds) end, Events
-                )
-            of
-                true ->
-                    {error, duplicate_event};
-                false ->
-                    ok
-            end;
-        {error, not_found} ->
-            ok;
-        {error, Reason} ->
-            {error, Reason}
+fold_stream_events([], _FoldFun, Acc, _From, _To) ->
+    Acc;
+fold_stream_events([#{sequence := Sequence} = Event | Rest], FoldFun, Acc, From, To) ->
+    case within_range(Sequence, From, To) of
+        true ->
+            fold_stream_events(Rest, FoldFun, FoldFun(Event, Sequence, Acc), From, To);
+        false ->
+            fold_stream_events(Rest, FoldFun, Acc, From, To)
     end.
 
--spec persist_events(file:filename(), [event()]) -> ok | {error, term()}.
-persist_events(Path, Events) ->
-    IoData = [serialize_to_line(E) || E <- Events],
-    case file:write_file(Path, IoData, [append]) of
-        ok ->
-            ok;
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
--spec serialize_to_line(event() | snapshot()) -> iolist().
+-spec serialize_to_line(journal_entry() | snapshot()) -> binary().
 serialize_to_line(Term) ->
-    [io_lib:format("~0p", [Term]), ".\n"].
+    unicode:characters_to_binary(io_lib:format("~0p.~n", [Term])).
 
 -spec within_range(sequence(), sequence() | 0, sequence() | infinity) -> boolean().
 within_range(Seq, From, infinity) ->
@@ -158,12 +188,23 @@ within_range(Seq, From, To) ->
 
 -spec read_events_for_stream(stream_id()) -> {ok, [event()]} | {error, not_found | term()}.
 read_events_for_stream(StreamId) ->
-    case locate_event_file(StreamId) of
-        {ok, Path} ->
-            read_terms(Path);
+    case read_committed_entries() of
+        {ok, Entries} ->
+            {ok, stream_events(StreamId, Entries)};
         {error, Reason} ->
             {error, Reason}
     end.
+
+-spec stream_events(stream_id(), [journal_entry()]) -> [event()].
+stream_events(StreamId, Entries) ->
+    lists:sort(
+        fun(#{sequence := First}, #{sequence := Second}) -> First =< Second end,
+        [
+            Event
+         || {_, #{stream_id := EventStreamId} = Event} <- Entries,
+            EventStreamId =:= StreamId
+        ]
+    ).
 
 -spec store(Snapshot) -> ok | {warning, Reason} when
     Snapshot :: snapshot(),
@@ -172,7 +213,7 @@ store(#{aggregate_type := AggregateType, stream_id := StreamId} = Snapshot) ->
     try
         BaseName = stream_basename(AggregateType, StreamId),
         Path = snapshot_file_path(BaseName),
-        ensure_dir(snapshots_dir()),
+        ok = ensure_dir(snapshots_dir()),
         case file:write_file(Path, serialize_to_line(Snapshot), []) of
             ok -> ok;
             {error, Error} -> {warning, {write_error, Error}}
@@ -202,8 +243,7 @@ load_latest(StreamId) ->
             erlang:error(Reason)
     end.
 
--spec read_terms(string()) ->
-    {ok, [event() | snapshot()]} | {error, atom() | {integer(), atom(), term()}}.
+-spec read_terms(file:filename()) -> {ok, [term()]} | {error, term()}.
 read_terms(Path) ->
     case file:consult(Path) of
         {ok, Terms} ->
@@ -213,10 +253,6 @@ read_terms(Path) ->
         {error, Reason} ->
             {error, Reason}
     end.
-
--spec locate_event_file(stream_id()) -> {ok, file:filename()} | {error, term()}.
-locate_event_file(StreamId) ->
-    locate_stream_file(events_dir(), sanitize(StreamId), ?EVENT_EXT).
 
 -spec locate_snapshot_file(stream_id()) -> {ok, file:filename()} | {error, term()}.
 locate_snapshot_file(StreamId) ->
@@ -247,10 +283,6 @@ events_dir() ->
 snapshots_dir() ->
     filename:join(root_dir(), ?SNAPSHOTS_SUBDIR).
 
--spec event_file_path(string()) -> file:filename().
-event_file_path(BaseName) ->
-    filename:join(events_dir(), BaseName ++ ?EVENT_EXT).
-
 -spec snapshot_file_path(string()) -> file:filename().
 snapshot_file_path(BaseName) ->
     filename:join(snapshots_dir(), BaseName ++ ?SNAPSHOT_EXT).
@@ -259,7 +291,7 @@ snapshot_file_path(BaseName) ->
 root_dir() ->
     to_string(application:get_env(es_store_file, root_dir, ?DEFAULT_ROOT_DIR)).
 
--spec ensure_dir(file:filename()) -> ok.
+-spec ensure_dir(string()) -> ok | {error, atom()}.
 ensure_dir(Dir) ->
     filelib:ensure_dir(filename:join(Dir, ".keep")).
 
@@ -303,43 +335,7 @@ to_string(Value) when is_binary(Value) ->
 to_string(Value) when is_atom(Value) ->
     atom_to_list(Value).
 
-%% Position counter and global index management
-
--spec ensure_position_counter() -> ok.
-ensure_position_counter() ->
-    Path = position_counter_path(),
-    case filelib:is_file(Path) of
-        true ->
-            ok;
-        false ->
-            ensure_dir(root_dir()),
-            file:write_file(Path, term_to_binary(0))
-    end.
-
--spec allocate_positions(non_neg_integer()) -> es_contract_event_store:position().
-allocate_positions(NumEvents) ->
-    Path = position_counter_path(),
-    {ok, Binary} = file:read_file(Path),
-    CurrentPosition = binary_to_term(Binary),
-    NewPosition = CurrentPosition + NumEvents,
-    ok = file:write_file(Path, term_to_binary(NewPosition)),
-    CurrentPosition.
-
--spec append_to_global_index([{event(), es_contract_event_store:position()}], file:filename()) ->
-    ok | {error, term()}.
-append_to_global_index(EventsWithPositions, EventFilePath) ->
-    IndexPath = global_index_path(),
-    IndexEntries = [
-        {Position, EventFilePath, es_contract_event:key(Event)}
-     || {Event, Position} <- EventsWithPositions
-    ],
-    IoData = [io_lib:format("~0p.~n", [Entry]) || Entry <- IndexEntries],
-    case file:write_file(IndexPath, IoData, [append]) of
-        ok ->
-            ok;
-        {error, Reason} ->
-            {error, Reason}
-    end.
+%% Canonical event log
 
 -spec fold_all(Fun, Acc0, Range) -> {ok, Acc1} | {error, Reason} when
     Fun :: fun((Event :: event(), Position :: es_contract_event_store:position(), AccIn) -> AccOut),
@@ -352,61 +348,238 @@ append_to_global_index(EventsWithPositions, EventFilePath) ->
 fold_all(FoldFun, InitialAcc, Range) when is_function(FoldFun, 3) ->
     From = es_contract_range:lower_bound(Range),
     To = es_contract_range:upper_bound(Range),
-    IndexPath = global_index_path(),
-    case file:consult(IndexPath) of
-        {ok, IndexEntries} ->
-            %% Filter by position range
-            Filtered = [
-                {Position, FilePath, Key}
-             || {Position, FilePath, Key} <- IndexEntries,
-                within_range(Position, From, To)
-            ],
-            Sorted = lists:sort(fun({P1, _, _}, {P2, _, _}) -> P1 =< P2 end, Filtered),
-            fold_global_entries(Sorted, FoldFun, InitialAcc);
-        {error, enoent} ->
-            {ok, InitialAcc};
+    case read_committed_entries() of
+        {ok, Entries} ->
+            {ok, fold_global_entries(Entries, FoldFun, InitialAcc, From, To)};
         {error, Reason} ->
             {error, Reason}
     end.
 
--spec fold_global_entries(
-    [{es_contract_event_store:position(), file:filename(), es_contract_event:key()}],
-    fun((event(), es_contract_event_store:position(), AccIn) -> AccOut),
-    AccIn
-) ->
-    {ok, AccOut} | {error, term()}
-when
-    AccIn :: term(),
-    AccOut :: term().
-fold_global_entries([], _FoldFun, Acc) ->
-    {ok, Acc};
-fold_global_entries([{Position, FilePath, Key} | Rest], FoldFun, Acc) ->
-    case load_event_by_key(FilePath, Key) of
-        {ok, Event} ->
-            fold_global_entries(Rest, FoldFun, FoldFun(Event, Position, Acc));
-        {error, Reason} ->
-            {error, {missing_global_index_event, Position, FilePath, Key, Reason}}
+fold_global_entries([], _FoldFun, Acc, _From, _To) ->
+    Acc;
+fold_global_entries([{Position, Event} | Rest], FoldFun, Acc, From, To) ->
+    case within_range(Position, From, To) of
+        true ->
+            fold_global_entries(Rest, FoldFun, FoldFun(Event, Position, Acc), From, To);
+        false ->
+            fold_global_entries(Rest, FoldFun, Acc, From, To)
     end.
 
--spec load_event_by_key(file:filename(), es_contract_event:key()) ->
-    {ok, event()} | {error, not_found}.
-load_event_by_key(FilePath, Key) ->
-    case read_terms(FilePath) of
-        {ok, Events} ->
-            case lists:search(fun(E) -> es_contract_event:key(E) =:= Key end, Events) of
-                {value, Event} ->
-                    {ok, Event};
-                false ->
-                    {error, not_found}
+-spec read_committed_entries() -> {ok, [journal_entry()]} | {error, term()}.
+read_committed_entries() ->
+    case read_journal_entries() of
+        {ok, Entries} ->
+            {ok, Entries};
+        {error, not_found} ->
+            case legacy_data_present() of
+                {ok, false} ->
+                    {ok, []};
+                {ok, true} ->
+                    {error, legacy_migration_required};
+                {error, Reason} ->
+                    {error, Reason}
             end;
-        {error, _} ->
-            {error, not_found}
+        {error, Reason} ->
+            {error, Reason}
     end.
 
--spec position_counter_path() -> file:filename().
-position_counter_path() ->
-    filename:join(root_dir(), ?POSITION_COUNTER_FILE).
+-spec read_journal_entries() -> {ok, [journal_entry()]} | {error, term()}.
+read_journal_entries() ->
+    case read_terms(journal_path()) of
+        {ok, Entries} ->
+            validate_journal_entries(Entries);
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
--spec global_index_path() -> file:filename().
-global_index_path() ->
-    filename:join(root_dir(), ?GLOBAL_INDEX_FILE).
+-spec validate_journal_entries([term()]) -> {ok, [journal_entry()]} | {error, invalid_journal}.
+validate_journal_entries(Entries) ->
+    case lists:all(fun is_journal_entry/1, Entries) of
+        true ->
+            SortedEntries = lists:keysort(1, Entries),
+            case unique_positions(SortedEntries) of
+                true ->
+                    {ok, SortedEntries};
+                false ->
+                    {error, invalid_journal}
+            end;
+        false ->
+            {error, invalid_journal}
+    end.
+
+-spec is_journal_entry(term()) -> boolean().
+is_journal_entry({Position, #{stream_id := _, sequence := Sequence}}) when
+    is_integer(Position), Position >= 0, is_integer(Sequence), Sequence >= 0
+->
+    true;
+is_journal_entry(_) ->
+    false.
+
+-spec unique_positions([journal_entry()]) -> boolean().
+unique_positions([]) ->
+    true;
+unique_positions([{Position, _} | Rest]) ->
+    unique_positions(Rest, Position).
+
+-spec unique_positions([journal_entry()], es_contract_event_store:position()) -> boolean().
+unique_positions([], _PreviousPosition) ->
+    true;
+unique_positions([{Position, _} | _Rest], Position) ->
+    false;
+unique_positions([{Position, _} | Rest], _PreviousPosition) ->
+    unique_positions(Rest, Position).
+
+%% A legacy split log must be checked and committed as a canonical journal at startup.
+-spec legacy_data_present() -> {ok, boolean()} | {error, atom() | {no_translation, binary()}}.
+legacy_data_present() ->
+    case legacy_event_files_present() of
+        {ok, true} ->
+            {ok, true};
+        {ok, false} ->
+            legacy_global_index_present();
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+-spec legacy_event_files_present() ->
+    {ok, boolean()} | {error, atom() | {no_translation, binary()}}.
+legacy_event_files_present() ->
+    case file:list_dir(events_dir()) of
+        {ok, Names} ->
+            {ok, lists:any(fun is_legacy_event_file/1, Names)};
+        {error, enoent} ->
+            {ok, false};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+-spec is_legacy_event_file(file:filename_all()) -> boolean().
+is_legacy_event_file(Name) when is_binary(Name) ->
+    filename:extension(Name) =:= list_to_binary(?EVENT_EXT);
+is_legacy_event_file(Name) ->
+    filename:extension(Name) =:= ?EVENT_EXT.
+
+-spec legacy_global_index_present() -> {ok, boolean()} | {error, atom()}.
+legacy_global_index_present() ->
+    case file:read_file_info(legacy_global_index_path()) of
+        {ok, _} ->
+            {ok, true};
+        {error, enoent} ->
+            {ok, false};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+-spec initialize_journal() ->
+    ok | {error, atom() | {no_translation, binary()} | {integer(), atom(), term()}}.
+initialize_journal() ->
+    case read_journal_entries() of
+        {ok, _} ->
+            ok;
+        {error, not_found} ->
+            case legacy_data_present() of
+                {ok, true} -> migrate_legacy_journal();
+                {ok, false} -> ok;
+                {error, _} = Error -> Error
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+%% Keep the old files as a backup, but only commit a migrated log when its
+%% index accounts for every stored event and preserves the global positions.
+-spec migrate_legacy_journal() -> ok | {error, atom() | {integer(), atom(), term()}}.
+migrate_legacy_journal() ->
+    case read_terms(legacy_global_index_path()) of
+        {ok, Index} ->
+            try
+                Paths = filelib:wildcard(filename:join(events_dir(), "*" ++ ?EVENT_EXT)),
+                Events = lists:flatmap(
+                    fun(Path) ->
+                        {ok, Terms} = read_terms(Path),
+                        Terms
+                    end,
+                    Paths
+                ),
+                ByKey = maps:from_list([{es_contract_event:key(Event), Event} || Event <- Events]),
+                true = map_size(ByKey) =:= length(Events),
+                Entries = [{Position, maps:get(Key, ByKey)} || {Position, _Path, Key} <- Index],
+                true = length(Entries) =:= length(Events),
+                true = lists:sort([Key || {_, _, Key} <- Index]) =:= lists:sort(maps:keys(ByKey)),
+                {ok, OrderedEntries} = validate_journal_entries(Entries),
+                replace_journal(OrderedEntries)
+            catch
+                _:_ -> {error, legacy_migration_required}
+            end;
+        {error, not_found} ->
+            {error, legacy_migration_required};
+        {error, _} = Error ->
+            Error
+    end.
+
+-spec replace_journal([journal_entry()]) -> ok | {error, term()}.
+replace_journal(Entries) ->
+    case ensure_dir(root_dir()) of
+        ok ->
+            Path = journal_path(),
+            TemporaryPath = journal_temporary_path(Path),
+            case write_journal(TemporaryPath, Entries) of
+                ok ->
+                    case file:rename(TemporaryPath, Path) of
+                        ok ->
+                            ok;
+                        {error, Reason} ->
+                            _ = file:delete(TemporaryPath),
+                            {error, Reason}
+                    end;
+                {error, Reason} ->
+                    _ = file:delete(TemporaryPath),
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% ponytail: full-log replacement is O(n); use a transactional store when log size matters.
+-spec write_journal(file:filename(), [journal_entry()]) -> ok | {error, term()}.
+write_journal(Path, Entries) ->
+    case file:open(Path, [write, raw, binary]) of
+        {ok, Device} ->
+            WriteResult = file:write(Device, [serialize_to_line(Entry) || Entry <- Entries]),
+            SyncResult =
+                case WriteResult of
+                    ok ->
+                        file:sync(Device);
+                    {error, _} = Error ->
+                        Error
+                end,
+            CloseResult = file:close(Device),
+            journal_write_result(SyncResult, CloseResult);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+-spec journal_write_result(ok | {error, atom()}, ok | {error, atom()}) -> ok | {error, atom()}.
+journal_write_result(ok, ok) ->
+    ok;
+journal_write_result({error, Reason}, _CloseResult) ->
+    {error, Reason};
+journal_write_result(ok, {error, Reason}) ->
+    {error, Reason}.
+
+-spec lock_id() -> {{?MODULE, binary() | string()}, pid()}.
+%% ponytail: one shared-root append lock; use PostgreSQL/Mnesia for independent VMs.
+lock_id() ->
+    {{?MODULE, filename:absname(root_dir())}, self()}.
+
+-spec journal_path() -> file:filename().
+journal_path() ->
+    filename:join(root_dir(), ?JOURNAL_FILE).
+
+-spec journal_temporary_path(file:filename()) -> file:filename().
+journal_temporary_path(Path) ->
+    Path ++ ".tmp." ++ integer_to_list(erlang:unique_integer([positive, monotonic])).
+
+-spec legacy_global_index_path() -> file:filename().
+legacy_global_index_path() ->
+    filename:join(root_dir(), ?LEGACY_GLOBAL_INDEX_FILE).

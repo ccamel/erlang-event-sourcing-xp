@@ -22,6 +22,8 @@ it to the correct aggregate process.
 - Command is the command to dispatch.
 
 Function returns `ok` on success, or `{error, Reason}` if routing or execution fails.
+Version conflicts return `{error, {wrong_expected_sequence, Expected, Actual}}`.
+The aggregate refreshes its state but does not retry the rejected command.
 """.
 -spec dispatch(Command) -> ok | {error, Reason} when
     Command :: es_contract_command:t(),

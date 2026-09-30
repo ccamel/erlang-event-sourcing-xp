@@ -14,7 +14,7 @@ Both may be the same module if it implements both event and snapshot storage.
 -define(PROJECTION_PG_SCOPE, es_projection_pg).
 
 -export([
-    append/3,
+    append/4,
     fold/5,
     fold_all/3,
     fold_all/4,
@@ -32,44 +32,34 @@ Both may be the same module if it implements both event and snapshot storage.
 -type store_context() :: {store_backend(), store_backend()}.
 
 -doc """
-Appends a list of events to the event store using the specified store module.
-
-This is the primary mechanism for persisting domain events. All events in the list
-must target the same stream and have unique identifiers. The store backend ensures
-atomic persistence and maintains sequence ordering.
+Atomically append a contiguous batch at the expected stream sequence.
+`0` means an empty stream; the first event has sequence `1`.
+Conflicts return `{error, {wrong_expected_sequence, Expected, Actual}}`.
 """.
--spec append(StoreContext, StreamId, Events) -> ok | {error, Reason} when
+-spec append(StoreContext, StreamId, ExpectedSequence, Events) ->
+    {ok, NewSequence} | {error, Reason}
+when
     StoreContext :: store_context(),
     StreamId :: es_contract_event:stream_id(),
+    ExpectedSequence :: es_contract_event:sequence(),
     Events :: [es_contract_event:t()],
+    NewSequence :: es_contract_event:sequence(),
     Reason :: term().
-append({EventModule, _} = StoreContext, StreamId, Events) when is_list(Events) ->
-    %% Validate that all events target the same StreamId
-    ok = lists:foreach(
-        fun(#{stream_id := EventStreamId}) ->
-            case EventStreamId of
-                StreamId ->
-                    ok;
-                WrongStreamId ->
-                    erlang:error({badarg, WrongStreamId})
-            end
-        end,
-        Events
-    ),
-
-    %% Detect duplicates (same event id twice in the batch)
-    SeenIds = [es_contract_event:key(E) || E <- Events],
-    case length(SeenIds) =:= length(lists:usort(SeenIds)) of
-        true ->
-            case EventModule:append(StreamId, Events) of
-                ok ->
-                    notify_projections(StoreContext),
-                    ok;
+append({EventModule, _} = StoreContext, StreamId, ExpectedSequence, Events) ->
+    case es_contract_event_store:validate_append(StreamId, ExpectedSequence, Events) of
+        ok ->
+            case EventModule:append(StreamId, ExpectedSequence, Events) of
+                {ok, _} = Result ->
+                    case Events of
+                        [] -> ok;
+                        _ -> notify_projections(StoreContext)
+                    end,
+                    Result;
                 {error, _} = Error ->
                     Error
             end;
-        false ->
-            {error, duplicate_event}
+        {error, _} = Error ->
+            Error
     end.
 
 -spec notify_projections(store_context()) -> ok.
