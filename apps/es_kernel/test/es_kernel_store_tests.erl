@@ -24,6 +24,7 @@ suite_test_() ->
             {"fold_all_range", fun fold_all_range/1},
             {"fetch_streams_event", fun fetch_streams_event/1},
             {"wrong_stream_id", fun wrong_stream_id/1},
+            {"backend_rejects_invalid_direct_append", fun backend_rejects_invalid_direct_append/1},
             {"append_conflicts_and_duplicate_batch_atomicity",
                 fun append_conflicts_and_duplicate_batch_atomicity/1},
             {"two_writer_conflict_and_batch_atomicity",
@@ -40,7 +41,11 @@ suite_test_() ->
         ],
     CompositeTests = [
         {"composite_store_supports_mixed_backends", fun composite_store_supports_mixed_backends/0},
-        {"file_legacy_log_migration", fun file_legacy_log_migration/0}
+        {"file_journal_validation", fun file_journal_validation/0},
+        {"file_legacy_log_migration", fun file_legacy_log_migration/0},
+        {"file_store_application_lifecycle", fun file_store_application_lifecycle/0},
+        {"file_store_application_rejects_invalid_root",
+            fun file_store_application_rejects_invalid_root/0}
     ],
     {foreach, fun setup/0, fun teardown/1, TestCases ++ CompositeTests}.
 
@@ -347,6 +352,11 @@ wrong_stream_id(Store) ->
             Store, ?STREAM_B, es_contract_range:new(0, infinity)
         )
     ),
+    ?assertEqual(ok, stop_store(Store)).
+
+backend_rejects_invalid_direct_append({EventStore, _} = Store) ->
+    ?assertEqual(ok, start_store(Store)),
+    ?assertEqual({error, invalid_expected_sequence}, EventStore:append(?STREAM_A, -1, [])),
     ?assertEqual(ok, stop_store(Store)).
 
 append_conflicts_and_duplicate_batch_atomicity(Store) ->
@@ -678,6 +688,19 @@ all_events(Store) ->
 store_label({EventStore, SnapshotStore}) ->
     lists:flatten(io_lib:format("~p-~p", [EventStore, SnapshotStore])).
 
+file_journal_validation() ->
+    {ok, Root} = application:get_env(es_store_file, root_dir),
+    JournalPath = filename:join(Root, "event_log.dat"),
+    ok = filelib:ensure_dir(JournalPath),
+    ok = file:write_file(JournalPath, io_lib:format("~0p.~n", [invalid_journal_entry])),
+    ?assertEqual({error, invalid_journal}, es_store_file:start()),
+    Event = #{stream_id => ?STREAM_A, sequence => 1},
+    ok = file:write_file(JournalPath, io_lib:format("~0p.~n~0p.~n", [{0, Event}, {0, Event}])),
+    ?assertEqual({error, invalid_journal}, es_store_file:start()),
+    ok = file:write_file(JournalPath, <<>>),
+    ?assertEqual(ok, es_store_file:start()),
+    ?assertEqual({ok, 0}, es_store_file:append(?STREAM_A, 0, [])).
+
 file_legacy_log_migration() ->
     {ok, Root} = application:get_env(es_store_file, root_dir),
     Path = filename:join([Root, "events", "user_legacy.log"]),
@@ -689,6 +712,14 @@ file_legacy_log_migration() ->
     },
     ok = file:write_file(Path, io_lib:format("~0p.~n", [First])),
     IndexPath = filename:join(Root, "global_index.dat"),
+    %% Reject a split log without its index rather than silently ignoring its events.
+    ?assertEqual({error, legacy_migration_required}, es_store_file:start()),
+    ?assertEqual(
+        {error, legacy_migration_required},
+        es_store_file:fold(
+            Stream, fun(_Event, _Seq, Acc) -> Acc end, ok, es_contract_range:new(0, infinity)
+        )
+    ),
     %% Refuse an incomplete legacy index rather than losing its stream event.
     ok = file:write_file(IndexPath, <<>>),
     ?assertEqual({error, legacy_migration_required}, es_store_file:start()),
@@ -719,3 +750,30 @@ file_legacy_log_migration() ->
         )
     ),
     ?assertEqual({ok, [First]}, file:consult(Path)).
+
+file_store_application_lifecycle() ->
+    {ok, Started} = application:ensure_all_started(es_kernel),
+    try
+        ?assertEqual(ok, application:start(es_store_file)),
+        ?assert(is_pid(whereis(es_store_file_sup))),
+        ?assertEqual(ok, application:stop(es_store_file))
+    after
+        stop_started_apps(Started)
+    end.
+
+file_store_application_rejects_invalid_root() ->
+    {ok, Root} = application:get_env(es_store_file, root_dir),
+    InvalidRoot = filename:join(Root, "not_a_directory"),
+    ok = filelib:ensure_dir(InvalidRoot),
+    ok = file:write_file(InvalidRoot, <<>>),
+    {ok, Started} = application:ensure_all_started(es_kernel),
+    ok = application:set_env(es_store_file, root_dir, InvalidRoot),
+    try
+        ?assertMatch({error, _}, application:start(es_store_file))
+    after
+        ok = application:set_env(es_store_file, root_dir, Root),
+        stop_started_apps(Started)
+    end.
+
+stop_started_apps(Apps) ->
+    lists:foreach(fun(App) -> ok = application:stop(App) end, lists:reverse(Apps)).
