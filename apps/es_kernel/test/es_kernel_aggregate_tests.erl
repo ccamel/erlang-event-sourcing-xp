@@ -10,7 +10,10 @@ suite_test_() ->
             {"aggregate_invalid_command", fun aggregate_invalid_command/0},
             {"aggregate_snapshot_creation", fun aggregate_snapshot_creation/0},
             {"aggregate_snapshot_rehydration", fun aggregate_snapshot_rehydration/0},
-            {"aggregate_custom_now_fun", fun aggregate_custom_now_fun/0}
+            {"aggregate_custom_now_fun", fun aggregate_custom_now_fun/0},
+            {"aggregate_concurrent_writers", fun aggregate_concurrent_writers/0},
+            {"aggregate_async_conflict_refreshes", fun aggregate_async_conflict_refreshes/0},
+            {"aggregate_event_context", fun aggregate_event_context/0}
         ],
     {foreach, fun setup/0, fun teardown/1, TestCases}.
 
@@ -235,12 +238,149 @@ aggregate_custom_now_fun() ->
         ),
 
     %% Execute a command that will persist an event
-    ?assertEqual(ok, es_kernel_aggregate:execute(Pid, cmd(deposit, AggId, #{amount => 42}))),
+    Command = es_contract_command:with_metadata(
+        #{timestamp => 0}, cmd(deposit, AggId, #{amount => 42})
+    ),
+    ?assertEqual(ok, es_kernel_aggregate:execute(Pid, Command)),
 
     %% Retrieve persisted events and assert the timestamp matches the injected Now
     Events = es_kernel_store:retrieve_events(
         StoreContext, StreamId, es_contract_range:new(0, infinity)
     ),
-    ?assertEqual(1, length(Events)),
     [#{metadata := #{timestamp := EventTimestamp}}] = Events,
     ?assertEqual(Now, EventTimestamp).
+
+aggregate_concurrent_writers() ->
+    {Id, A} = start_test_account(5000),
+    Store = es_kernel_app:get_store_context(),
+    {ok, B} = es_kernel_aggregate:start_link(bank_account, Id, Store),
+    Parent = self(),
+    Ref = make_ref(),
+    Writers = [
+        spawn_monitor(fun() ->
+            Parent ! {Ref, ready, self()},
+            receive
+                {Ref, go} ->
+                    Result = es_kernel_aggregate:execute(
+                        Pid, cmd(deposit, Id, #{amount => Amount})
+                    ),
+                    Parent ! {Ref, Pid, Result}
+            end
+        end)
+     || {Pid, Amount} <- [{A, 100}, {B, 200}]
+    ],
+    try
+        lists:foreach(
+            fun({Worker, _}) ->
+                receive
+                    {Ref, ready, Worker} -> ok
+                after 1000 -> error(writer_not_ready)
+                end
+            end,
+            Writers
+        ),
+        lists:foreach(fun({Worker, _}) -> Worker ! {Ref, go} end, Writers),
+        Results = [
+            receive
+                {Ref, Pid, Result} -> {Pid, Result}
+            after 1000 -> error(writer_timeout)
+            end
+         || _ <- Writers
+        ],
+        ?assertEqual(
+            [ok, {error, {wrong_expected_sequence, 0, 1}}],
+            lists:sort([Result || {_, Result} <- Results])
+        ),
+        [{Loser, _}] = [{Pid, Result} || {Pid, {error, _} = Result} <- Results],
+        [#{sequence := 1, payload := #{amount := Balance}}] =
+            es_kernel_store:retrieve_events(
+                Store, {bank_account, Id}, es_contract_range:new(0, infinity)
+            ),
+        %% A successful withdrawal proves the losing process survived and refreshed
+        %% from the winner's committed history; the rejected deposit was not applied.
+        ?assertEqual(
+            ok, es_kernel_aggregate:execute(Loser, cmd(withdraw, Id, #{amount => Balance}))
+        ),
+        ?assertEqual(
+            {error, insufficient_funds},
+            es_kernel_aggregate:execute(Loser, cmd(withdraw, Id, #{amount => 1}))
+        ),
+        [#{sequence := 1}, #{sequence := 2, payload := #{amount := Balance}}] =
+            es_kernel_store:retrieve_events(
+                Store, {bank_account, Id}, es_contract_range:new(0, infinity)
+            )
+    after
+        lists:foreach(
+            fun({Worker, Monitor}) ->
+                receive
+                    {'DOWN', Monitor, process, Worker, normal} -> ok
+                after 1000 -> error(writer_did_not_finish)
+                end
+            end,
+            Writers
+        ),
+        gen_server:stop(A),
+        gen_server:stop(B)
+    end.
+
+aggregate_async_conflict_refreshes() ->
+    {Id, A} = start_test_account(5000),
+    Store = es_kernel_app:get_store_context(),
+    {ok, B} = es_kernel_aggregate:start_link(bank_account, Id, Store),
+    try
+        ?assertEqual(ok, es_kernel_aggregate:execute(A, cmd(deposit, Id, #{amount => 100}))),
+        gen_server:cast(B, cmd(deposit, Id, #{amount => 200})),
+        ?assertState(B, Id, #{balance := 100}, 1),
+        ?assertEqual(ok, es_kernel_aggregate:execute(B, cmd(withdraw, Id, #{amount => 100}))),
+        gen_server:cast(B, invalid),
+        ?assertEqual(
+            {error, insufficient_funds},
+            es_kernel_aggregate:execute(B, cmd(withdraw, Id, #{amount => 1}))
+        )
+    after
+        gen_server:stop(A),
+        gen_server:stop(B)
+    end.
+
+aggregate_event_context() ->
+    {Id, Pid} = start_test_account(5000),
+    Store = es_kernel_app:get_store_context(),
+    Metadata = #{
+        correlation_id => <<"request-1">>, causation_id => <<"command-1">>, user_id => <<"user-1">>
+    },
+    Tags = [<<"tenant:one">>, <<"audit">>],
+    Command = es_contract_command:with_tags(
+        Tags,
+        es_contract_command:with_metadata(Metadata, cmd(deposit, Id, #{amount => 42}))
+    ),
+    try
+        ?assertEqual(ok, es_kernel_aggregate:execute(Pid, Command)),
+        ?assertEqual(ok, es_kernel_aggregate:execute(Pid, Command)),
+        [First, Second] = es_kernel_store:retrieve_events(
+            Store, {bank_account, Id}, es_contract_range:new(0, infinity)
+        ),
+        #{event_id := FirstId, metadata := StoredMetadata, tags := Tags} = First,
+        #{event_id := SecondId} = Second,
+        ?assertMatch(<<_:128>>, FirstId),
+        ?assertMatch(<<_:128>>, SecondId),
+        ?assertNotEqual(FirstId, SecondId),
+        ?assertEqual(Metadata, maps:remove(timestamp, StoredMetadata)),
+        gen_server:stop(Pid),
+        {ok, Rehydrated} = es_kernel_aggregate:start_link(bank_account, Id, Store),
+        try
+            ?assertEqual(
+                ok, es_kernel_aggregate:execute(Rehydrated, cmd(withdraw, Id, #{amount => 84}))
+            ),
+            [ReplayedFirst, ReplayedSecond, _] = es_kernel_store:retrieve_events(
+                Store, {bank_account, Id}, es_contract_range:new(0, infinity)
+            ),
+            ?assertEqual([First, Second], [ReplayedFirst, ReplayedSecond])
+        after
+            gen_server:stop(Rehydrated)
+        end
+    after
+        case is_process_alive(Pid) of
+            true -> gen_server:stop(Pid);
+            false -> ok
+        end
+    end.

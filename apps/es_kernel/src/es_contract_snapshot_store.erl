@@ -26,19 +26,14 @@ lifecycle management, but these are not part of this behaviour contract.
 -doc """
 Store a snapshot for a stream.
 
-This callback persists a snapshot of the aggregate state at a specific point in time,
-representing the state after applying all events up to and including the recorded
-sequence number. Snapshots are optimization aids; events remain the source of truth.
+Persist the aggregate state after applying all events through the snapshot's
+sequence. Snapshots are optional optimizations; events remain the source of truth.
 
-The snapshot record contains all necessary information: domain, stream_id, sequence,
-timestamp, and state. This design is consistent with event persistence, where complete
-records are passed rather than decomposed fields.
+`Snapshot` is a map containing `aggregate_type`, `stream_id`, `sequence`,
+`metadata`, and `state`. The timestamp is stored in `metadata.timestamp`.
 
-- Snapshot is the complete snapshot record to persist.
-
-Returns `ok` on success, or `{warning, Reason}` if persistence fails. Returning a
-warning is preferred over throwing an exception, as snapshot failures should not
-crash aggregates.
+Returns `ok` on success, or `{warning, Reason}` if persistence fails. Snapshot
+failures should not crash aggregates.
 """.
 -callback store(Snapshot) -> ok | {warning, Reason} when
     Snapshot :: es_contract_snapshot:t(),

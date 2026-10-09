@@ -39,7 +39,7 @@ Can be any term (UUID, binary, integer, etc.).
 """.
 -type aggregate_id() :: term().
 
--doc "Sequence of the command when batching operations (optional semantic).".
+-doc "Domain command sequence; not an expected event-store version or a deduplication key.".
 -type sequence() :: non_neg_integer().
 
 -doc "Type identifier for the command.".
@@ -69,7 +69,7 @@ It consists of:
 - `aggregate_type`: The aggregate type this command targets
 - `type`: The type of command to execute
 - `aggregate_id`: Identifier of the target aggregate instance
-- `sequence`: Optional sequencing information for idempotency/correlation
+- `sequence`: Domain sequencing information (the kernel does not deduplicate commands)
 - `metadata`: Additional contextual information (user, timestamp, correlation ID, etc.)
 - `tags`: Labels for categorization or routing
 - `payload`: The actual command data

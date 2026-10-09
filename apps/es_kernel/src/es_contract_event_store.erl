@@ -1,5 +1,6 @@
 -module(es_contract_event_store).
 
+-export([validate_append/3]).
 -export_type([position/0]).
 
 -doc """
@@ -18,7 +19,7 @@ of domain events. It defines the functional capabilities required to persist and
 retrieve events, independent of lifecycle management concerns.
 
 Callbacks:
-- `append/2` - append events to a stream, ensuring monotonic sequence numbers
+- `append/3` - atomically append events at an expected stream sequence
 - `fold/4` - replay events of a single stream in order and fold them with a user function
 - `fold_all/3` - replay events from the global event log in position order and fold them
 
@@ -38,31 +39,26 @@ lifecycle management, but these are not part of this behaviour contract.
 -doc """
 Append events to an event stream.
 
-This callback appends events to the specified stream, ensuring monotonic ordering
-by sequence number. Each event is durably persisted and becomes part of the immutable
-event log for the stream.
+The expected sequence is the last committed sequence: `0` means an empty
+stream, and the first event has sequence `1`. Each batch must be contiguous,
+starting at `ExpectedSequence + 1`. An empty append still checks the version.
 
-- StreamId identifies the event stream (for example `{order, <<"123">>}`).
-- Events is the list of events to append to the stream.
+Backends must atomically compare the stream's actual sequence with the expected
+sequence and persist the entire batch. A mismatch returns
+`{error, {wrong_expected_sequence, ExpectedSequence, ActualSequence}}`
+without changing either the stream or the global log.
 
-The kernel guarantees that:
-
-- all events in the batch belong to the same stream
-- the `stream_id()` carried by each event is equal to `StreamId`
-
-Backends MAY rely on these invariants and are not required to re validate them.
-
-On success, implementations MUST return `ok`.
-
-On failure, implementations MUST return `{error, Reason}` and MUST guarantee that
-no partial batch is ever visible. Exceptions SHOULD be reserved for programmer
-errors or unrecoverable failures.
+On success, return `{ok, NewSequence}`. On any failure, return `{error, Reason}`
+and expose no partial batch. `validate_append/3` checks the batch shape, not the
+stored version; the version comparison belongs inside the backend transaction.
 """.
--callback append(StreamId, Events) ->
-    ok | {error, Reason}
+-callback append(StreamId, ExpectedSequence, Events) ->
+    {ok, NewSequence} | {error, Reason}
 when
     StreamId :: es_contract_event:stream_id(),
+    ExpectedSequence :: es_contract_event:sequence(),
     Events :: [es_contract_event:t()],
+    NewSequence :: es_contract_event:sequence(),
     Reason :: term().
 -doc """
 Retrieves events from a single stream and folds them into an accumulator.
@@ -148,3 +144,45 @@ when
     AccIn :: term(),
     AccOut :: term(),
     Reason :: term().
+
+-doc "Validate a batch before the backend's atomic expected-sequence check.".
+-spec validate_append(
+    es_contract_event:stream_id(), es_contract_event:sequence(), [es_contract_event:t()]
+) -> ok | {error, atom()}.
+validate_append(StreamId, ExpectedSequence, Events) when
+    is_integer(ExpectedSequence), ExpectedSequence >= 0, is_list(Events)
+->
+    case validate_streams(Events, StreamId) of
+        ok ->
+            Keys = [es_contract_event:key(Event) || Event <- Events],
+            case length(Keys) =:= length(lists:usort(Keys)) of
+                true -> validate_sequences(Events, ExpectedSequence + 1);
+                false -> {error, duplicate_event}
+            end;
+        {error, _} = Error ->
+            Error
+    end;
+validate_append(_StreamId, _ExpectedSequence, _Events) ->
+    {error, invalid_expected_sequence}.
+
+-spec validate_streams([es_contract_event:t()], es_contract_event:stream_id()) ->
+    ok | {error, invalid_sequence}.
+validate_streams([], _StreamId) ->
+    ok;
+validate_streams([#{stream_id := StreamId, sequence := Sequence} | Rest], StreamId) when
+    is_integer(Sequence), Sequence > 0
+->
+    validate_streams(Rest, StreamId);
+validate_streams([#{stream_id := OtherStreamId} | _], StreamId) when OtherStreamId =/= StreamId ->
+    error({badarg, OtherStreamId});
+validate_streams(_Events, _StreamId) ->
+    {error, invalid_sequence}.
+
+-spec validate_sequences([es_contract_event:t()], non_neg_integer()) ->
+    ok | {error, invalid_sequence}.
+validate_sequences([], _NextSequence) ->
+    ok;
+validate_sequences([#{sequence := NextSequence} | Rest], NextSequence) ->
+    validate_sequences(Rest, NextSequence + 1);
+validate_sequences(_Events, _NextSequence) ->
+    {error, invalid_sequence}.

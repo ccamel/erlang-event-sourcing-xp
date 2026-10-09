@@ -117,15 +117,27 @@ The store layer separates domain logic from persistence concerns through two beh
 
 The event store is the heart of event sourcing persistence, designed as a `behaviour` (`es_contract_event_store`) that backends implement. It guarantees **ordering** (events replayed in sequence or global position order), **atomicity** (all-or-nothing persistence), and **immutability** (events never modified).
 
-Events carry a stream-local `sequence`, used to rebuild a single aggregate. Store backends also assign a monotonically increasing global `position` when events are persisted. This position is storage metadata, not part of the domain event map, and is used for global replay, projections, and future read-side subscriptions.
+Events carry a stream-local `sequence`: `0` denotes an empty stream, the first
+event has sequence `1`, and committed batches are contiguous. Snapshot sequences
+refer to the last applied event.
+Store backends also assign a monotonically increasing global `position`, separate
+from the event map, for projections and global replay. Positions need not be
+contiguous (for example after a PostgreSQL rollback).
+
+Events receive an opaque, random 128-bit binary `event_id` from
+`crypto:strong_rand_bytes/1` before persistence. Stores and replay preserve it
+unchanged. `{StreamId, Sequence}` is the stream storage key.
 
 **Required Callbacks:**
 
 ```erlang
-% Appends events to a stream with monotonic sequence ordering
--callback append(StreamId, Events) -> ok | {error, Reason}
+% Atomically compares the stream version and appends a contiguous batch
+-callback append(StreamId, ExpectedSequence, Events) ->
+    {ok, NewSequence} | {error, Reason}
     when StreamId :: es_contract_event:stream_id(),
+         ExpectedSequence :: es_contract_event:sequence(),
          Events :: [es_contract_event:t()],
+         NewSequence :: es_contract_event:sequence(),
          Reason :: term().
 
 % Replays events for one stream in sequence order
@@ -162,6 +174,25 @@ Events carry a stream-local `sequence`, used to rebuild a single aggregate. Stor
 
 `fold/4` is the aggregate replay primitive: it reads one stream using stream-local sequence ranges. `fold_all/3` is the read-side primitive: it reads the global event log using position ranges. The kernel wrapper also exposes `es_kernel_store:fold_all/4` when callers need to provide an explicit accumulator.
 
+Use `es_kernel_store:append(StoreContext, StreamId, ExpectedSequence, Events)`
+for explicit writes. Every backend atomically compares the current stream sequence
+with `ExpectedSequence`, including for empty batches. On mismatch it returns
+`{error, {wrong_expected_sequence, Expected, Actual}}` without publishing any part
+of the batch. Successful appends return `{ok, Expected + length(Events)}`.
+Malformed/noncontiguous batches are rejected; there is no unconditional append.
+
+Aggregates use their last applied sequence as the expected version, not the
+command's `sequence` field. A conflict is returned to the caller without crashing
+the aggregate or applying the rejected events. The aggregate reloads committed
+state for the next command; the rejected command is **not** retried automatically.
+Other append errors are also returned without applying events. The example HTTP
+API maps version conflicts to `409` with `expected` and `actual` fields.
+
+Command `metadata` and `tags` are copied into each emitted event for both Erlang
+and WASM domains. The kernel's timestamp overrides any command `metadata.timestamp`.
+Command sequencing is domain information, not command deduplication: dispatching
+the same command again may emit another event.
+
 #### Projections
 
 `es_contract_projection` defines the read-side projection behaviour:
@@ -191,7 +222,7 @@ as emails, webhooks, or commands.
   the last committed global position, resume at its successor (or
   `start_position` when absent), and commit each event position only after
   `handle_event/3` returns `{ok, NewState}`. Managed runners wake immediately
-  after successful `es_kernel_store:append/3` calls; polling remains the
+  after successful nonempty `es_kernel_store:append/4` calls; polling remains the
   recovery path for missed notifications and direct backend writes. Positions of
   filtered events are committed without invoking the callback. Event-store,
   checkpoint-store, and projection failures stop the runner.
@@ -286,6 +317,19 @@ PostgreSQL retains the complete event as an Erlang term in `BYTEA` for replay,
 and exposes `aggregate_type`, `event_type`, and `metadata.timestamp` as indexed
 columns for inspection. The unique `(stream_id, sequence)` constraint is also
 the per-stream replay index.
+
+Backends serialize append commits so a projection cannot checkpoint a later
+position before an earlier concurrent batch becomes visible. ETS uses a local
+append lock; Mnesia locks the position counter inside its transaction; PostgreSQL
+uses a transaction-scoped advisory lock across connections and VMs. These locks
+prioritize correctness over write throughput.
+
+The file backend uses one canonical UTF-8 term journal (`event_log.dat`) for both
+stream and global replay. Each append syncs a complete replacement and atomically
+renames it into place. This is O(total log size) per append and remains pedagogical,
+not a power-loss durability guarantee. Its shared-root lock supports one BEAM
+or distribution-connected nodes using the same absolute root; independent VMs
+sharing a directory are unsupported.
 
 ### Aggregate
 

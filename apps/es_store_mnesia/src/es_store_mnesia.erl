@@ -13,7 +13,7 @@ The Mnesia-based implementation of the event store.
     stop/0,
     fold/4,
     fold_all/3,
-    append/2,
+    append/3,
     store/1,
     load_latest/1
 ]).
@@ -132,33 +132,63 @@ start() ->
 stop() ->
     ok.
 
--spec append(StreamId, Events) -> ok | {error, Reason} when
+-spec append(StreamId, ExpectedSequence, Events) ->
+    {ok, NewSequence} | {error, Reason}
+when
     StreamId :: stream_id(),
+    ExpectedSequence :: sequence(),
     Events :: [event()],
+    NewSequence :: sequence(),
     Reason :: term().
-append(_, Events) ->
-    case mnesia:transaction(fun() -> persist_events_in_tx(Events) end) of
-        {atomic, _Result} ->
-            ok;
-        {aborted, Reason} ->
-            {error, Reason}
+append(StreamId, ExpectedSequence, Events) ->
+    case es_contract_event_store:validate_append(StreamId, ExpectedSequence, Events) of
+        ok ->
+            case
+                mnesia:transaction(
+                    fun() -> persist_events_in_tx(StreamId, ExpectedSequence, Events) end
+                )
+            of
+                {atomic, Result} ->
+                    Result;
+                {aborted, Reason} ->
+                    {error, Reason}
+            end;
+        {error, _} = Error ->
+            Error
     end.
 
-persist_events_in_tx([]) ->
-    ok;
-persist_events_in_tx(Events) when is_list(Events) ->
-    %% Allocate positions for all events
+persist_events_in_tx(StreamId, ExpectedSequence, Events) ->
     PositionCounterTable = position_counter_table_name(),
-    NumEvents = length(Events),
+    %% ponytail: global append lock; partition only with a commit-ordered log.
     [{_, global_position, CurrentPosition}] = mnesia:read(
         PositionCounterTable, global_position, write
     ),
+    ActualSequence = stream_sequence(StreamId),
+    case ExpectedSequence =:= ActualSequence of
+        false ->
+            {error, {wrong_expected_sequence, ExpectedSequence, ActualSequence}};
+        true ->
+            persist_at_sequence(PositionCounterTable, CurrentPosition, ExpectedSequence, Events)
+    end.
+
+persist_at_sequence(_PositionCounterTable, _CurrentPosition, ExpectedSequence, []) ->
+    {ok, ExpectedSequence};
+persist_at_sequence(PositionCounterTable, CurrentPosition, ExpectedSequence, Events) ->
+    NumEvents = length(Events),
     NewPosition = CurrentPosition + NumEvents,
     ok = mnesia:write(
         PositionCounterTable, {PositionCounterTable, global_position, NewPosition}, write
     ),
-    %% Persist events with assigned positions
-    persist_events_with_positions(Events, CurrentPosition).
+    ok = persist_events_with_positions(Events, CurrentPosition),
+    {ok, ExpectedSequence + NumEvents}.
+
+stream_sequence(StreamId) ->
+    case mnesia:index_read(event_table_name(), StreamId, #event_record.stream_id) of
+        [] ->
+            0;
+        Records ->
+            lists:max([Sequence || #event_record{sequence = Sequence} <- Records])
+    end.
 
 persist_events_with_positions([], _Position) ->
     ok;
@@ -173,7 +203,7 @@ persist_events_with_positions(
         position = Position,
         event = Event
     },
-    case mnesia:read(event_table_name(), Id, read) of
+    case mnesia:read(event_table_name(), Id, write) of
         [_] ->
             mnesia:abort(duplicate_event);
         _ ->

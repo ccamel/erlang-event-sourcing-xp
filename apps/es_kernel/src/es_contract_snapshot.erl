@@ -40,7 +40,7 @@ across different aggregate types and instances.
 """.
 -type stream_id() :: {aggregate_type(), aggregate_id()}.
 
--doc "Sequence number of the event within its stream, starting from 0.".
+-doc "Last applied event sequence; 0 denotes the initial state, events start at 1.".
 -type sequence() :: non_neg_integer().
 
 -doc "Metadata map containing contextual information about the event.".

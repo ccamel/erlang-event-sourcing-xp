@@ -1,11 +1,11 @@
 -module(es_kernel_store).
 -moduledoc """
-Kernel API for event store operations.
+Kernel API for event and snapshot storage.
 
 This module provides:
-- **Domain types**: event, snapshot, sequence, stream_id, etc.
-- **Constructors and accessors**: `new_event/...`, `new_snapshot/...`, field getters
-- **Storage operations**: wrappers around backend implementations
+- The `store_context()` type identifying the backend modules
+- Event and snapshot constructors
+- Storage operations delegated to the backends
 
 A `store_context()` tuple `{EventStore, SnapshotStore}` identifies the backend modules.
 Both may be the same module if it implements both event and snapshot storage.
@@ -14,7 +14,7 @@ Both may be the same module if it implements both event and snapshot storage.
 -define(PROJECTION_PG_SCOPE, es_projection_pg).
 
 -export([
-    append/3,
+    append/4,
     fold/5,
     fold_all/3,
     fold_all/4,
@@ -32,44 +32,34 @@ Both may be the same module if it implements both event and snapshot storage.
 -type store_context() :: {store_backend(), store_backend()}.
 
 -doc """
-Appends a list of events to the event store using the specified store module.
-
-This is the primary mechanism for persisting domain events. All events in the list
-must target the same stream and have unique identifiers. The store backend ensures
-atomic persistence and maintains sequence ordering.
+Atomically append a contiguous batch at the expected stream sequence.
+`0` means an empty stream; the first event has sequence `1`.
+Conflicts return `{error, {wrong_expected_sequence, Expected, Actual}}`.
 """.
--spec append(StoreContext, StreamId, Events) -> ok | {error, Reason} when
+-spec append(StoreContext, StreamId, ExpectedSequence, Events) ->
+    {ok, NewSequence} | {error, Reason}
+when
     StoreContext :: store_context(),
     StreamId :: es_contract_event:stream_id(),
+    ExpectedSequence :: es_contract_event:sequence(),
     Events :: [es_contract_event:t()],
+    NewSequence :: es_contract_event:sequence(),
     Reason :: term().
-append({EventModule, _} = StoreContext, StreamId, Events) when is_list(Events) ->
-    %% Validate that all events target the same StreamId
-    ok = lists:foreach(
-        fun(#{stream_id := EventStreamId}) ->
-            case EventStreamId of
-                StreamId ->
-                    ok;
-                WrongStreamId ->
-                    erlang:error({badarg, WrongStreamId})
-            end
-        end,
-        Events
-    ),
-
-    %% Detect duplicates (same event id twice in the batch)
-    SeenIds = [es_contract_event:key(E) || E <- Events],
-    case length(SeenIds) =:= length(lists:usort(SeenIds)) of
-        true ->
-            case EventModule:append(StreamId, Events) of
-                ok ->
-                    notify_projections(StoreContext),
-                    ok;
+append({EventModule, _} = StoreContext, StreamId, ExpectedSequence, Events) ->
+    case es_contract_event_store:validate_append(StreamId, ExpectedSequence, Events) of
+        ok ->
+            case EventModule:append(StreamId, ExpectedSequence, Events) of
+                {ok, _} = Result ->
+                    case Events of
+                        [] -> ok;
+                        _ -> notify_projections(StoreContext)
+                    end,
+                    Result;
                 {error, _} = Error ->
                     Error
             end;
-        false ->
-            {error, duplicate_event}
+        {error, _} = Error ->
+            Error
     end.
 
 -spec notify_projections(store_context()) -> ok.
@@ -225,9 +215,9 @@ new_event(StreamId, AggregateType, Type, Sequence, Timestamp, Payload) ->
     new_event(StreamId, AggregateType, Type, Sequence, [], Timestamp, #{}, Payload).
 
 -doc """
-Creates a new snapshot record.
+Create a snapshot map.
 
-- AggregateType is the aggregate type (aggregate module) to which the stream belongs.
+- AggregateType is the aggregate type identifier.
 - StreamId is the unique identifier for the stream.
 - Sequence is the sequence number of the last event included in the snapshot.
 - Timestamp is the timestamp when the snapshot was created.
@@ -247,18 +237,13 @@ new_snapshot(AggregateType, StreamId, Sequence, Timestamp, State) ->
     es_contract_snapshot:new(AggregateType, StreamId, Sequence, Metadata, State).
 
 -doc """
-Stores a snapshot using the specified store module.
+Store a snapshot using the snapshot backend in `StoreContext`.
 
-This function delegates snapshot storage to the backend implementation. The snapshot
-captures aggregate state at a specific sequence number, enabling faster rehydration
-by avoiding full event replay from the stream's beginning.
+`Snapshot` contains `aggregate_type`, `stream_id`, `sequence`, `metadata`, and
+`state`. Its timestamp is stored in `metadata.timestamp`.
 
-The snapshot map contains all necessary information (domain, stream_id, sequence,
-metadata, state), consistent with event persistence where complete records are
-passed rather than individual fields. The timestamp is available inside the metadata.
-
-Returns `ok` on success, or `{warning, Reason}` if persistence fails. Warnings are
-preferred over exceptions since snapshots are optimizations, not requirements.
+Returns `ok` on success, or `{warning, Reason}` if persistence fails. Snapshot
+failures should not crash aggregates; events remain the source of truth.
 """.
 -spec store(StoreContext, Snapshot) -> ok | {warning, Reason} when
     StoreContext :: store_context(),

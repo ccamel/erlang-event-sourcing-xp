@@ -39,8 +39,36 @@ http_api(Port) ->
         ?_assertEqual(
             {400, #{<<"error">> => <<"invalid_request">>}},
             post(Port, "/api/accounts/123/deposit", <<"{\"amount\":\"100\"}">>)
-        )
+        ),
+        ?_test(http_conflict(Port))
     ].
+
+http_conflict(Port) ->
+    Store = es_kernel_app:get_store_context(),
+    Stream = {bank_account, <<"123">>},
+    Event = es_kernel_store:new_event(
+        Stream,
+        bank_account,
+        deposited,
+        2,
+        erlang:system_time(millisecond),
+        #{type => deposited, amount => 50}
+    ),
+    ?assertEqual({ok, 2}, es_kernel_store:append(Store, Stream, 1, [Event])),
+    ?assertEqual(
+        {409, #{
+            <<"error">> => <<"wrong_expected_sequence">>, <<"expected">> => 1, <<"actual">> => 2
+        }},
+        post(Port, "/api/accounts/123/deposit", <<"{\"amount\":5}">>)
+    ),
+    ?assertEqual(
+        {200, #{<<"ok">> => true}},
+        post(Port, "/api/accounts/123/deposit", <<"{\"amount\":5}">>)
+    ),
+    ?assertEqual(
+        {200, #{<<"id">> => <<"123">>, <<"balance">> => 155}},
+        get(Port, "/api/accounts/123")
+    ).
 
 get(Port, Path) ->
     {ok, {{_Version, Status, _Reason}, _Headers, Body}} = httpc:request(

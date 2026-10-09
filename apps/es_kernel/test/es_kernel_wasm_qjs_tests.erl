@@ -76,10 +76,19 @@ teardown({EventStore, SnapshotStore}) ->
 wasm_decision() ->
     Id = aggregate_id(),
     {ok, Pid} = start_aggregate(?NORMAL_TYPE, Id, #{}),
-    ?assertEqual(ok, es_kernel_aggregate:execute(Pid, command(?NORMAL_TYPE, open, Id))),
+    Metadata = #{correlation_id => <<"wasm-request">>, causation_id => <<"wasm-command">>},
+    Tags = [<<"tenant:wasm">>],
+    Command = es_contract_command:with_tags(
+        Tags,
+        es_contract_command:with_metadata(Metadata, command(?NORMAL_TYPE, open, Id))
+    ),
+    ?assertEqual(ok, es_kernel_aggregate:execute(Pid, Command)),
     [Event] = events(?NORMAL_TYPE, Id),
     ?assertEqual(<<"opened">>, maps:get(type, Event)),
-    ?assertEqual(#{<<"type">> => <<"opened">>}, maps:get(payload, Event)).
+    ?assertEqual(#{<<"type">> => <<"opened">>}, maps:get(payload, Event)),
+    ?assertMatch(<<_:128>>, maps:get(event_id, Event)),
+    ?assertEqual(Tags, maps:get(tags, Event)),
+    ?assertEqual(Metadata, maps:remove(timestamp, maps:get(metadata, Event))).
 
 wasm_refusal() ->
     Id = aggregate_id(),
