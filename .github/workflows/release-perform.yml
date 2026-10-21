@@ -59,7 +59,7 @@ jobs:
             -hash-${{ hashFiles('rebar.config', 'elvis.config', 'rebar.lock') }}"
 
       - name: Release project
-        uses: cycjimmy/semantic-release-action@bda3da8d0cac44ed30fdc42bf9ad6a0362ce0583 # v5
+        uses: cycjimmy/semantic-release-action@9e1f8a3ef91f1097285028e799a5fb8bb90e8899 # v5
         with:
           semantic_version: 22.0.5
           branch: main
