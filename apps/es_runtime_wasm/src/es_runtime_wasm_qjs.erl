@@ -108,7 +108,7 @@ run(Module, Script, Timeout, Limits) ->
     Base = application:get_env(
         es_runtime_wasm,
         wasm_scratch_dir,
-        filename:basedir(user_cache, "es_kernel_wasm")
+        filename:basedir(user_cache, "es_runtime_wasm")
     ),
     Dir = filename:join(Base, integer_to_list(erlang:unique_integer([positive]))),
     ScriptPath = filename:join(Dir, "main.js"),
