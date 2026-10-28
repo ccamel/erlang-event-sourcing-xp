@@ -1,5 +1,6 @@
 %% QuickJS/WASM event-sourced domain demonstration.
 %% Downloads and verifies the pinned QuickJS guest on first run.
+%% es_xp starts the optional es_runtime_wasm application when qjs_module is configured.
 %%
 %% Run:
 %%     rebar3 shell < apps/es_xp/examples/demo_wasm_promotion.script

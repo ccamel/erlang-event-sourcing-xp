@@ -1,4 +1,4 @@
--module(es_kernel_wasm_qjs).
+-module(es_runtime_wasm_qjs).
 -moduledoc """
 Runs one JSON request through a QuickJS WebAssembly command.
 
@@ -6,13 +6,82 @@ Each invocation gets a fresh WASM instance, a private read-only directory, no
 network, deterministic random input, bounded memory, and a killable process.
 """.
 
--export([invoke/2]).
+-behaviour(es_contract_domain).
+
+-export([init/1, handle_command/3, apply_event/3, event_type/2, invoke/2]).
 
 -define(DEFAULT_TIMEOUT, 5000).
 -define(DEFAULT_LIMITS, #{fuel => infinity, max_memory_pages => 4096}).
 
+-spec init(es_kernel_registry:domain()) -> es_contract_aggregate:aggregate_state().
+init(Domain) ->
+    case invoke(Domain, #{<<"op">> => <<"init">>}) of
+        {ok, #{<<"state">> := State}} -> State;
+        {ok, Result} -> error({invalid_domain_result, Result});
+        {error, Reason} -> error({domain_init_failed, Reason})
+    end.
+
+-spec handle_command(
+    es_kernel_registry:domain(),
+    es_contract_command:t(),
+    es_contract_aggregate:aggregate_state()
+) -> {ok, [es_contract_event:payload()]} | {error, term()}.
+handle_command(Domain, Command, State) ->
+    Input = #{
+        <<"op">> => <<"decide">>,
+        <<"command">> => #{
+            <<"type">> => maps:get(type, Command),
+            <<"payload">> => maps:get(payload, Command)
+        },
+        <<"state">> => State
+    },
+    case invoke(Domain, Input) of
+        {ok, #{<<"events">> := Events}} when is_list(Events) ->
+            validate_events(Events);
+        {ok, #{<<"error">> := Reason}} ->
+            {error, Reason};
+        {ok, Result} ->
+            {error, {invalid_domain_result, Result}};
+        {error, Reason} ->
+            {error, {domain_execution_failed, Reason}}
+    end.
+
+-spec apply_event(
+    es_kernel_registry:domain(),
+    es_contract_event:payload(),
+    es_contract_aggregate:aggregate_state()
+) -> es_contract_aggregate:aggregate_state().
+apply_event(Domain, Event, State) ->
+    Input = #{<<"op">> => <<"apply">>, <<"event">> => Event, <<"state">> => State},
+    case invoke(Domain, Input) of
+        {ok, #{<<"state">> := NewState}} -> NewState;
+        {ok, Result} -> error({invalid_domain_result, Result});
+        {error, Reason} -> error({domain_apply_failed, Reason})
+    end.
+
+-spec event_type(es_kernel_registry:domain(), es_contract_event:payload()) ->
+    es_contract_event:type().
+event_type(_Domain, #{<<"type">> := Type}) when is_binary(Type), byte_size(Type) > 0 ->
+    Type;
+event_type(_Domain, Event) ->
+    error({invalid_domain_event, Event}).
+
+validate_events(Events) ->
+    case
+        lists:all(
+            fun
+                (#{<<"type">> := Type}) when is_binary(Type), byte_size(Type) > 0 -> true;
+                (_) -> false
+            end,
+            Events
+        )
+    of
+        true -> {ok, Events};
+        false -> {error, {invalid_domain_events, Events}}
+    end.
+
 -spec invoke(es_kernel_registry:domain(), map()) -> {ok, term()} | {error, term()}.
-invoke(#{engine := quickjs, module := ModulePath, source := SourcePath} = Domain, Input) ->
+invoke(#{module := ModulePath, source := SourcePath} = Domain, Input) ->
     Timeout = maps:get(timeout, Domain, ?DEFAULT_TIMEOUT),
     Limits = maps:merge(?DEFAULT_LIMITS, maps:get(limits, Domain, #{})),
     case {wasm:load_file(ModulePath), file:read_file(SourcePath)} of
@@ -37,9 +106,9 @@ script(Source, Input) ->
 
 run(Module, Script, Timeout, Limits) ->
     Base = application:get_env(
-        es_kernel,
+        es_runtime_wasm,
         wasm_scratch_dir,
-        filename:basedir(user_cache, "es_kernel_wasm")
+        filename:basedir(user_cache, "es_runtime_wasm")
     ),
     Dir = filename:join(Base, integer_to_list(erlang:unique_integer([positive]))),
     ScriptPath = filename:join(Dir, "main.js"),

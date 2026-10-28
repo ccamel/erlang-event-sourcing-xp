@@ -3,7 +3,7 @@
     {vsn, "0.1.0"},
     {registered, [es_kernel_sup, es_kernel_aggregate_sup, es_kernel_mgr_aggregate]},
     {mod, {es_kernel_app, []}},
-    {applications, [kernel, stdlib, crypto, wasm]},
+    {applications, [kernel, stdlib, crypto]},
     {env, [
         {event_store, es_store_ets},
         {snapshot_store, es_store_ets},
@@ -12,6 +12,7 @@
     {modules, [
         es_contract_aggregate,
         es_contract_command,
+        es_contract_domain,
         es_contract_event_store,
         es_contract_event,
         es_contract_range,
@@ -19,7 +20,6 @@
         es_contract_snapshot,
         es_kernel_store,
         es_kernel_domain,
-        es_kernel_wasm_qjs,
         es_kernel_mgr_aggregate,
         es_kernel_aggregate,
         es_kernel_aggregate_sup,

@@ -15,12 +15,12 @@ start(_StartType, _StartArgs) ->
     ),
     case application:get_env(es_xp, qjs_module) of
         {ok, QjsModule} ->
+            {ok, _} = application:ensure_all_started(es_runtime_wasm),
             PrivDir = code:priv_dir(es_xp),
             ok = es_kernel_registry:register(
                 promotion_campaign,
                 #{
-                    runtime => wasm,
-                    engine => quickjs,
+                    runtime => es_runtime_wasm_qjs,
                     module => QjsModule,
                     source => filename:join(PrivDir, "promotion_campaign.js"),
                     timeout => 5000,

@@ -28,7 +28,7 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 - **Aggregate** — a reusable [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) harness that keeps domain logic pure while delegating event sourcing boilerplate.
 - **Aggregate Manager** — a singleton router that spins up aggregates on demand via the dynamic supervisor, rehydrates them from persisted events, monitors them, and passivates idle instances.
 - **Event Store** — a behaviour-driven abstraction with ETS, file, Mnesia, and PostgreSQL backends; per-stream replay for aggregates; and global-position replay for read-side projections.
-- **WASM domains** — aggregates may execute domain decisions and event reducers in sandboxed QuickJS/WebAssembly while the Erlang kernel retains persistence, replay, snapshots, and supervision.
+- **Domain runtimes** — native Erlang domains or external runtime modules implementing `es_contract_domain`; the optional `es_runtime_wasm` application executes sandboxed QuickJS/WebAssembly domains.
 - **Snapshots** — automatic checkpointing at configurable intervals to avoid replaying entire streams.
 - **Passivation** — idle aggregates are shut down cleanly and will rehydrate from the store on the next command.
 
@@ -188,8 +188,8 @@ state for the next command; the rejected command is **not** retried automaticall
 Other append errors are also returned without applying events. The example HTTP
 API maps version conflicts to `409` with `expected` and `actual` fields.
 
-Command `metadata` and `tags` are copied into each emitted event for both Erlang
-and WASM domains. The kernel's timestamp overrides any command `metadata.timestamp`.
+Command `metadata` and `tags` are copied into each emitted event for every domain
+runtime. The kernel's timestamp overrides any command `metadata.timestamp`.
 Command sequencing is domain information, not command deduplication: dispatching
 the same command again may emit another event.
 
@@ -333,11 +333,11 @@ sharing a directory are unsupported.
 
 ### Aggregate
 
-The _aggregate_ is implemented as a [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) that owns event-sourcing infrastructure and delegates domain logic to either an Erlang module or a sandboxed WebAssembly domain.
+The _aggregate_ is implemented as a [gen_server](https://www.erlang.org/doc/apps/stdlib/gen_server.html) that owns event-sourcing infrastructure and delegates domain logic to a native Erlang module or an external domain runtime.
 
 The core idea is to separate domain behavior from infrastructure:
 
-- 🧩 **Domain implementation** — an Erlang module implementing `es_contract_aggregate`, or a QuickJS program hosted by WebAssembly.
+- 🧩 **Domain implementation** — an Erlang module implementing `es_contract_aggregate`, or a domain executed by a module implementing `es_contract_domain`.
 - ⚙️ **`es_kernel_domain`** — dispatches the common `init`, command, event, and event-type operations to the selected runtime.
 - 🚦 [`gen_server`](https://www.erlang.org/doc/apps/stdlib/gen_server.html) — the OTP mechanism that provides lifecycle management and message orchestration.
 
@@ -360,7 +360,7 @@ sequenceDiagram
     participant AggMgr as es_kernel_mgr_aggregate
     participant AggSup as es_kernel_aggregate_sup
     participant Agg as es_kernel_aggregate
-    participant DomainModule as Domain (Erlang or WASM)
+    participant DomainModule as Domain runtime
 
     User ->> Kernel: es_kernel:dispatch(Command)
     Kernel ->> AggMgr: gen_server:call(?MODULE, Command)
@@ -379,13 +379,10 @@ sequenceDiagram
     end
 ```
 
-#### WASM domains
+#### Domain runtimes
 
-`es_kernel` embeds [erlang_wasm](https://github.com/benoitc/erlang_wasm), a
-WebAssembly runtime implemented in Erlang/OTP. It loads, instantiates, executes,
-and bounds the guest; QuickJS is the guest runtime used by this example.
-
-Register an Erlang implementation with an explicit runtime descriptor:
+`es_kernel` has no WebAssembly dependency. Native Erlang domains keep their
+`es_contract_aggregate` callbacks and register with an explicit descriptor:
 
 ```erlang
 es_kernel_registry:register(
@@ -394,15 +391,51 @@ es_kernel_registry:register(
 ).
 ```
 
+External runtimes implement `es_contract_domain` with four callbacks:
+
+```erlang
+init(Descriptor) -> State.
+handle_command(Descriptor, Command, State) -> {ok, Events} | {error, Reason}.
+apply_event(Descriptor, Event, State) -> NewState.
+event_type(Descriptor, Event) -> EventType.
+```
+
+Register them with `#{runtime => RuntimeModule, ...}`. The complete descriptor is
+passed to every callback; fields other than `runtime` belong to that runtime.
+Adding a runtime requires no new branch in the kernel. Runtime applications and
+their dependencies must be started explicitly or declared by the consuming OTP
+application. Runtime modules are trusted deployment configuration, not user input.
+
+Registration checks that the selected module is available and exports every
+required callback before publishing a new descriptor. Invalid descriptors raise
+`{invalid_domain_descriptor, Descriptor}`; unavailable modules raise
+`{domain_module_unavailable, Module, Reason}`; incomplete implementations raise
+`{missing_domain_callbacks, Module, MissingCallbacks}`. Identical registrations
+are idempotent; a different descriptor for an existing type is rejected.
+
+The kernel retains persistence, replay, snapshots and supervision. Decisions must
+have no domain side effects; initialization and event application must be pure
+and deterministic. The runtime validates its guest results and owns execution
+limits and cleanup. Command rejection or execution failure returns `{error, Reason}`
+without appending events. Initialization and event-application failures must raise,
+not become state or silently skip events. A registered runtime and compatible
+domain code remain necessary for rehydration, even when a snapshot exists.
+
+#### WASM domains
+
+The optional `es_runtime_wasm` library application depends on `es_kernel` and
+[erlang_wasm](https://github.com/benoitc/erlang_wasm). It owns the QuickJS adapter,
+JSON/WASI protocol and sandbox; there is no dependency in the opposite direction.
+
 A QuickJS domain receives its module path from deployment configuration:
 
 ```erlang
+{ok, _} = application:ensure_all_started(es_runtime_wasm),
 {ok, QjsModule} = application:get_env(es_xp, qjs_module),
 es_kernel_registry:register(
     promotion_campaign,
     #{
-        runtime => wasm,
-        engine => quickjs,
+        runtime => es_runtime_wasm_qjs,
         module => QjsModule,
         source => filename:join(code:priv_dir(es_xp), "promotion_campaign.js"),
         timeout => 5000,
@@ -413,7 +446,11 @@ es_kernel_registry:register(
 
 `qjs_module` names a QuickJS guest supplied by the deployment. The included
 example downloads its pinned guest into the user cache and sets this value
-before starting `es_xp`.
+before starting `es_xp`, which starts `es_runtime_wasm` only when `qjs_module` is
+configured. The experiment's release bundles the optional adapter without
+starting it by default. Standalone consumers of `es_kernel` need neither the
+adapter nor its WASM dependency. Configure `wasm_scratch_dir` under the
+`es_runtime_wasm` application, not `es_kernel`.
 
 The JavaScript program exposes `main(input)` and handles three operations:
 
@@ -434,11 +471,12 @@ rebar3 shell < apps/es_xp/examples/demo_wasm_promotion.script
 
 #### Domain runtime roadmap
 
-A domain runtime implements `init`, `decide`, and `apply`; the Erlang kernel
-keeps event persistence, replay, snapshots, and supervision. All WASM rows use
-[erlang_wasm](https://github.com/benoitc/erlang_wasm): an AssemblyScript guest
-would expose the domain ABI directly, while QuickJS, Lua, and CPython host a
-language runtime inside the guest.
+A runtime implements `es_contract_domain`; the Erlang kernel keeps event
+persistence, replay, snapshots and supervision. The WASM guest operations are
+`init`, `decide` and `apply`, with event typing handled by the adapter. All WASM
+rows use [erlang_wasm](https://github.com/benoitc/erlang_wasm): an AssemblyScript
+guest would expose the domain ABI directly, while QuickJS, Lua and CPython host
+a language runtime inside the guest.
 
 | Domain runtime | Status | Icon | Capabilities | Highlights | Ideal use cases |
 | --- | --- | --- | --- | --- | --- |
@@ -520,7 +558,7 @@ The manager is responsible for:
 The aggregate manager maintains a mapping of `{AggregateType, AggregateId}` to aggregate process PIDs. When a command is received (typically via `es_kernel:dispatch/1`):
 
 1. It extracts the `aggregate_type` and `aggregate_id` from the command map.
-2. The `aggregate_type` is resolved to its registered Erlang or WASM domain via `es_kernel_registry`.
+2. The `aggregate_type` is resolved to its registered domain descriptor via `es_kernel_registry`.
 3. The internal `pids` map is checked for an existing aggregate instance.
 4. If none exists, the manager asks `es_kernel_aggregate_sup` to start the aggregate, monitors the new PID, and stores it in the registry.
 5. The command is forwarded to the aggregate via `es_kernel_aggregate:execute/2`.
