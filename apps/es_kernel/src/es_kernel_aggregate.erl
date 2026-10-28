@@ -80,7 +80,7 @@ it failed.
 Version conflicts leave the process alive and reload committed state before the
 next command. The rejected command is not retried or applied.
 
-The call waits for the aggregate reply; WASM domain descriptors bound guest work.
+The call waits for the aggregate reply; runtimes must bound external execution.
 """.
 -spec execute(Pid, Command) -> ok | {error, Reason} when
     Pid :: pid(),

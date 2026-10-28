@@ -1,0 +1,10 @@
+{application, es_runtime_wasm, [
+    {description, "WebAssembly domain runtimes for es_kernel"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib, crypto, es_kernel, wasm]},
+    {env, []},
+    {modules, [es_runtime_wasm_qjs]},
+    {licenses, ["BSD 3-Clause"]},
+    {links, []}
+]}.

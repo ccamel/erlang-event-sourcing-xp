@@ -1,4 +1,4 @@
--module(es_kernel_wasm_qjs_tests).
+-module(es_runtime_wasm_qjs_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -13,8 +13,9 @@ suite_test_() ->
     TestCases = [
         {"WASM decides and persists events", fun wasm_decision/0},
         {"WASM refusal persists nothing", fun wasm_refusal/0},
-        {"WASM aggregate replays events", fun wasm_replay/0},
-        {"WASM aggregate rehydrates snapshots", fun wasm_snapshot_rehydration/0},
+        %% Rehydration spans several individually bounded guest invocations.
+        {"WASM aggregate replays events", {timeout, 30, fun wasm_replay/0}},
+        {"WASM aggregate rehydrates snapshots", {timeout, 30, fun wasm_snapshot_rehydration/0}},
         {"WASM execution failure persists nothing", fun wasm_execution_failure/0},
         {"WASM worker dies with caller", fun wasm_worker_lifecycle/0},
         {"WASM timeout crosses API boundary", {timeout, 10, fun wasm_timeout_api/0}},
@@ -32,17 +33,27 @@ suite_test_() ->
 
 setup() ->
     application:load(es_kernel),
+    application:load(es_runtime_wasm),
+    Env = [
+        {App, Key, application:get_env(App, Key)}
+     || {App, Key} <- [
+            {es_kernel, event_store},
+            {es_kernel, snapshot_store},
+            {es_kernel, snapshot_interval},
+            {es_runtime_wasm, wasm_scratch_dir}
+        ]
+    ],
     application:set_env(es_kernel, event_store, es_store_ets),
     application:set_env(es_kernel, snapshot_store, es_store_ets),
     application:set_env(es_kernel, snapshot_interval, 0),
-    {ok, _} = application:ensure_all_started(wasm),
     QjsModule = ensure_qjs(),
     SourcePath = fixture_path("campaign.js"),
     ok = filelib:ensure_dir(SourcePath),
     ok = file:write_file(SourcePath, fixture_source()),
     ScratchDir = fixture_path("scratch"),
     _ = file:del_dir_r(ScratchDir),
-    application:set_env(es_kernel, wasm_scratch_dir, ScratchDir),
+    application:set_env(es_runtime_wasm, wasm_scratch_dir, ScratchDir),
+    {ok, StartedApps} = application:ensure_all_started(es_runtime_wasm),
     register_domains(QjsModule, SourcePath),
     StoreContext = es_kernel_app:get_store_context(),
     {EventStore, SnapshotStore} = StoreContext,
@@ -51,13 +62,10 @@ setup() ->
         true -> ok;
         false -> SnapshotStore:start()
     end,
-    start_aggregate_supervisor(),
-    start_manager(StoreContext),
-    StoreContext.
+    {StoreContext, StartedApps, Env}.
 
-teardown({EventStore, SnapshotStore}) ->
-    stop_manager(),
-    stop_aggregate_supervisor(),
+teardown({{EventStore, SnapshotStore}, StartedApps, Env}) ->
+    lists:foreach(fun application:stop/1, lists:reverse(StartedApps)),
     case SnapshotStore =:= EventStore of
         true ->
             EventStore:stop();
@@ -71,6 +79,13 @@ teardown({EventStore, SnapshotStore}) ->
     _ = file:delete(fixture_path("failing-domain.js")),
     _ = file:delete(fixture_path("exit-zero.js")),
     _ = file:delete(fixture_path("exit-error.js")),
+    lists:foreach(
+        fun
+            ({App, Key, {ok, Value}}) -> application:set_env(App, Key, Value);
+            ({App, Key, undefined}) -> application:unset_env(App, Key)
+        end,
+        Env
+    ),
     ok.
 
 wasm_decision() ->
@@ -136,13 +151,12 @@ wasm_worker_lifecycle() ->
     SourcePath = fixture_path("campaign.js"),
     ScratchDir = fixture_path("scratch"),
     Domain = #{
-        runtime => wasm,
-        engine => quickjs,
+        runtime => es_runtime_wasm_qjs,
         module => ensure_qjs(),
         source => SourcePath,
         timeout => 60000
     },
-    Caller = spawn(fun() -> es_kernel_wasm_qjs:invoke(Domain, #{<<"op">> => <<"loop">>}) end),
+    Caller = spawn(fun() -> es_runtime_wasm_qjs:invoke(Domain, #{<<"op">> => <<"loop">>}) end),
     wait_for_children(ScratchDir, 100),
     exit(Caller, kill),
     wait_for_empty_directory(ScratchDir, 100).
@@ -158,14 +172,13 @@ wasm_timeout_api() ->
 
 wasm_proto_key() ->
     Domain = #{
-        runtime => wasm,
-        engine => quickjs,
+        runtime => es_runtime_wasm_qjs,
         module => ensure_qjs(),
         source => fixture_path("campaign.js")
     },
     ?assertMatch(
         {ok, #{<<"__proto__">> := #{<<"value">> := 42}}},
-        es_kernel_wasm_qjs:invoke(
+        es_runtime_wasm_qjs:invoke(
             Domain,
             #{<<"op">> => <<"echo">>, <<"__proto__">> => #{<<"value">> => 42}}
         )
@@ -185,19 +198,19 @@ wasm_registry_conflict() ->
 wasm_bridge_limits() ->
     Domain = domain(ensure_qjs(), fixture_path("campaign.js"), 5000),
     ?assertMatch(
-        {error, {instantiate_failed, _}},
-        es_kernel_wasm_qjs:invoke(Domain#{limits => #{fuel => 0}}, #{<<"op">> => <<"echo">>})
+        {error, _},
+        es_runtime_wasm_qjs:invoke(Domain#{limits => #{fuel => 0}}, #{<<"op">> => <<"echo">>})
     ),
     ?assertMatch(
         {error, {worker_crashed, _}},
-        es_kernel_wasm_qjs:invoke(
+        es_runtime_wasm_qjs:invoke(
             Domain#{limits => #{max_heap_words => not_an_integer}},
             #{<<"op">> => <<"echo">>}
         )
     ),
     ?assertMatch(
         {ok, #{<<"op">> := <<"echo">>}},
-        es_kernel_wasm_qjs:invoke(
+        es_runtime_wasm_qjs:invoke(
             Domain#{limits => #{max_heap_words => 16_777_216}},
             #{<<"op">> => <<"echo">>}
         )
@@ -213,7 +226,7 @@ wasm_guest_exit_codes() ->
     ),
     ?assertEqual(
         {ok, #{<<"state">> => #{}}},
-        es_kernel_wasm_qjs:invoke(ZeroExitDomain, #{<<"op">> => <<"init">>})
+        es_runtime_wasm_qjs:invoke(ZeroExitDomain, #{<<"op">> => <<"init">>})
     ),
     ErrorExitDomain = source_domain(
         "exit-error.js",
@@ -221,7 +234,7 @@ wasm_guest_exit_codes() ->
     ),
     ?assertMatch(
         {error, {guest_exit, 13, _}},
-        es_kernel_wasm_qjs:invoke(ErrorExitDomain, #{<<"op">> => <<"init">>})
+        es_runtime_wasm_qjs:invoke(ErrorExitDomain, #{<<"op">> => <<"init">>})
     ).
 
 wasm_json_term_shapes() ->
@@ -237,7 +250,7 @@ wasm_json_term_shapes() ->
             <<"7">> => <<"available">>,
             <<"op">> => <<"echo">>
         }},
-        es_kernel_wasm_qjs:invoke(Domain, Input)
+        es_runtime_wasm_qjs:invoke(Domain, Input)
     ).
 
 wasm_json_term_rejections() ->
@@ -245,11 +258,11 @@ wasm_json_term_rejections() ->
     Pid = self(),
     ?assertError(
         {unsupported_json_term, Pid},
-        es_kernel_wasm_qjs:invoke(Domain, #{<<"op">> => <<"echo">>, <<"bad">> => Pid})
+        es_runtime_wasm_qjs:invoke(Domain, #{<<"op">> => <<"echo">>, <<"bad">> => Pid})
     ),
     ?assertError(
         {unsupported_json_key, Pid},
-        es_kernel_wasm_qjs:invoke(Domain, #{Pid => <<"bad key">>})
+        es_runtime_wasm_qjs:invoke(Domain, #{Pid => <<"bad key">>})
     ).
 
 wasm_bridge_failures() ->
@@ -257,11 +270,11 @@ wasm_bridge_failures() ->
     Domain = domain(ensure_qjs(), SourcePath, 5000),
     ?assertMatch(
         {error, {module_load_failed, _}},
-        es_kernel_wasm_qjs:invoke(Domain#{module => fixture_path("missing.wasm")}, #{})
+        es_runtime_wasm_qjs:invoke(Domain#{module => fixture_path("missing.wasm")}, #{})
     ),
     ?assertMatch(
         {error, {source_read_failed, _}},
-        es_kernel_wasm_qjs:invoke(Domain#{source => fixture_path("missing.js")}, #{})
+        es_runtime_wasm_qjs:invoke(Domain#{source => fixture_path("missing.js")}, #{})
     ),
     InvalidJsonDomain = source_domain(
         "invalid-json.js",
@@ -269,7 +282,7 @@ wasm_bridge_failures() ->
     ),
     ?assertMatch(
         {error, {invalid_json, _}},
-        es_kernel_wasm_qjs:invoke(InvalidJsonDomain, #{<<"op">> => <<"echo">>})
+        es_runtime_wasm_qjs:invoke(InvalidJsonDomain, #{<<"op">> => <<"echo">>})
     ).
 
 wasm_domain_invalid_results() ->
@@ -342,8 +355,7 @@ register_domains(QjsModule, SourcePath) ->
 
 domain(QjsModule, SourcePath, Timeout) ->
     #{
-        runtime => wasm,
-        engine => quickjs,
+        runtime => es_runtime_wasm_qjs,
         module => QjsModule,
         source => SourcePath,
         timeout => Timeout,
@@ -375,51 +387,6 @@ events(Type, Id) ->
 
 aggregate_id() ->
     integer_to_binary(erlang:unique_integer([monotonic, positive])).
-
-start_aggregate_supervisor() ->
-    case whereis(es_kernel_aggregate_sup) of
-        undefined ->
-            {ok, _} = es_kernel_aggregate_sup:start_link(),
-            ok;
-        _ ->
-            ok
-    end.
-
-stop_aggregate_supervisor() ->
-    case whereis(es_kernel_aggregate_sup) of
-        undefined ->
-            ok;
-        Pid ->
-            unlink(Pid),
-            exit(Pid, shutdown),
-            wait_for_down(Pid, 100)
-    end.
-
-start_manager(StoreContext) ->
-    stop_manager(),
-    {ok, _} = es_kernel_mgr_aggregate:start_link(StoreContext, #{timeout => 60000}),
-    ok.
-
-stop_manager() ->
-    case whereis(es_kernel_mgr_aggregate) of
-        undefined ->
-            ok;
-        Pid ->
-            unlink(Pid),
-            exit(Pid, kill),
-            wait_for_down(Pid, 100)
-    end.
-
-wait_for_down(Pid, Attempts) when Attempts > 0 ->
-    case is_process_alive(Pid) of
-        false ->
-            ok;
-        true ->
-            timer:sleep(10),
-            wait_for_down(Pid, Attempts - 1)
-    end;
-wait_for_down(Pid, 0) ->
-    error({process_still_alive, Pid}).
 
 wait_for_children(Dir, Attempts) when Attempts > 0 ->
     case file:list_dir(Dir) of

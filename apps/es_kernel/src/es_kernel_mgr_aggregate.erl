@@ -80,7 +80,7 @@ Returns `ok` on success, or `{error, Reason}` if routing or execution fails.
 If the target aggregate dies during the call, returns `{error, {aggregate_down, Reason}}`
 and evicts the stale PID so a subsequent dispatch will start a fresh aggregate.
 
-The call waits for the aggregate reply; WASM domain descriptors bound guest work.
+The call waits for the aggregate reply; runtimes must bound external execution.
 """.
 -spec dispatch(ServerRef, Command) -> ok | {error, Reason} when
     ServerRef :: gen_server:server_ref(),
