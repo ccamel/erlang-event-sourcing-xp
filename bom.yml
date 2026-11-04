@@ -1,8 +1,9 @@
-release: 3.2.0
-generated_at: 2026-09-28
+release: 4.0.0
+generated_at: 2026-11-04
 apps:
   es_kernel: "0.1.0"
   es_projection: "0.1.0"
+  es_runtime_wasm: "0.1.0"
   es_store_ets: "0.1.0"
   es_store_file: "0.1.0"
   es_store_mnesia: "0.1.0"

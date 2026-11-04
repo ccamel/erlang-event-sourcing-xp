@@ -1,5 +1,59 @@
 # erlang-event-sourcing-xp changelog
 
+## [4.0.0](https://github.com/ccamel/erlang-event-sourcing-xp/compare/v3.2.0...v4.0.0) (2026-11-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **kernel:** replace runtime => wasm, engine => quickjs with
+runtime => es_runtime_wasm_qjs. Start es_runtime_wasm before use and
+move wasm_scratch_dir configuration from es_kernel to es_runtime_wasm.
+* **kernel:** backend append/2 becomes append/3, kernel append/3 becomes append/4, and successful
+appends return {ok, NewSequence}. Expected sequence 0 denotes an empty stream; event batches must be
+contiguous starting at ExpectedSequence + 1.
+
+### Features
+
+* **kernel:** enforce optimistic event appends ([eb4be32](https://github.com/ccamel/erlang-event-sourcing-xp/commit/eb4be32de3d2bf4f7a9f84381bb1bf48d86ffa65))
+* **kernel:** support pluggable domain runtimes and optional WASM ([d6b516b](https://github.com/ccamel/erlang-event-sourcing-xp/commit/d6b516b84f0138fe867c687bc9772cba8aeee311))
+* **xp:** expose projected account balances ([5544d01](https://github.com/ccamel/erlang-event-sourcing-xp/commit/5544d01a18bf13ef3a4c045143f339e7e4ae0588))
+* **xp:** serve account reads from the balance projection ([9667c97](https://github.com/ccamel/erlang-event-sourcing-xp/commit/9667c9739b86e4488446810cbb2672dbd5dee741))
+
+
+### Bug Fixes
+
+* **runtime:** rename default WASM cache directory ([cb3e590](https://github.com/ccamel/erlang-event-sourcing-xp/commit/cb3e590ea13239e127513fd7e21d1120c9689444))
+* **xp:** supervise balance projection with its view ([032f186](https://github.com/ccamel/erlang-event-sourcing-xp/commit/032f18603dbd0b120bcc5164efdc18c8c53a6c25))
+
+
+### Documentation
+
+* **kernel:** align source comments with current contracts ([065e30d](https://github.com/ccamel/erlang-event-sourcing-xp/commit/065e30de4cc2a3d97f7112cc652964e842615f02))
+* **runtime:** document runtime extension and WASM migration ([9470c45](https://github.com/ccamel/erlang-event-sourcing-xp/commit/9470c45ad58fee9c62cb6c13292fe63769720384))
+* **xp:** document projected account balance endpoint ([eebca9c](https://github.com/ccamel/erlang-event-sourcing-xp/commit/eebca9cf0d75a3d807ee6812e247c256b5513a3b))
+* **xp:** document projection-backed account reads ([edc3d75](https://github.com/ccamel/erlang-event-sourcing-xp/commit/edc3d75235f0f9c8ab15b71a39d03743dcc18ba4))
+
+
+### Tests
+
+* **store:** cover optimistic append failure paths ([987cc87](https://github.com/ccamel/erlang-event-sourcing-xp/commit/987cc8789e5fea8e55f936906a78fc82d401a7c8))
+* **xp:** cover projected account balances ([00b6003](https://github.com/ccamel/erlang-event-sourcing-xp/commit/00b6003f4ee856950f8d6478e630c4b284e006e8))
+* **xp:** cover unset projection position ([dece3ef](https://github.com/ccamel/erlang-event-sourcing-xp/commit/dece3ef69789e143ca1626936fff5034560a68c5))
+* **xp:** wait for projected account reads ([b9c3c35](https://github.com/ccamel/erlang-event-sourcing-xp/commit/b9c3c35b1090418027dda0708751be3f0eb2fdc6))
+
+
+### Build System
+
+* **deps:** bump actions/setup-node ([532c8fd](https://github.com/ccamel/erlang-event-sourcing-xp/commit/532c8fdef94553cb17f0a963b63d2e3a3aca7b1f))
+* **deps:** bump astral-sh/setup-uv ([3f40917](https://github.com/ccamel/erlang-event-sourcing-xp/commit/3f4091712042351dbd3f936685ea67a34644f97e))
+* **deps:** bump cycjimmy/semantic-release-action ([65e5427](https://github.com/ccamel/erlang-event-sourcing-xp/commit/65e542776a7261a814c3930677dedc55208eb089))
+* **deps:** bump cycjimmy/semantic-release-action ([a74d570](https://github.com/ccamel/erlang-event-sourcing-xp/commit/a74d570e119bce9f21d35d45045d4c5d7f4e0d81))
+* **deps:** bump docker/login-action ([08e881e](https://github.com/ccamel/erlang-event-sourcing-xp/commit/08e881ef74377dad47232fabd21c7ba2ca43cebb))
+* **deps:** bump the github-actions group across 1 directory with 2 updates ([aaf796b](https://github.com/ccamel/erlang-event-sourcing-xp/commit/aaf796b30e90dd69210dd171bad5915a143ce908))
+* **deps:** bump the github-actions group with 2 updates ([e708e0b](https://github.com/ccamel/erlang-event-sourcing-xp/commit/e708e0b0070df523e89181bb24fedc25a01cd89b))
+* **deps:** bump the github-actions group with 2 updates ([c2871a1](https://github.com/ccamel/erlang-event-sourcing-xp/commit/c2871a1c5db0d995e14ae1d66e26a496ae0e03ff))
+* **project:** consider app test files for formatting ([5e398d2](https://github.com/ccamel/erlang-event-sourcing-xp/commit/5e398d283f7fbc4e4a63a83da1049e0ac37701e1))
+
 ## [3.2.0](https://github.com/ccamel/erlang-event-sourcing-xp/compare/v3.1.0...v3.2.0) (2026-09-28)
 
 
