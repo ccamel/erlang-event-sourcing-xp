@@ -16,8 +16,8 @@
     {modules, [
         bank_account_aggregate,
         bank_account_balance_projection,
-        es_xp_account_query,
         es_xp_app,
+        es_xp_balance_view,
         es_xp_http,
         es_xp_sup
     ]},
