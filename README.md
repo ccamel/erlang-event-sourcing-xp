@@ -640,16 +640,16 @@ curl -X POST http://localhost:8080/api/accounts/123/deposit \
   -H 'content-type: application/json' \
   -d '{"amount":100}'
 curl http://localhost:8080/api/accounts/123
-curl http://localhost:8080/api/accounts/123/projected
 ```
 
-`GET /api/accounts/:id` replays the account stream and is immediately
-consistent with committed events. `GET /api/accounts/:id/projected` reads
-`es_xp_balance_view`, the in-memory read model maintained by the bank-account
-projection, and is eventually consistent. Its `position` is the last global-log
-position applied to the view (`null` before the first one), so clients can
-observe projection lag. The view also stores the projection checkpoint, so a
-restarted view replays the log instead of resuming with lost balances.
+Commands append events; queries never read the event store.
+`GET /api/accounts/:id` reads `es_xp_balance_view`, the in-memory read model
+maintained by the bank-account projection, so it is eventually consistent: a
+read right after a command may not reflect it yet. Its `position` is the last
+global-log position applied to the view (`null` before the first one), so
+clients can observe projection lag. The view also stores the projection
+checkpoint, so a restarted view replays the log instead of resuming with lost
+balances.
 
 `compose.yaml` starts PostgreSQL and configures the release to use
 `es_store_postgres` for events and snapshots. Its named `postgres_data` volume
