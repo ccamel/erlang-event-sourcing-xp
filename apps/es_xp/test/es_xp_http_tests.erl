@@ -28,6 +28,7 @@ http_api(Port) ->
             {200, #{<<"ok">> => true}},
             post(Port, "/api/accounts/123/deposit", <<"{\"amount\":100}">>)
         ),
+        ?_test(wait_for_projected_balance(Port, 100, 0)),
         ?_assertEqual(
             {200, #{<<"id">> => <<"123">>, <<"balance">> => 100}},
             get(Port, "/api/accounts/123")
@@ -69,6 +70,20 @@ http_conflict(Port) ->
         {200, #{<<"id">> => <<"123">>, <<"balance">> => 155}},
         get(Port, "/api/accounts/123")
     ).
+
+wait_for_projected_balance(_Port, _Balance, _Position, 0) ->
+    ?assert(false);
+wait_for_projected_balance(Port, Balance, Position, AttemptsLeft) ->
+    case get(Port, "/api/accounts/123/projected") of
+        {200, #{<<"id">> := <<"123">>, <<"balance">> := Balance, <<"position">> := Position}} ->
+            ok;
+        _ ->
+            timer:sleep(20),
+            wait_for_projected_balance(Port, Balance, Position, AttemptsLeft - 1)
+    end.
+
+wait_for_projected_balance(Port, Balance, Position) ->
+    wait_for_projected_balance(Port, Balance, Position, 20).
 
 get(Port, Path) ->
     {ok, {{_Version, Status, _Reason}, _Headers, Body}} = httpc:request(
