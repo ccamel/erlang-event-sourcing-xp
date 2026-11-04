@@ -33,6 +33,14 @@ init([]) ->
         },
     ChildSpecs = [
         #{
+            id => es_xp_balance_view,
+            start => {es_xp_balance_view, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [es_xp_balance_view]
+        },
+        #{
             id => es_xp_http,
             start => {es_xp_http, start_link, []},
             restart => permanent,

@@ -27,6 +27,7 @@ init([]) ->
     Dispatch = cowboy_router:compile([
         {'_', [
             {"/healthz", ?MODULE, health},
+            {"/api/accounts/:id/projected", ?MODULE, projected_account},
             {"/api/accounts/:id", ?MODULE, account},
             {"/api/accounts/:id/deposit", ?MODULE, deposit},
             {"/api/accounts/:id/withdraw", ?MODULE, withdraw}
@@ -83,6 +84,14 @@ handle_get(account, Req0) ->
         {error, _Reason} ->
             reply_json(500, #{error => <<"internal_error">>}, Req0)
     end;
+handle_get(projected_account, Req0) ->
+    AccountId = cowboy_req:binding(id, Req0),
+    {ok, Balance, Position} = es_xp_balance_view:balance(AccountId),
+    reply_json(
+        200,
+        #{id => AccountId, balance => Balance, position => projection_position(Position)},
+        Req0
+    );
 handle_get(_, Req0) ->
     reply_json(405, #{error => <<"method_not_allowed">>}, Req0).
 
@@ -140,6 +149,11 @@ reply_json(Status, Body, Req0) ->
     Headers0 = cors_headers(),
     Headers = Headers0#{<<"content-type">> => <<"application/json">>},
     cowboy_req:reply(Status, Headers, json:encode(Body), Req0).
+
+projection_position(undefined) ->
+    null;
+projection_position(Position) ->
+    Position.
 
 cors_headers() ->
     #{

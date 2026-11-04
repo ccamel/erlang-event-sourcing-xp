@@ -5,7 +5,7 @@
 -export([init/0, name/0, event_filter/1, handle_event/3]).
 
 init() ->
-    #{}.
+    undefined.
 
 name() ->
     bank_account_balance_projection.
@@ -17,26 +17,17 @@ event_filter(_) ->
 
 handle_event(
     #{stream_id := {bank_account, AccountId}, type := deposited, payload := #{amount := Amount}},
-    _Position,
+    Position,
     State
 ) ->
-    NewState = update_balance(AccountId, Amount, State),
-    log_state(AccountId, NewState),
-    {ok, NewState};
+    ok = es_xp_balance_view:record_change(Position, AccountId, Amount),
+    {ok, State};
 handle_event(
     #{stream_id := {bank_account, AccountId}, type := withdrawn, payload := #{amount := Amount}},
-    _Position,
+    Position,
     State
 ) ->
-    NewState = update_balance(AccountId, -Amount, State),
-    log_state(AccountId, NewState),
-    {ok, NewState};
+    ok = es_xp_balance_view:record_change(Position, AccountId, -Amount),
+    {ok, State};
 handle_event(_, _Position, State) ->
     {ok, State}.
-
-update_balance(AccountId, Delta, State) ->
-    Balance = maps:get(AccountId, State, 0),
-    State#{AccountId => Balance + Delta}.
-
-log_state(AccountId, State) ->
-    logger:info("Bank account projection updated: account=~p state=~p", [AccountId, State]).
