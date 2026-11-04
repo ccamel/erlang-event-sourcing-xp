@@ -40,6 +40,21 @@ init([]) ->
             type => worker,
             modules => [es_xp_balance_view]
         },
+        %% one_for_all: the runner restarts with the view, so it reloads the view's
+        %% (cleared) checkpoint and replays the log instead of resuming mid-stream.
+        #{
+            id => bank_account_balance_projection,
+            start =>
+                {es_projection, start_link, [
+                    es_kernel_app:get_store_context(),
+                    bank_account_balance_projection,
+                    #{checkpoint_store => es_xp_balance_view}
+                ]},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [es_projection]
+        },
         #{
             id => es_xp_http,
             start => {es_xp_http, start_link, []},
