@@ -27,7 +27,6 @@ init([]) ->
     Dispatch = cowboy_router:compile([
         {'_', [
             {"/healthz", ?MODULE, health},
-            {"/api/accounts/:id/projected", ?MODULE, projected_account},
             {"/api/accounts/:id", ?MODULE, account},
             {"/api/accounts/:id/deposit", ?MODULE, deposit},
             {"/api/accounts/:id/withdraw", ?MODULE, withdraw}
@@ -77,14 +76,6 @@ init(Req0, Handler) ->
 handle_get(health, Req0) ->
     reply_json(200, #{status => <<"ok">>}, Req0);
 handle_get(account, Req0) ->
-    AccountId = cowboy_req:binding(id, Req0),
-    case es_xp_account_query:balance(AccountId) of
-        {ok, Balance} ->
-            reply_json(200, #{id => AccountId, balance => Balance}, Req0);
-        {error, _Reason} ->
-            reply_json(500, #{error => <<"internal_error">>}, Req0)
-    end;
-handle_get(projected_account, Req0) ->
     AccountId = cowboy_req:binding(id, Req0),
     {ok, Balance, Position} = es_xp_balance_view:balance(AccountId),
     reply_json(
