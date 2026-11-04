@@ -24,6 +24,11 @@ stop(_Port) ->
 http_api(Port) ->
     [
         ?_assertEqual({200, #{<<"status">> => <<"ok">>}}, get(Port, "/healthz")),
+        %% Before any event is projected, the view has no position yet.
+        ?_assertEqual(
+            {200, #{<<"id">> => <<"999">>, <<"balance">> => 0, <<"position">> => null}},
+            get(Port, "/api/accounts/999")
+        ),
         ?_assertEqual(
             {200, #{<<"ok">> => true}},
             post(Port, "/api/accounts/123/deposit", <<"{\"amount\":100}">>)
