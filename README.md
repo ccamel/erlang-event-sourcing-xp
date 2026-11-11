@@ -264,6 +264,9 @@ runner process directly.
 
 Snapshots provide optional **performance optimization** by checkpointing aggregate state, avoiding full event replay from stream start. They remain secondary to events, which are always the source of truth.
 
+The bundled backends retain one snapshot per stream, replacing it when a new
+snapshot is stored.
+
 **Required Callbacks:**
 
 ```erlang
@@ -301,7 +304,6 @@ Setting `snapshot_interval => 0` (default) disables automatic snapshotting.
 #### Additional future features
 
 - Add fault-tolerant projection state stores, snapshots, or changelogs.
-- Implement snapshot retention policies (e.g., keep only last N snapshots).
 
 #### Backend roadmap
 
