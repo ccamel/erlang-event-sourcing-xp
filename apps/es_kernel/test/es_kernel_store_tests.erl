@@ -20,6 +20,7 @@ suite_test_() ->
     BaseTests =
         [
             {"persist_single_event", fun persist_single_event/1},
+            {"replay_legacy_event_id", fun replay_legacy_event_id/1},
             {"persist_2_streams_event", fun persist_2_streams_event/1},
             {"fold_all_events", fun fold_all_events/1},
             {"fold_all_range", fun fold_all_range/1},
@@ -151,6 +152,18 @@ persist_single_event(Store) ->
             Store, ?STREAM_A, es_contract_range:new(0, infinity)
         )
     ),
+    stop_store(Store).
+
+replay_legacy_event_id(Store) ->
+    start_store(Store),
+    #{id := Id} = Event = es_kernel_store:new_event(?STREAM_A, user, created, 1, 1, #{}),
+    LegacyEvent = maps:remove(id, Event#{event_id => Id}),
+    ?assertEqual({ok, 1}, es_kernel_store:append(Store, ?STREAM_A, 0, [LegacyEvent])),
+    ?assertEqual(
+        [Event],
+        es_kernel_store:retrieve_events(Store, ?STREAM_A, es_contract_range:new(0, infinity))
+    ),
+    ?assertEqual([Event], all_events(Store)),
     stop_store(Store).
 
 persist_2_streams_event(Store) ->
@@ -709,9 +722,9 @@ file_legacy_log_migration() ->
     Path = filename:join([Root, "events", "user_legacy.log"]),
     ok = filelib:ensure_dir(Path),
     Stream = {user, <<"legacy">>},
-    First = maps:remove(event_id, es_kernel_store:new_event(Stream, user, created, 1, 1, #{})),
+    First = maps:remove(id, es_kernel_store:new_event(Stream, user, created, 1, 1, #{})),
     Second = (es_kernel_store:new_event(Stream, user, updated, 2, 2, #{}))#{
-        event_id := binary:copy(<<255>>, 16)
+        id := binary:copy(<<255>>, 16)
     },
     ok = file:write_file(Path, io_lib:format("~0p.~n", [First])),
     IndexPath = filename:join(Root, "global_index.dat"),

@@ -18,7 +18,7 @@ replay_without_snapshot() ->
     Id = <<"replay">>,
     Stream = {?TYPE, Id},
     with_aggregate(Id, #{}, fun(Pid) ->
-        #{command_id := CommandId} =
+        #{id := CommandId} =
             Command = es_contract_command:new(?TYPE, credit_pair, Id, 0, #{}, {1, 1}),
         ?assertEqual(ok, es_kernel_aggregate:execute(Pid, Command)),
         ?assertEqual({error, insufficient_balance}, execute(Pid, Id, withdraw, 17)),

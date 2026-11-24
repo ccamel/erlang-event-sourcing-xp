@@ -25,13 +25,12 @@ The Mnesia-based implementation of the event store.
 -type stream_id() :: es_contract_event:stream_id().
 -type sequence() :: es_contract_event:sequence().
 -type timestamp() :: non_neg_integer().
--type event_id() :: es_contract_event:key().
 -type event() :: es_contract_event:t().
 -type snapshot() :: es_contract_snapshot:t().
 -type snapshot_data() :: es_contract_snapshot:state().
 
 -record(event_record, {
-    key :: event_id(),
+    key :: es_contract_event:key(),
     stream_id :: stream_id(),
     sequence :: sequence(),
     position :: es_contract_event_store:position(),
@@ -249,7 +248,9 @@ fold(StreamId, FoldFun, InitialAcc, Range) when
     case mnesia:transaction(FunQuery) of
         {atomic, EventPairs} ->
             Result = lists:foldl(
-                fun({Seq, Event}, Acc) -> FoldFun(Event, Seq, Acc) end,
+                fun({Seq, Event}, Acc) ->
+                    FoldFun(es_contract_event:from_storage(Event), Seq, Acc)
+                end,
                 InitialAcc,
                 EventPairs
             ),
@@ -322,7 +323,7 @@ fold_all(FoldFun, InitialAcc, Range) when is_function(FoldFun, 3) ->
             Sorted = lists:sort(fun({_, P1}, {_, P2}) -> P1 =< P2 end, Results),
             Result = lists:foldl(
                 fun({Event, Position}, Acc) ->
-                    FoldFun(Event, Position, Acc)
+                    FoldFun(es_contract_event:from_storage(Event), Position, Acc)
                 end,
                 InitialAcc,
                 Sorted

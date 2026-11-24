@@ -290,7 +290,7 @@ process_command(
         sequence = Sequence0,
         now_fun = NowFun
     },
-    #{command_id := <<_:128>>} = Command
+    #{id := <<_:128>>} = Command
 ) ->
     StreamId = {AggregateType, AggId},
     CmdResult = es_kernel_domain:handle_command(Domain, Command, State0),
@@ -347,13 +347,9 @@ apply_events(PayloadEvents, {Domain, State0, Sequence0}) ->
     },
     es_contract_command:t()
 ) -> {ok, es_contract_event:sequence()} | {error, term()}.
-persist_events(
-    PayloadEvents,
-    {Domain, StoreContext, StreamId, Sequence0, NowFun},
-    #{command_id := CommandId} = Command
-) ->
+persist_events(PayloadEvents, {Domain, StoreContext, StreamId, Sequence0, NowFun}, Command) ->
     Tags = maps:get(tags, Command, []),
-    Metadata = (maps:get(metadata, Command, #{}))#{command_id => CommandId},
+    Metadata = es_contract_event:metadata_from_command(Command),
     {AggregateType, _AggregateId} = StreamId,
     {Events, _} =
         lists:mapfoldl(

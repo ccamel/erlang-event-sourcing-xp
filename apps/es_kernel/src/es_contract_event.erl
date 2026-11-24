@@ -2,6 +2,8 @@
 
 -export([
     new/6,
+    from_storage/1,
+    metadata_from_command/1,
     key/1,
     with_metadata/2,
     put_metadata/3,
@@ -79,7 +81,7 @@ The payload is the actual domain data that describes what changed in the system.
 Event data structure.
 
 An event represents a fact that something has happened in the system. It consists of:
-- `event_id`: Random 128-bit binary identity, generated once before persistence
+- `id`: Random 128-bit binary identity, generated once before persistence
 - `aggregate_type`: The aggregate type this event belongs to
 - `type`: The type of event that occurred
 - `stream_id`: Identifier of the stream this event belongs to
@@ -89,7 +91,7 @@ An event represents a fact that something has happened in the system. It consist
 - `payload`: The actual event data describing what changed
 """.
 -type t() :: #{
-    event_id := id(),
+    id := id(),
     aggregate_type := aggregate_type(),
     type := type(),
     stream_id := stream_id(),
@@ -117,7 +119,7 @@ an event within the entire event store.
 -spec new(aggregate_type(), type(), stream_id(), sequence(), metadata(), payload()) -> t().
 new(AggregateType, Type, StreamId, Sequence, Metadata, Payload) ->
     #{
-        event_id => crypto:strong_rand_bytes(16),
+        id => crypto:strong_rand_bytes(16),
         aggregate_type => AggregateType,
         type => Type,
         stream_id => StreamId,
@@ -126,6 +128,18 @@ new(AggregateType, Type, StreamId, Sequence, Metadata, Payload) ->
         tags => [],
         payload => Payload
     }.
+
+-doc "Read a historical `event_id` as `id` without rewriting the stored event.".
+-spec from_storage(map()) -> map().
+from_storage(#{event_id := Id} = Event) ->
+    maps:remove(event_id, Event#{id => Id});
+from_storage(Event) when is_map(Event) ->
+    Event.
+
+-doc "Copy command metadata and set the originating command ID.".
+-spec metadata_from_command(es_contract_command:t()) -> metadata().
+metadata_from_command(#{id := Id} = Command) ->
+    (maps:get(metadata, Command, #{}))#{command_id => Id}.
 
 -spec key(t()) -> key().
 key(#{stream_id := S, sequence := Seq}) ->

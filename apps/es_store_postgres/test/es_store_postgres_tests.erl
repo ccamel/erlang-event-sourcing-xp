@@ -26,6 +26,7 @@ teardown(_StreamId) ->
 
 store_contract(StreamId) ->
     Event1 = event(StreamId, 1, created, #{correlation_id => <<"postgres-round-trip">>}),
+    LegacyEvent1 = maps:remove(id, Event1#{event_id => maps:get(id, Event1)}),
     Event2 = event(StreamId, 2, updated),
     Event3 = event(StreamId, 3, <<"archived">>),
     InvalidEvent = event(StreamId, 3, skipped),
@@ -42,7 +43,7 @@ store_contract(StreamId) ->
             {error, {wrong_expected_sequence, 1, 0}},
             es_store_postgres:append(StreamId, 1, [])
         ),
-        ?_assertEqual({ok, 1}, es_store_postgres:append(StreamId, 0, [Event1])),
+        ?_assertEqual({ok, 1}, es_store_postgres:append(StreamId, 0, [LegacyEvent1])),
         ?_assertEqual(
             {ok, {<<"postgres_store_test">>, <<"created">>, 1}},
             indexed_event_fields(StreamId)
@@ -69,7 +70,7 @@ store_contract(StreamId) ->
         ?_assertEqual({ok, [updated]}, event_types(StreamId, es_contract_range:new(2, 3))),
         ?_assertEqual({ok, [created, updated]}, event_types(StreamId)),
         ?_assert(positions_are_increasing(StreamId)),
-        ?_assert(global_range_is_bounded(StreamId)),
+        ?_assert(global_range_is_bounded(StreamId, Event1)),
         ?_assertEqual(
             {error, {error, stream_callback_failed}},
             es_store_postgres:fold(
@@ -214,15 +215,15 @@ positions_are_increasing(StreamId) ->
             false
     end.
 
-global_range_is_bounded(StreamId) ->
+global_range_is_bounded(StreamId, FirstEvent) ->
     case stream_positions(StreamId) of
         {ok, [LaterPosition, EarlierPosition]} ->
             case
-                global_event_types(
+                global_events(
                     StreamId, es_contract_range:new(EarlierPosition, LaterPosition)
                 )
             of
-                {ok, [created]} ->
+                {ok, [FirstEvent]} ->
                     true;
                 _ ->
                     false
@@ -243,23 +244,23 @@ stream_positions(StreamId) ->
         es_contract_range:new(0, infinity)
     ).
 
-global_event_types(StreamId, Range) ->
+global_events(StreamId, Range) ->
     case
         es_store_postgres:fold_all(
             fun
-                (#{stream_id := EventStreamId, type := Type}, _Position, Types) when
+                (#{stream_id := EventStreamId} = Event, _Position, Events) when
                     EventStreamId =:= StreamId
                 ->
-                    [Type | Types];
-                (_Event, _Position, Types) ->
-                    Types
+                    [Event | Events];
+                (_Event, _Position, Events) ->
+                    Events
             end,
             [],
             Range
         )
     of
-        {ok, Types} ->
-            {ok, lists:reverse(Types)};
+        {ok, Events} ->
+            {ok, lists:reverse(Events)};
         {error, _Reason} = Error ->
             Error
     end.

@@ -98,6 +98,8 @@ load_latest(StreamId) ->
 
 -spec init([]) -> {ok, #{connection := undefined}}.
 init([]) ->
+    %% Load event and provenance key atoms before decoding persisted terms with [safe].
+    {module, es_contract_event} = code:ensure_loaded(es_contract_event),
     {ok, #{connection => undefined}}.
 
 -spec handle_call(term(), gen_server:from(), state()) -> {reply, term(), state()}.
@@ -388,7 +390,7 @@ fold_stream_rows(Rows, FoldFun, Acc0) ->
         {ok,
             lists:foldl(
                 fun({Sequence, EncodedEvent}, Acc) ->
-                    FoldFun(decode(EncodedEvent), Sequence, Acc)
+                    FoldFun(es_contract_event:from_storage(decode(EncodedEvent)), Sequence, Acc)
                 end,
                 Acc0,
                 Rows
@@ -443,7 +445,7 @@ fold_global_rows(Rows, FoldFun, Acc0) ->
         {ok,
             lists:foldl(
                 fun({Position, EncodedEvent}, Acc) ->
-                    FoldFun(decode(EncodedEvent), Position, Acc)
+                    FoldFun(es_contract_event:from_storage(decode(EncodedEvent)), Position, Acc)
                 end,
                 Acc0,
                 Rows

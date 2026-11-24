@@ -101,9 +101,12 @@ wasm_decision() ->
     [Event] = events(?NORMAL_TYPE, Id),
     ?assertEqual(<<"opened">>, maps:get(type, Event)),
     ?assertEqual(#{<<"type">> => <<"opened">>}, maps:get(payload, Event)),
-    ?assertMatch(<<_:128>>, maps:get(event_id, Event)),
+    ?assertMatch(<<_:128>>, maps:get(id, Event)),
     ?assertEqual(Tags, maps:get(tags, Event)),
-    ?assertEqual(Metadata, maps:remove(timestamp, maps:get(metadata, Event))).
+    ?assertEqual(
+        Metadata#{command_id => maps:get(id, Command)},
+        maps:remove(timestamp, maps:get(metadata, Event))
+    ).
 
 wasm_refusal() ->
     Id = aggregate_id(),

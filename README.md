@@ -124,9 +124,11 @@ Store backends also assign a monotonically increasing global `position`, separat
 from the event map, for projections and global replay. Positions need not be
 contiguous (for example after a PostgreSQL rollback).
 
-Events receive an opaque, random 128-bit binary `event_id` from
-`crypto:strong_rand_bytes/1` before persistence. Stores and replay preserve it
-unchanged. `{StreamId, Sequence}` is the stream storage key.
+Events receive an opaque, random 128-bit binary `id` from
+`crypto:strong_rand_bytes/1` before persistence. `{StreamId, Sequence}` remains
+the stream storage key. When replaying events stored with the former `event_id`
+field, the bundled backends expose the same value as `id` without rewriting the
+stored event.
 
 **Required Callbacks:**
 
@@ -189,14 +191,14 @@ Other append errors are also returned without applying events. The example HTTP
 API maps version conflicts to `409` with `expected` and `actual` fields.
 
 `es_contract_command:new/6` gives each command an opaque, random 128-bit binary
-`command_id` at the top level. The kernel rejects commands without a valid ID.
+`id` at the top level. The kernel rejects commands without a valid ID.
 Every event emitted by a command carries that ID as `metadata.command_id`, so
 consumers can trace it back to the originating command. Historical events and
 events written directly without a command may lack this metadata key.
 
 Command `metadata` and `tags` are copied into each emitted event for every domain
 runtime. The kernel takes precedence for `metadata.command_id` and `metadata.timestamp`.
-Neither `command_id` nor the domain `sequence` deduplicates commands: dispatching
+Neither the command `id` nor the domain `sequence` deduplicates commands: dispatching
 the same command again may still emit more events.
 
 #### Projections

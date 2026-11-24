@@ -171,7 +171,8 @@ fold_stream_events([], _FoldFun, Acc, _From, _To) ->
 fold_stream_events([#{sequence := Sequence} = Event | Rest], FoldFun, Acc, From, To) ->
     case within_range(Sequence, From, To) of
         true ->
-            fold_stream_events(Rest, FoldFun, FoldFun(Event, Sequence, Acc), From, To);
+            NextAcc = FoldFun(es_contract_event:from_storage(Event), Sequence, Acc),
+            fold_stream_events(Rest, FoldFun, NextAcc, From, To);
         false ->
             fold_stream_events(Rest, FoldFun, Acc, From, To)
     end.
@@ -360,7 +361,8 @@ fold_global_entries([], _FoldFun, Acc, _From, _To) ->
 fold_global_entries([{Position, Event} | Rest], FoldFun, Acc, From, To) ->
     case within_range(Position, From, To) of
         true ->
-            fold_global_entries(Rest, FoldFun, FoldFun(Event, Position, Acc), From, To);
+            NextAcc = FoldFun(es_contract_event:from_storage(Event), Position, Acc),
+            fold_global_entries(Rest, FoldFun, NextAcc, From, To);
         false ->
             fold_global_entries(Rest, FoldFun, Acc, From, To)
     end.

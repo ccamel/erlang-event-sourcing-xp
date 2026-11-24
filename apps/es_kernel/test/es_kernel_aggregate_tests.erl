@@ -113,11 +113,11 @@ aggregate_invalid_command() ->
     Deposit = cmd(deposit, Id, #{amount => 1}),
     ?assertEqual(
         {error, invalid_command},
-        es_kernel_aggregate:execute(Pid, maps:remove(command_id, Deposit))
+        es_kernel_aggregate:execute(Pid, maps:remove(id, Deposit))
     ),
     ?assertEqual(
         {error, invalid_command},
-        es_kernel_aggregate:execute(Pid, Deposit#{command_id := <<"invalid">>})
+        es_kernel_aggregate:execute(Pid, Deposit#{id := <<"invalid">>})
     ),
     ?assertEqual(
         {error, insufficient_funds},
@@ -365,12 +365,12 @@ aggregate_event_context() ->
         Tags,
         es_contract_command:with_metadata(Metadata, cmd(deposit, Id, #{amount => 42}))
     ),
-    #{command_id := CommandId} = Command,
+    #{id := CommandId} = Command,
     NewCommand = es_contract_command:with_tags(
         Tags,
         es_contract_command:with_metadata(Metadata, cmd(deposit, Id, #{amount => 42}))
     ),
-    #{command_id := NewCommandId} = NewCommand,
+    #{id := NewCommandId} = NewCommand,
     ?assertMatch(<<_:128>>, CommandId),
     ?assertMatch(<<_:128>>, NewCommandId),
     ?assertNotEqual(CommandId, NewCommandId),
@@ -380,8 +380,8 @@ aggregate_event_context() ->
         [First, Second] = es_kernel_store:retrieve_events(
             Store, {bank_account, Id}, es_contract_range:new(0, infinity)
         ),
-        #{event_id := FirstId, metadata := StoredMetadata, tags := Tags} = First,
-        #{event_id := SecondId, metadata := #{command_id := NewCommandId}} = Second,
+        #{id := FirstId, metadata := StoredMetadata, tags := Tags} = First,
+        #{id := SecondId, metadata := #{command_id := NewCommandId}} = Second,
         ?assertNot(maps:is_key(command_id, First)),
         ?assertMatch(<<_:128>>, FirstId),
         ?assertMatch(<<_:128>>, SecondId),
