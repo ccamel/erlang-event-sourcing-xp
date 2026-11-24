@@ -6,6 +6,7 @@ suite_test_() ->
     TestCases =
         [
             {"aggregate_behaviour", fun aggregate_behaviour/0},
+            {"aggregate_dispatch_isolation", fun aggregate_dispatch_isolation/0},
             {"aggregate_passivation", fun aggregate_passivation/0},
             {"aggregate_invalid_command", fun aggregate_invalid_command/0},
             {"aggregate_survives_dead_worker", fun aggregate_survives_dead_worker/0}
@@ -81,9 +82,10 @@ teardown({EventStore, SnapshotStore}) ->
 
 %%%  Test cases
 
-agg_id(Pid, AggregateType, Id) ->
-    Target = {AggregateType, Id},
-    {state, _, _, #{Target := AggPid}} = sys:get_state(Pid),
+agg_id(AggregateType, Id) ->
+    ChildId = {es_kernel_aggregate, AggregateType, Id},
+    {ChildId, AggPid, worker, _} =
+        lists:keyfind(ChildId, 1, supervisor:which_children(es_kernel_aggregate_sup)),
     AggPid.
 
 cmd(Type, Id, Payload) ->
@@ -113,20 +115,42 @@ aggregate_behaviour() ->
         ok,
         es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 100}))
     ),
-    ?assertState(agg_id(Pid, bank_account, Id), Id, #{balance := 100}, 1),
+    ?assertState(agg_id(bank_account, Id), Id, #{balance := 100}, 1),
 
     ?assertEqual(
         ok,
         es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 100}))
     ),
-    ?assertState(agg_id(Pid, bank_account, Id), Id, #{balance := 200}, 2),
+    ?assertState(agg_id(bank_account, Id), Id, #{balance := 200}, 2),
 
     ?assertEqual(
         ok,
         es_kernel_mgr_aggregate:dispatch(Pid, cmd(withdraw, Id, #{amount => 50}))
     ),
-    ?assertState(agg_id(Pid, bank_account, Id), Id, #{balance := 150}, 3),
+    ?assertState(agg_id(bank_account, Id), Id, #{balance := 150}, 3),
 
+    ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
+
+aggregate_dispatch_isolation() ->
+    Pid = start_mgr(5000),
+    A = <<"a">>,
+    B = <<"b">>,
+    ok = es_kernel:dispatch(cmd(deposit, A, #{amount => 10})),
+    ok = es_kernel:dispatch(cmd(deposit, B, #{amount => 10})),
+    AggPid = agg_id(bank_account, A),
+    ok = sys:suspend(AggPid),
+    {Deposit, Withdraw} =
+        try
+            %% Send all three calls from one process so the router sees them in order.
+            DepositReq = gen_server:send_request(Pid, cmd(deposit, A, #{amount => 50})),
+            WithdrawReq = gen_server:send_request(Pid, cmd(withdraw, A, #{amount => 60})),
+            ?assertEqual(ok, gen_server:call(Pid, cmd(deposit, B, #{amount => 20}), 1000)),
+            {DepositReq, WithdrawReq}
+        after
+            ok = sys:resume(AggPid)
+        end,
+    ?assertEqual({reply, ok}, gen_server:receive_response(Deposit, 1000)),
+    ?assertEqual({reply, ok}, gen_server:receive_response(Withdraw, 1000)),
     ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
 
 aggregate_passivation() ->
@@ -142,22 +166,20 @@ aggregate_passivation() ->
         es_kernel_mgr_aggregate:dispatch(Pid, cmd(withdraw, Id, #{amount => 25}))
     ),
 
-    ?assertState(agg_id(Pid, bank_account, Id), Id, #{balance := 75}, 2),
+    AggPid = agg_id(bank_account, Id),
+    ?assertState(AggPid, Id, #{balance := 75}, 2),
 
     % wait for the aggregate to be passivated
     timer:sleep(2000),
 
-    % check aggregate is no more alive
-    {state, _, _, AggPids} = sys:get_state(Pid),
-    Key = {bank_account, Id},
-    ?assertEqual(false, maps:is_key(Key, AggPids)),
+    ?assertNot(is_process_alive(AggPid)),
 
     ?assertEqual(
         ok,
         es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 30}))
     ),
 
-    ?assertState(agg_id(Pid, bank_account, Id), Id, #{balance := 105}, 3),
+    ?assertState(agg_id(bank_account, Id), Id, #{balance := 105}, 3),
 
     ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
 
@@ -184,13 +206,17 @@ aggregate_survives_dead_worker() ->
         ok,
         es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 100}))
     ),
-    AggPid = agg_id(Pid, bank_account, Id),
+    AggPid = agg_id(bank_account, Id),
+    ok = sys:suspend(AggPid),
+    Command = cmd(deposit, Id, #{amount => 10}),
+    Req = gen_server:send_request(Pid, Command),
+    %% The manager has forwarded the request before handling this system call.
+    _ = sys:get_state(Pid, 1000),
     exit(AggPid, kill),
-
-    %% Dispatch while the cached pid is dead: should not crash manager and should return an error
-    ?assertMatch(
-        {error, {aggregate_down, _}},
-        es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 10}))
+    CallExit = {killed, {gen_server, call, [AggPid, Command, infinity]}},
+    ?assertEqual(
+        {reply, {error, {aggregate_down, CallExit}}},
+        gen_server:receive_response(Req, 1000)
     ),
 
     %% Next dispatch should start a fresh aggregate and succeed (rehydrated to previous balance)
@@ -198,7 +224,7 @@ aggregate_survives_dead_worker() ->
         ok,
         es_kernel_mgr_aggregate:dispatch(Pid, cmd(deposit, Id, #{amount => 20}))
     ),
-    ?assertState(agg_id(Pid, bank_account, Id), Id, #{balance := 120}, 2),
+    ?assertState(agg_id(bank_account, Id), Id, #{balance := 120}, 2),
 
     ?assertEqual(ok, es_kernel_mgr_aggregate:stop(Pid)).
 

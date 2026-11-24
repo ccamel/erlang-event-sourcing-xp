@@ -372,13 +372,17 @@ sequenceDiagram
         AggSup -->> AggMgr: {ok, Pid}
     end
 
-    AggMgr ->> Agg: es_kernel_aggregate:execute(Pid, Command)
+    AggMgr -) Agg: forward command without waiting
     Agg ->> DomainModule: handle_command(Command, State)
     Agg ->> Agg: persist_events(Store, Events)
 
     loop For each Event
         Agg ->> DomainModule: apply_event(Event, State)
     end
+
+    Agg -->> AggMgr: command result
+    AggMgr -->> Kernel: command result
+    Kernel -->> User: command result
 ```
 
 #### Domain runtimes
@@ -563,8 +567,14 @@ The aggregate manager maintains a mapping of `{AggregateType, AggregateId}` to a
 2. The `aggregate_type` is resolved to its registered domain descriptor via `es_kernel_registry`.
 3. The internal `pids` map is checked for an existing aggregate instance.
 4. If none exists, the manager asks `es_kernel_aggregate_sup` to start the aggregate, monitors the new PID, and stores it in the registry.
-5. The command is forwarded to the aggregate via `es_kernel_aggregate:execute/2`.
-6. When an aggregate terminates (passivation or crash), the monitor `'DOWN'` message removes it from the registry so a new command will recreate it if needed.
+5. The manager sends the command to the aggregate without waiting, then relays the result to the original caller. Calls to `es_kernel:dispatch/1` remain synchronous.
+6. When an aggregate terminates (passivation or crash), the manager evicts its PID so a new command can recreate it if needed.
+
+Different active aggregates can execute commands concurrently. Each aggregate
+processes its own commands serially, in the order the manager sends them.
+Starting a cold aggregate (including replay) still blocks the manager.
+If an aggregate dies before replying, its pending calls fail with
+`{error, {aggregate_down, Reason}}`; the manager does not retry them.
 
 ```mermaid
 flowchart LR

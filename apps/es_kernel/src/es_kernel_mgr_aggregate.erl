@@ -33,7 +33,8 @@ supervisor.
             now_fun => fun(() -> non_neg_integer()),
             snapshot_interval => non_neg_integer()
         },
-    pids :: #{es_contract_command:target() => pid()}
+    pids :: #{es_contract_command:target() => pid()},
+    requests :: gen_server:request_id_collection()
 }).
 
 -opaque state() :: #state{}.
@@ -105,22 +106,25 @@ init({StoreContext, Opts}) ->
     {ok, #state{
         store = StoreContext,
         opts = Opts,
-        pids = #{}
+        pids = #{},
+        requests = gen_server:reqids_new()
     }}.
 
 -spec handle_call(Command, From, State) ->
-    {reply, ok | {error, Reason}, State}
+    {noreply, State} | {reply, {error, Reason}, State}
 when
     Command :: es_contract_command:t(),
-    From :: {pid(), term()},
+    From :: gen_server:from(),
     State :: state(),
     Reason :: term().
-handle_call(#{aggregate_type := AggregateType, aggregate_id := AggId} = Command, _From, State) ->
-    case ensure_and_dispatch(AggregateType, AggId, Command, State) of
-        {ok, Result, NewState} ->
-            {reply, Result, NewState};
-        {error, Reason, NewState} ->
-            {reply, {error, Reason}, NewState}
+handle_call(#{aggregate_type := AggregateType, aggregate_id := AggId} = Command, From, State) ->
+    Target = {AggregateType, AggId},
+    case ensure_aggregate(Target, State) of
+        {ok, Pid, #state{requests = Requests} = NewState} ->
+            Pending = gen_server:send_request(Pid, Command, {From, Target, Command}, Requests),
+            {noreply, NewState#state{requests = Pending}};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
     end;
 handle_call(_InvalidCommand, _From, State) ->
     {reply, {error, invalid_command}, State}.
@@ -137,127 +141,48 @@ handle_cast(_Msg, State) ->
 terminate(_Reason, _State) ->
     ok.
 
--doc """
-Handles process monitoring messages.
-
-On `{'DOWN', ...}` from an aggregate process, removes it from the
-internal registry so future commands will cause a new process to be
-started if needed.
-""".
--spec handle_info(Info, State) -> {noreply, State} when
-    Info :: {'DOWN', _Ref, process, Pid, _Reason},
-    State :: state(),
-    Pid :: pid().
-handle_info({'DOWN', _Ref, process, Pid, _Reason}, #state{pids = Pids} = State) ->
-    KeyToRemove = maps:filter(fun(_, ThisPid) -> ThisPid =:= Pid end, Pids),
-    case maps:keys(KeyToRemove) of
-        [Key] ->
-            NewPids = maps:remove(Key, Pids),
-            {noreply, State#state{pids = NewPids}};
-        [] ->
+-spec handle_info(term(), state()) -> {noreply, state()}.
+handle_info({{aggregate_down, Target}, _Ref, process, Pid, _Reason}, State) ->
+    {noreply, evict(Target, Pid, State)};
+handle_info(Info, #state{requests = Requests} = State) ->
+    case gen_server:check_response(Info, Requests, true) of
+        {{reply, Result}, {From, _, _}, Pending} ->
+            gen_server:reply(From, Result),
+            {noreply, State#state{requests = Pending}};
+        {{error, {Reason, Pid}}, {From, Target, Command}, Pending} ->
+            NewState = evict(Target, Pid, State#state{requests = Pending}),
+            %% Preserve the exit reason shape from gen_server:call/3.
+            CallExit = {Reason, {gen_server, call, [Pid, Command, infinity]}},
+            gen_server:reply(From, {error, {aggregate_down, CallExit}}),
+            {noreply, NewState};
+        _ ->
             {noreply, State}
-    end;
-handle_info(_Any, State) ->
-    {noreply, State}.
+    end.
 
--doc """
-Ensures an aggregate process exists for the command target
-and dispatches the command, starting a new process if needed.
-
-The target is extracted from the command and used as a key to look up
-or register the aggregate process.
-
-Returns `{ok, Result, State}` or `{error, Reason, State}`.
-""".
--spec ensure_and_dispatch(AggregateType, AggId, Command, State) ->
-    {ok, Result, State} | {error, Reason, State}
-when
-    AggregateType :: es_contract_event:aggregate_type(),
-    AggId :: es_contract_command:aggregate_id(),
-    Command :: es_contract_command:t(),
-    Result :: ok | {error, Reason},
-    State :: state(),
-    Reason :: term().
-ensure_and_dispatch(
-    AggregateType,
-    AggId,
-    Command,
-    #state{
-        store = StoreContext,
-        pids = Pids,
-        opts = Opts
-    } =
-        State
+-spec ensure_aggregate(es_contract_command:target(), state()) ->
+    {ok, pid(), state()} | {error, term()}.
+ensure_aggregate(
+    {AggregateType, AggId} = Target,
+    #state{store = StoreContext, pids = Pids, opts = Opts} = State
 ) ->
-    Target = {AggregateType, AggId},
-    case maps:get(Target, Pids, undefined) of
-        undefined ->
-            case start_aggregate(AggregateType, AggId, StoreContext, Opts) of
+    case Pids of
+        #{Target := Pid} ->
+            {ok, Pid, State};
+        #{} ->
+            case
+                es_kernel_aggregate_sup:start_aggregate(AggregateType, AggId, StoreContext, Opts)
+            of
                 {ok, Pid} ->
-                    Result = forward(Pid, Command),
-                    NewPids = maps:put(Target, Pid, Pids),
-                    {ok, Result, State#state{pids = NewPids}};
+                    erlang:monitor(process, Pid, [{tag, {aggregate_down, Target}}]),
+                    {ok, Pid, State#state{pids = Pids#{Target => Pid}}};
                 {error, Reason} ->
-                    {error, Reason, State}
-            end;
-        Pid ->
-            Result = forward(Pid, Command),
-            case Result of
-                {error, {aggregate_down, _}} ->
-                    NewPids = maps:remove(Target, Pids),
-                    {ok, Result, State#state{pids = NewPids}};
-                _ ->
-                    {ok, Result, State}
+                    {error, Reason}
             end
     end.
 
--doc """
-Forwards a command to an aggregate process.
-
-Returns the result of the aggregate's `execute/2` function:
-`ok` on success or `{error, Reason}` on failure.
-
-If the target process dies before replying, returns `{error, {aggregate_down, Reason}}`.
-""".
--spec forward(Pid, Command) -> ok | {error, Reason} when
-    Pid :: pid(),
-    Command :: es_contract_command:t(),
-    Reason :: term().
-forward(Pid, Command) ->
-    try es_kernel_aggregate:execute(Pid, Command) of
-        Result -> Result
-    catch
-        exit:Reason ->
-            {error, {aggregate_down, Reason}}
-    end.
-
--doc """
-Starts an aggregate process for a given stream ID.
-
-Uses the es_kernel_aggregate_sup dynamic supervisor to start the aggregate,
-ensuring it is properly supervised. Monitors the new process and returns its pid.
-
-Function returns `{ok, Pid}` on success, or `{error, Reason}` on failure.
-""".
--spec start_aggregate(AggregateType, AggId, StoreContext, Opts) ->
-    {ok, Result} | {error, Reason}
-when
-    AggregateType :: es_contract_event:aggregate_type(),
-    AggId :: es_contract_command:aggregate_id(),
-    StoreContext :: es_kernel_store:store_context(),
-    Opts ::
-        #{
-            timeout => timeout(),
-            now_fun => fun(() -> non_neg_integer()),
-            snapshot_interval => non_neg_integer()
-        },
-    Result :: pid(),
-    Reason :: term().
-start_aggregate(AggregateType, AggId, StoreContext, Opts) ->
-    case es_kernel_aggregate_sup:start_aggregate(AggregateType, AggId, StoreContext, Opts) of
-        {ok, Pid} ->
-            erlang:monitor(process, Pid),
-            {ok, Pid};
-        {error, Reason} ->
-            {error, Reason}
+-spec evict(es_contract_command:target(), pid(), state()) -> state().
+evict(Target, Pid, #state{pids = Pids} = State) ->
+    case Pids of
+        #{Target := Pid} -> State#state{pids = maps:remove(Target, Pids)};
+        #{} -> State
     end.

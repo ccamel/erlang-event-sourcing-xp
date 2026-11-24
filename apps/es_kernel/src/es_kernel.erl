@@ -15,9 +15,11 @@ clean API.
 -doc """
 Dispatches a command to the appropriate aggregate instance.
 
-The command is routed to the singleton aggregate manager, which extracts
-the aggregate type (aggregate module) and aggregate ID from the command, then forwards
-it to the correct aggregate process.
+The singleton aggregate manager routes the command by aggregate type and ID,
+then relays the result. The caller waits for that result; the manager can route
+other commands while an aggregate executes. Each aggregate processes its own
+commands serially. Starting an aggregate and replaying its stream still happen
+in the routing path.
 
 - Command is the command to dispatch.
 
