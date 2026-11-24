@@ -18,11 +18,21 @@ replay_without_snapshot() ->
     Id = <<"replay">>,
     Stream = {?TYPE, Id},
     with_aggregate(Id, #{}, fun(Pid) ->
-        ?assertEqual(ok, execute(Pid, Id, credit, 2)),
+        #{command_id := CommandId} =
+            Command = es_contract_command:new(?TYPE, credit_pair, Id, 0, #{}, {1, 1}),
+        ?assertEqual(ok, es_kernel_aggregate:execute(Pid, Command)),
         ?assertEqual({error, insufficient_balance}, execute(Pid, Id, withdraw, 17)),
         ?assertEqual(ok, execute(Pid, Id, idle, undefined)),
         ?assertMatch(
-            [#{sequence := 1, type := <<"balance_changed">>, payload := {credit, 6}}],
+            [
+                #{
+                    sequence := 1,
+                    metadata := #{command_id := CommandId},
+                    type := <<"balance_changed">>,
+                    payload := {credit, 3}
+                },
+                #{sequence := 2, metadata := #{command_id := CommandId}, payload := {credit, 3}}
+            ],
             events(Stream)
         ),
         ?assertEqual({error, not_found}, es_kernel_store:load_latest(?STORE, Stream))
@@ -31,7 +41,11 @@ replay_without_snapshot() ->
         ?assertEqual(ok, execute(Pid, Id, withdraw, 16)),
         ?assertEqual({error, insufficient_balance}, execute(Pid, Id, withdraw, 1)),
         ?assertMatch(
-            [#{sequence := 1, payload := {credit, 6}}, #{sequence := 2, payload := {debit, 16}}],
+            [
+                #{sequence := 1, payload := {credit, 3}},
+                #{sequence := 2, payload := {credit, 3}},
+                #{sequence := 3, payload := {debit, 16}}
+            ],
             events(Stream)
         )
     end).

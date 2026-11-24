@@ -11,6 +11,7 @@
 ]).
 
 -export_type([
+    id/0,
     aggregate_type/0,
     aggregate_id/0,
     sequence/0,
@@ -28,6 +29,9 @@
 %%--------------------------------------------------------------------
 %% Types
 %%--------------------------------------------------------------------
+
+-doc "Opaque 128-bit identity generated when a command is created.".
+-type id() :: <<_:128>>.
 
 -doc "Aggregate type identifier, specifying which kind of aggregate this command targets.".
 -type aggregate_type() :: atom().
@@ -66,6 +70,7 @@ Command data structure.
 
 A command represents an intent to change the state of an aggregate of a specific type.
 It consists of:
+- `command_id`: Random 128-bit binary identity, generated once by `new/6`
 - `aggregate_type`: The aggregate type this command targets
 - `type`: The type of command to execute
 - `aggregate_id`: Identifier of the target aggregate instance
@@ -75,6 +80,7 @@ It consists of:
 - `payload`: The actual command data
 """.
 -type t() :: #{
+    command_id := id(),
     aggregate_type := aggregate_type(),
     type := type(),
     aggregate_id := aggregate_id(),
@@ -99,6 +105,7 @@ which aggregate this command is addressed to.
 -spec new(aggregate_type(), type(), aggregate_id(), sequence(), metadata(), payload()) -> t().
 new(AggregateType, Type, AggregateId, Sequence, Metadata, Payload) ->
     #{
+        command_id => crypto:strong_rand_bytes(16),
         aggregate_type => AggregateType,
         type => Type,
         aggregate_id => AggregateId,

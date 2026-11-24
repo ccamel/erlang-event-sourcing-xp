@@ -110,6 +110,15 @@ aggregate_invalid_command() ->
         {error, invalid_command},
         es_kernel_aggregate:execute(Pid, invalid)
     ),
+    Deposit = cmd(deposit, Id, #{amount => 1}),
+    ?assertEqual(
+        {error, invalid_command},
+        es_kernel_aggregate:execute(Pid, maps:remove(command_id, Deposit))
+    ),
+    ?assertEqual(
+        {error, invalid_command},
+        es_kernel_aggregate:execute(Pid, Deposit#{command_id := <<"invalid">>})
+    ),
     ?assertEqual(
         {error, insufficient_funds},
         es_kernel_aggregate:execute(Pid, cmd(withdraw, Id, #{amount => 100}))
@@ -346,25 +355,40 @@ aggregate_event_context() ->
     {Id, Pid} = start_test_account(5000),
     Store = es_kernel_app:get_store_context(),
     Metadata = #{
-        correlation_id => <<"request-1">>, causation_id => <<"command-1">>, user_id => <<"user-1">>
+        command_id => <<"caller-supplied">>,
+        correlation_id => <<"request-1">>,
+        causation_id => <<"command-1">>,
+        user_id => <<"user-1">>
     },
     Tags = [<<"tenant:one">>, <<"audit">>],
     Command = es_contract_command:with_tags(
         Tags,
         es_contract_command:with_metadata(Metadata, cmd(deposit, Id, #{amount => 42}))
     ),
+    #{command_id := CommandId} = Command,
+    NewCommand = es_contract_command:with_tags(
+        Tags,
+        es_contract_command:with_metadata(Metadata, cmd(deposit, Id, #{amount => 42}))
+    ),
+    #{command_id := NewCommandId} = NewCommand,
+    ?assertMatch(<<_:128>>, CommandId),
+    ?assertMatch(<<_:128>>, NewCommandId),
+    ?assertNotEqual(CommandId, NewCommandId),
     try
         ?assertEqual(ok, es_kernel_aggregate:execute(Pid, Command)),
-        ?assertEqual(ok, es_kernel_aggregate:execute(Pid, Command)),
+        ?assertEqual(ok, es_kernel_aggregate:execute(Pid, NewCommand)),
         [First, Second] = es_kernel_store:retrieve_events(
             Store, {bank_account, Id}, es_contract_range:new(0, infinity)
         ),
         #{event_id := FirstId, metadata := StoredMetadata, tags := Tags} = First,
-        #{event_id := SecondId} = Second,
+        #{event_id := SecondId, metadata := #{command_id := NewCommandId}} = Second,
+        ?assertNot(maps:is_key(command_id, First)),
         ?assertMatch(<<_:128>>, FirstId),
         ?assertMatch(<<_:128>>, SecondId),
         ?assertNotEqual(FirstId, SecondId),
-        ?assertEqual(Metadata, maps:remove(timestamp, StoredMetadata)),
+        ?assertEqual(
+            Metadata#{command_id := CommandId}, maps:remove(timestamp, StoredMetadata)
+        ),
         gen_server:stop(Pid),
         {ok, Rehydrated} = es_kernel_aggregate:start_link(bank_account, Id, Store),
         try

@@ -84,7 +84,7 @@ An event represents a fact that something has happened in the system. It consist
 - `type`: The type of event that occurred
 - `stream_id`: Identifier of the stream this event belongs to
 - `sequence`: One-based position of this event in its stream
-- `metadata`: Additional contextual information (timestamp, user, etc.)
+- `metadata`: Context such as `timestamp` and the originating `command_id`, when present
 - `tags`: Labels for categorization or routing
 - `payload`: The actual event data describing what changed
 """.

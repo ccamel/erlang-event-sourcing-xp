@@ -9,6 +9,8 @@ init(#{initial := Initial}) ->
 
 handle_command(#{step := Step}, #{type := credit, payload := Units}, _) ->
     {ok, [{credit, Units * Step}]};
+handle_command(#{step := Step}, #{type := credit_pair, payload := {First, Second}}, _) ->
+    {ok, [{credit, First * Step}, {credit, Second * Step}]};
 handle_command(_, #{type := withdraw, payload := Amount}, #{balance := Balance}) when
     Amount > Balance
 ->

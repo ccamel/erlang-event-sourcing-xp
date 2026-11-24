@@ -188,10 +188,16 @@ state for the next command; the rejected command is **not** retried automaticall
 Other append errors are also returned without applying events. The example HTTP
 API maps version conflicts to `409` with `expected` and `actual` fields.
 
+`es_contract_command:new/6` gives each command an opaque, random 128-bit binary
+`command_id` at the top level. The kernel rejects commands without a valid ID.
+Every event emitted by a command carries that ID as `metadata.command_id`, so
+consumers can trace it back to the originating command. Historical events and
+events written directly without a command may lack this metadata key.
+
 Command `metadata` and `tags` are copied into each emitted event for every domain
-runtime. The kernel's timestamp overrides any command `metadata.timestamp`.
-Command sequencing is domain information, not command deduplication: dispatching
-the same command again may emit another event.
+runtime. The kernel takes precedence for `metadata.command_id` and `metadata.timestamp`.
+Neither `command_id` nor the domain `sequence` deduplicates commands: dispatching
+the same command again may still emit more events.
 
 #### Projections
 
