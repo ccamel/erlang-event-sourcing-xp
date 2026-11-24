@@ -10,8 +10,10 @@ suite_test_() ->
             {"aggregate_invalid_command", fun aggregate_invalid_command/0},
             {"aggregate_snapshot_creation", fun aggregate_snapshot_creation/0},
             {"aggregate_snapshot_rehydration", fun aggregate_snapshot_rehydration/0},
+            {"aggregate_retry_from_snapshot", fun aggregate_retry_from_snapshot/0},
             {"aggregate_custom_now_fun", fun aggregate_custom_now_fun/0},
             {"aggregate_concurrent_writers", fun aggregate_concurrent_writers/0},
+            {"aggregate_retry_on_stale_writer", fun aggregate_retry_on_stale_writer/0},
             {"aggregate_async_conflict_refreshes", fun aggregate_async_conflict_refreshes/0},
             {"aggregate_event_context", fun aggregate_event_context/0}
         ],
@@ -49,7 +51,7 @@ teardown({EventStore, SnapshotStore}) ->
     StoreCtx = es_kernel_app:get_store_context(),
     ?assertMatch(
         {state, bank_account, #{runtime := erlang, module := bank_account_aggregate}, StoreCtx, Id,
-            ExpectedState, ExpectedSeq, _, _, _, _},
+            ExpectedState, ExpectedSeq, _, _, _, _, _},
         sys:get_state(Pid)
     )
 end).
@@ -228,6 +230,35 @@ aggregate_snapshot_rehydration() ->
     %% Should have rehydrated to sequence 4 by loading snapshot at 2 and replaying events 3,4
     ?assertState(Pid2, AggId, #{balance := 400}, 4).
 
+aggregate_retry_from_snapshot() ->
+    {Id, Pid} = start_test_account_with_snapshots(5000, 1),
+    Store = es_kernel_app:get_store_context(),
+    Stream = {bank_account, Id},
+    Debit = cmd(withdraw, Id, #{amount => 100}),
+    try
+        ok = es_kernel_aggregate:execute(Pid, cmd(deposit, Id, #{amount => 100})),
+        ok = es_kernel_aggregate:execute(Pid, Debit),
+        ?assertEqual(ok, es_kernel_aggregate:execute(Pid, Debit)),
+        ok = es_kernel_aggregate:execute(Pid, cmd(deposit, Id, #{amount => 1})),
+        ?assertMatch({ok, #{sequence := 3}}, es_kernel_store:load_latest(Store, Stream))
+    after
+        gen_server:stop(Pid)
+    end,
+    {ok, Rehydrated} = es_kernel_aggregate:start_link(bank_account, Id, Store),
+    try
+        ?assertEqual(ok, es_kernel_aggregate:execute(Rehydrated, Debit)),
+        ?assertEqual(
+            {error, insufficient_funds},
+            es_kernel_aggregate:execute(Rehydrated, cmd(withdraw, Id, #{amount => 2}))
+        ),
+        ?assertMatch(
+            [#{sequence := 1}, #{sequence := 2}, #{sequence := 3}],
+            es_kernel_store:retrieve_events(Store, Stream, es_contract_range:new(1, infinity))
+        )
+    after
+        gen_server:stop(Rehydrated)
+    end.
+
 %% Test that a custom now_fun injected via options is used for event timestamps
 aggregate_custom_now_fun() ->
     AggId = integer_to_binary(erlang:unique_integer([monotonic, positive])),
@@ -328,6 +359,37 @@ aggregate_concurrent_writers() ->
             end,
             Writers
         ),
+        gen_server:stop(A),
+        gen_server:stop(B)
+    end.
+
+aggregate_retry_on_stale_writer() ->
+    {Id, A} = start_test_account(5000),
+    Store = es_kernel_app:get_store_context(),
+    {ok, B} = es_kernel_aggregate:start_link(bank_account, Id, Store),
+    Credit = cmd(deposit, Id, #{amount => 100}),
+    Debit = cmd(withdraw, Id, #{amount => 200}),
+    try
+        ok = es_kernel_aggregate:execute(A, Credit),
+        %% B decided at sequence 0; its optimistic append must lose to A.
+        ?assertEqual(ok, es_kernel_aggregate:execute(B, Credit)),
+        ok = es_kernel_aggregate:execute(A, cmd(deposit, Id, #{amount => 100})),
+        ok = es_kernel_aggregate:execute(A, Debit),
+        %% B only saw the first deposit, so it must check the log after rejecting.
+        ?assertEqual(ok, es_kernel_aggregate:execute(B, Debit)),
+        ?assertEqual(ok, es_kernel_aggregate:execute(B, cmd(deposit, Id, #{amount => 1}))),
+        ?assertMatch(
+            [
+                #{type := deposited, sequence := 1},
+                #{type := deposited, sequence := 2},
+                #{type := withdrawn, sequence := 3},
+                #{type := deposited, sequence := 4}
+            ],
+            es_kernel_store:retrieve_events(
+                Store, {bank_account, Id}, es_contract_range:new(1, infinity)
+            )
+        )
+    after
         gen_server:stop(A),
         gen_server:stop(B)
     end.

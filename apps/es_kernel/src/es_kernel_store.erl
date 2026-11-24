@@ -255,9 +255,8 @@ store({_, SnapshotModule}, Snapshot) ->
 -doc """
 Loads the latest snapshot for a stream using the specified store module.
 
-Returns `{ok, Snapshot}` if found, `{error, not_found}` otherwise. This enables
-fast aggregate rehydration by restoring state from the snapshot and replaying only
-events that occurred after the snapshot's sequence number.
+Returns `{ok, Snapshot}` if found, `{error, not_found}` otherwise. The aggregate
+restores domain state from the snapshot and only applies subsequent events.
 """.
 -spec load_latest(StoreContext, StreamId) -> {ok, Snapshot} | {error, not_found} when
     StoreContext :: store_context(),

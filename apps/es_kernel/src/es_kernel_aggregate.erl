@@ -30,7 +30,8 @@
     timeout = ?INACTIVITY_TIMEOUT :: timeout(),
     now_fun :: fun(() -> non_neg_integer()),
     timer_ref = undefined :: reference() | undefined,
-    snapshot_interval = 0 :: non_neg_integer()
+    snapshot_interval = 0 :: non_neg_integer(),
+    command_ids = #{} :: #{es_contract_command:id() => true}
 }).
 
 -opaque state() :: #state{}.
@@ -77,8 +78,9 @@ Executes a command on an aggregate process.
 Sends a command to a running aggregate and waits for the result. Returns
 `ok` if the command was handled successfully, or `{error, Reason}` if
 it failed.
-Version conflicts leave the process alive and reload committed state before the
-next command. The rejected command is not retried or applied.
+An already committed command ID returns `ok` without creating new events.
+On an unrelated version conflict, the aggregate reloads committed events and
+returns the conflict without retrying the command.
 
 The call waits for the aggregate reply; runtimes must bound external execution.
 """.
@@ -120,66 +122,82 @@ init({AggregateType, AggId, StoreContext, Opts}) ->
                 #{runtime => erlang, module => AggregateType}
         end,
 
-    StreamId = {AggregateType, AggId},
-    {State1, Sequence1} = rehydrate(Domain, StoreContext, StreamId),
+    {DomainState, Sequence} = load_state(Domain, StoreContext, {AggregateType, AggId}),
     Timeout = maps:get(timeout, Opts, ?INACTIVITY_TIMEOUT),
     SnapshotInterval = maps:get(snapshot_interval, Opts, 0),
-    TimerRef = install_passivation(Timeout, undefined),
-    {ok, #state{
-        aggregate_type = AggregateType,
-        domain = Domain,
-        store = StoreContext,
-        aggregate_id = AggId,
-        state = State1,
-        sequence = Sequence1,
-        timeout = Timeout,
-        now_fun = maps:get(now_fun, Opts, fun() -> erlang:system_time(millisecond) end),
-        timer_ref = TimerRef,
-        snapshot_interval = SnapshotInterval
-    }}.
+    State = replay(
+        #state{
+            aggregate_type = AggregateType,
+            domain = Domain,
+            store = StoreContext,
+            aggregate_id = AggId,
+            state = DomainState,
+            sequence = Sequence,
+            timeout = Timeout,
+            now_fun = maps:get(now_fun, Opts, fun() -> erlang:system_time(millisecond) end),
+            snapshot_interval = SnapshotInterval
+        },
+        1
+    ),
+    {ok, State#state{timer_ref = install_passivation(Timeout, undefined)}}.
 
--doc """
-Rehydrates the aggregate state from the persistence layer.
-
-Loads the latest snapshot if available, then replays subsequent events
-to rebuild the current state. Returns `{State, Sequence}` where
-`State` is the aggregate state and `Sequence` the last applied event
-sequence.
-""".
--spec rehydrate(Domain, StoreContext, StreamId) -> {State, Sequence} when
+-doc "Load the starting domain state and its sequence before replay.".
+-spec load_state(Domain, StoreContext, StreamId) -> {State, Sequence} when
     Domain :: es_kernel_registry:domain(),
     StoreContext :: es_kernel_store:store_context(),
     StreamId :: es_contract_event:stream_id(),
     State :: aggregate_state(),
     Sequence :: non_neg_integer().
-rehydrate(Domain, StoreContext, StreamId) ->
+load_state(Domain, StoreContext, StreamId) ->
     State0 = es_kernel_domain:init(Domain),
-    {StateFromSnapshot, SequenceFromSnapshot} =
-        case es_kernel_store:load_latest(StoreContext, StreamId) of
-            {ok, #{state := SnapshotState, sequence := SnapshotSeq}} ->
-                {SnapshotState, SnapshotSeq};
-            {error, not_found} ->
-                {State0, ?SEQUENCE_ZERO}
-        end,
-    FoldFun =
-        fun(#{payload := Payload}, Seq, {StateAcc, _SeqAcc}) ->
-            {
-                es_kernel_domain:apply_event(Domain, Payload, StateAcc),
-                Seq
-            }
-        end,
+    case es_kernel_store:load_latest(StoreContext, StreamId) of
+        {ok, #{state := SnapshotState, sequence := SnapshotSeq}} ->
+            {SnapshotState, SnapshotSeq};
+        {error, not_found} ->
+            {State0, ?SEQUENCE_ZERO}
+    end.
+
+-spec replay(state(), pos_integer()) -> state().
+replay(
+    #state{
+        domain = Domain,
+        store = Store,
+        aggregate_type = Type,
+        aggregate_id = Id,
+        state = DomainState,
+        sequence = Sequence,
+        command_ids = CommandIds
+    } = State,
+    From
+) ->
+    Fold = fun(#{payload := Payload} = Event, Seq, {Acc, LastSeq, Seen}) ->
+        Ids = remember_command(Event, Seen),
+        case Seq > Sequence of
+            true -> {es_kernel_domain:apply_event(Domain, Payload, Acc), Seq, Ids};
+            false -> {Acc, LastSeq, Ids}
+        end
+    end,
     case
         es_kernel_store:fold(
-            StoreContext,
-            StreamId,
-            FoldFun,
-            {StateFromSnapshot, SequenceFromSnapshot},
-            es_contract_range:new(SequenceFromSnapshot + 1, infinity)
+            Store,
+            {Type, Id},
+            Fold,
+            {DomainState, Sequence, CommandIds},
+            es_contract_range:new(From, infinity)
         )
     of
-        {ok, Result} -> Result;
-        {error, Reason} -> erlang:error(Reason)
+        {ok, {NewState, NewSequence, NewIds}} ->
+            State#state{state = NewState, sequence = NewSequence, command_ids = NewIds};
+        {error, Reason} ->
+            erlang:error(Reason)
     end.
+
+-spec remember_command(es_contract_event:t(), Ids) -> Ids when
+    Ids :: #{es_contract_command:id() => true}.
+remember_command(#{metadata := #{command_id := <<_:128>> = Id}}, Seen) ->
+    Seen#{Id => true};
+remember_command(_Event, Seen) ->
+    Seen.
 
 -doc """
 Handles synchronous commands sent to the aggregate.
@@ -190,20 +208,8 @@ returns `ok` or `{error, Reason}` to the caller.
 -spec handle_call(Command :: es_contract_command:t(), From :: {pid(), term()}, State :: state()) ->
     {reply, ok, state()} | {reply, {error, term()}, State :: state()}.
 handle_call(Command, _From, State) ->
-    NewTimerRef = install_passivation(State#state.timeout, State#state.timer_ref),
-    case process_command(State, Command) of
-        {ok, {State1, Sequence1}} ->
-            maybe_save_snapshot(State#state{state = State1, sequence = Sequence1}),
-            {reply, ok, State#state{
-                state = State1,
-                sequence = Sequence1,
-                timer_ref = NewTimerRef
-            }};
-        {error, {wrong_expected_sequence, _, _} = Reason} ->
-            {reply, {error, Reason}, refresh_state(State#state{timer_ref = NewTimerRef})};
-        {error, Reason} ->
-            {reply, {error, Reason}, State#state{timer_ref = NewTimerRef}}
-    end.
+    {Result, NewState} = dispatch_command(Command, State),
+    {reply, Result, NewState}.
 
 -doc """
 Handles asynchronous commands sent to the aggregate.
@@ -213,20 +219,8 @@ replying to the caller.
 """.
 -spec handle_cast(Command :: es_contract_command:t(), State :: state()) -> {noreply, state()}.
 handle_cast(Command, State) ->
-    NewTimerRef = install_passivation(State#state.timeout, State#state.timer_ref),
-    case process_command(State, Command) of
-        {ok, {State1, Sequence1}} ->
-            maybe_save_snapshot(State#state{state = State1, sequence = Sequence1}),
-            {noreply, State#state{
-                state = State1,
-                sequence = Sequence1,
-                timer_ref = NewTimerRef
-            }};
-        {error, {wrong_expected_sequence, _, _}} ->
-            {noreply, refresh_state(State#state{timer_ref = NewTimerRef})};
-        {error, _} ->
-            {noreply, State#state{timer_ref = NewTimerRef}}
-    end.
+    {_Result, NewState} = dispatch_command(Command, State),
+    {noreply, NewState}.
 
 terminate(_Reason, _State) ->
     ok.
@@ -238,13 +232,6 @@ handle_info(_Info, State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
--spec refresh_state(state()) -> state().
-refresh_state(
-    #state{domain = Domain, store = Store, aggregate_type = Type, aggregate_id = Id} = State
-) ->
-    {DomainState, Sequence} = rehydrate(Domain, Store, {Type, Id}),
-    State#state{state = DomainState, sequence = Sequence}.
 
 -doc """
 Installs or refreshes the passivation timer for the aggregate.
@@ -266,75 +253,90 @@ install_passivation(Timeout, TimerRef) ->
         end,
     erlang:send_after(Timeout, self(), passivate).
 
--doc """
-Handles a command against the current aggregate state.
+-spec dispatch_command(es_contract_command:t(), state()) ->
+    {ok | {error, term()}, state()}.
+dispatch_command(Command, State) ->
+    Timer = install_passivation(State#state.timeout, State#state.timer_ref),
+    process_command(Command, State#state{timer_ref = Timer}).
 
-Delegates to the registered domain implementation to decide how to handle the command,
-persists any resulting events, applies them to the state, and returns
-either `{ok, {State, Sequence}}` or `{error, Reason}`.
-""".
--spec process_command(State, Command) -> {ok, Result} | {error, Reason} when
-    State :: state(),
-    Command :: es_contract_command:t(),
-    State1 :: aggregate_state(),
-    Sequence1 :: es_contract_event:sequence(),
-    Result :: {State1, Sequence1},
-    Reason :: term().
-process_command(
-    #state{
-        aggregate_type = AggregateType,
-        domain = Domain,
-        store = StoreContext,
-        aggregate_id = AggId,
-        state = State0,
-        sequence = Sequence0,
-        now_fun = NowFun
-    },
-    #{id := <<_:128>>} = Command
-) ->
-    StreamId = {AggregateType, AggId},
-    CmdResult = es_kernel_domain:handle_command(Domain, Command, State0),
-    case CmdResult of
-        {ok, []} ->
-            {ok, {State0, Sequence0}};
-        {ok, PayloadEvents} when is_list(PayloadEvents) ->
-            case
-                persist_events(
-                    PayloadEvents, {Domain, StoreContext, StreamId, Sequence0, NowFun}, Command
-                )
-            of
-                {ok, _} ->
-                    {State1, Sequence1} =
-                        apply_events(PayloadEvents, {Domain, State0, Sequence0}),
-                    {ok, {State1, Sequence1}};
-                {error, _} = Error ->
-                    Error
-            end;
-        {error, Reason} ->
-            {error, Reason}
+-spec process_command(es_contract_command:t(), state()) ->
+    {ok | {error, term()}, state()}.
+process_command(#{id := <<_:128>> = CommandId} = Command, #state{command_ids = Ids} = State) ->
+    case is_map_key(CommandId, Ids) of
+        true -> {ok, State};
+        false -> decide(Command, CommandId, State)
     end;
-process_command(_State, _Command) ->
-    {error, invalid_command}.
+process_command(_Command, State) ->
+    {{error, invalid_command}, State}.
 
--spec apply_events(
-    PayloadEvents :: [es_contract_event:payload()],
-    {
-        Domain :: es_kernel_registry:domain(),
-        State :: aggregate_state(),
-        Sequence0 :: es_contract_event:sequence()
-    }
+-spec decide(es_contract_command:t(), es_contract_command:id(), state()) ->
+    {ok | {error, term()}, state()}.
+decide(
+    Command,
+    CommandId,
+    #state{
+        aggregate_type = Type,
+        aggregate_id = Id,
+        domain = Domain,
+        store = Store,
+        state = DomainState,
+        sequence = Sequence,
+        now_fun = NowFun,
+        command_ids = Seen
+    } = State
 ) ->
-    {State :: aggregate_state(), Sequence :: es_contract_event:sequence()}.
-apply_events(PayloadEvents, {Domain, State0, Sequence0}) ->
-    lists:foldl(
-        fun(Event, {StateN, SequenceN}) ->
-            StateN1 = es_kernel_domain:apply_event(Domain, Event, StateN),
-            SequenceN1 = SequenceN + 1,
-            {StateN1, SequenceN1}
-        end,
-        {State0, Sequence0},
-        PayloadEvents
-    ).
+    Stream = {Type, Id},
+    case es_kernel_domain:handle_command(Domain, Command, DomainState) of
+        {ok, []} ->
+            {ok, State};
+        {ok, Payloads} when is_list(Payloads) ->
+            case persist_events(Payloads, {Domain, Store, Stream, Sequence, NowFun}, Command) of
+                {ok, NewSequence} ->
+                    NewDomainState = lists:foldl(
+                        fun(Payload, Acc) -> es_kernel_domain:apply_event(Domain, Payload, Acc) end,
+                        DomainState,
+                        Payloads
+                    ),
+                    NewState = State#state{
+                        state = NewDomainState,
+                        sequence = NewSequence,
+                        command_ids = Seen#{CommandId => true}
+                    },
+                    maybe_save_snapshot(NewState),
+                    {ok, NewState};
+                {error, {wrong_expected_sequence, _, _}} = Conflict ->
+                    Refreshed = replay(State, Sequence + 1),
+                    case is_map_key(CommandId, Refreshed#state.command_ids) of
+                        true -> {ok, Refreshed};
+                        false -> {Conflict, Refreshed}
+                    end;
+                {error, _} = Error ->
+                    {Error, State}
+            end;
+        {error, _} = Error ->
+            check_rejected_command(CommandId, Error, State)
+    end.
+
+-spec check_rejected_command(es_contract_command:id(), {error, term()}, state()) ->
+    {ok | {error, term()}, state()}.
+check_rejected_command(
+    CommandId,
+    Rejection,
+    #state{store = Store, aggregate_type = Type, aggregate_id = Id, sequence = Sequence} = State
+) ->
+    %% A stale aggregate can reject a command that another writer already committed.
+    Find = fun
+        (#{metadata := #{command_id := Seen}}, _, _) when Seen =:= CommandId -> true;
+        (_, _, Found) -> Found
+    end,
+    From = Sequence + 1,
+    case
+        es_kernel_store:fold(Store, {Type, Id}, Find, false, es_contract_range:new(From, infinity))
+    of
+        {ok, true} -> {ok, replay(State, From)};
+        {ok, false} -> {Rejection, State};
+        {error, _} = Error -> {Error, State}
+    end.
 
 -spec persist_events(
     PayloadEvents :: [es_contract_event:payload()],

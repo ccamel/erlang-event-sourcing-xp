@@ -102,7 +102,7 @@ cmd(Type, Id, Payload) ->
     StoreCtx = es_kernel_app:get_store_context(),
     ?assertMatch(
         {state, bank_account, #{runtime := erlang, module := bank_account_aggregate}, StoreCtx, Id,
-            ExpectedState, ExpectedSeq, _, _, _, _},
+            ExpectedState, ExpectedSeq, _, _, _, _, _},
         sys:get_state(Pid)
     )
 end).

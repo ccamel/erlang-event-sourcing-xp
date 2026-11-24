@@ -43,8 +43,8 @@ failures should not crash aggregates.
 Load the latest snapshot for a stream.
 
 This callback retrieves the most recent snapshot for the given stream, if one exists.
-The snapshot enables fast state reconstruction by avoiding full event replay from
-the beginning of the stream.
+The snapshot lets the aggregate skip applying events up to the saved sequence
+while rebuilding its command ID index from the event log.
 
 - StreamId is the unique identifier for the stream.
 

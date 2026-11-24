@@ -10,7 +10,8 @@ custom_runtime_aggregate_test() ->
         ok = es_kernel_registry:register(?TYPE, domain()),
         with_store(fun() ->
             replay_without_snapshot(),
-            replay_with_snapshot()
+            replay_with_snapshot(),
+            retry_without_events()
         end)
     end).
 
@@ -20,6 +21,7 @@ replay_without_snapshot() ->
     with_aggregate(Id, #{}, fun(Pid) ->
         #{id := CommandId} =
             Command = es_contract_command:new(?TYPE, credit_pair, Id, 0, #{}, {1, 1}),
+        ?assertEqual(ok, es_kernel_aggregate:execute(Pid, Command)),
         ?assertEqual(ok, es_kernel_aggregate:execute(Pid, Command)),
         ?assertEqual({error, insufficient_balance}, execute(Pid, Id, withdraw, 17)),
         ?assertEqual(ok, execute(Pid, Id, idle, undefined)),
@@ -70,6 +72,22 @@ replay_with_snapshot() ->
             lists:nthtail(3, events(Stream))
         )
     end).
+
+retry_without_events() ->
+    Id = <<"no-event-retry">>,
+    Check = es_contract_command:new(?TYPE, check_balance, Id, 0, #{}, 10),
+    Debit = es_contract_command:new(?TYPE, withdraw, Id, 0, #{}, 12),
+    with_aggregate(Id, #{}, fun(Pid) ->
+        ?assertEqual(ok, es_kernel_aggregate:execute(Pid, Check)),
+        ?assertEqual({error, insufficient_balance}, es_kernel_aggregate:execute(Pid, Debit)),
+        ok = execute(Pid, Id, credit, 2),
+        ?assertEqual({error, balance_mismatch}, es_kernel_aggregate:execute(Pid, Check)),
+        ?assertEqual(ok, es_kernel_aggregate:execute(Pid, Debit))
+    end),
+    ?assertMatch(
+        [#{payload := {credit, 6}}, #{payload := {debit, 12}}],
+        events({?TYPE, Id})
+    ).
 
 registration_validation_test() ->
     Type = es_kernel_invalid_runtime_test,

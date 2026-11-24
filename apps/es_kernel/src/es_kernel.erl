@@ -24,8 +24,11 @@ in the routing path.
 - Command is the command to dispatch.
 
 Function returns `ok` on success, or `{error, Reason}` if routing or execution fails.
-Version conflicts return `{error, {wrong_expected_sequence, Expected, Actual}}`.
-The aggregate refreshes its state but does not retry the rejected command.
+If the target stream already contains events for the command ID, returns `ok`
+without appending new events. Reuse the original command unchanged for retries.
+Unrelated version conflicts return
+`{error, {wrong_expected_sequence, Expected, Actual}}` after catching up to committed
+events; the aggregate does not retry the command automatically.
 """.
 -spec dispatch(Command) -> ok | {error, Reason} when
     Command :: es_contract_command:t(),

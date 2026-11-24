@@ -17,6 +17,10 @@ handle_command(_, #{type := withdraw, payload := Amount}, #{balance := Balance})
     {error, insufficient_balance};
 handle_command(_, #{type := withdraw, payload := Amount}, _) ->
     {ok, [{debit, Amount}]};
+handle_command(_, #{type := check_balance, payload := Balance}, #{balance := Balance}) ->
+    {ok, []};
+handle_command(_, #{type := check_balance}, _) ->
+    {error, balance_mismatch};
 handle_command(_, #{type := idle}, _) ->
     {ok, []}.
 

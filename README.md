@@ -29,7 +29,7 @@ As an **experiment**, this repo won't cover every facet of event sourcing in dep
 - **Aggregate Manager** — a singleton router that spins up aggregates on demand via the dynamic supervisor, rehydrates them from persisted events, monitors them, and passivates idle instances.
 - **Event Store** — a behaviour-driven abstraction with ETS, file, Mnesia, and PostgreSQL backends; per-stream replay for aggregates; and global-position replay for read-side projections.
 - **Domain runtimes** — native Erlang domains or external runtime modules implementing `es_contract_domain`; the optional `es_runtime_wasm` application executes sandboxed QuickJS/WebAssembly domains.
-- **Snapshots** — automatic checkpointing at configurable intervals to avoid replaying entire streams.
+- **Snapshots** — automatic checkpointing so rehydration only applies events after the snapshot.
 - **Passivation** — idle aggregates are shut down cleanly and will rehydrate from the store on the next command.
 
 ## Let's play
@@ -184,11 +184,11 @@ of the batch. Successful appends return `{ok, Expected + length(Events)}`.
 Malformed/noncontiguous batches are rejected; there is no unconditional append.
 
 Aggregates use their last applied sequence as the expected version, not the
-command's `sequence` field. A conflict is returned to the caller without crashing
-the aggregate or applying the rejected events. The aggregate reloads committed
-state for the next command; the rejected command is **not** retried automatically.
-Other append errors are also returned without applying events. The example HTTP
-API maps version conflicts to `409` with `expected` and `actual` fields.
+command's `sequence` field. On a conflict, the aggregate catches up with committed
+events. If they contain the submitted command ID, it returns `ok`; otherwise, it
+returns the conflict without retrying the command. Other append errors are
+returned without applying events. The example HTTP API maps version conflicts
+to `409` with `expected` and `actual` fields.
 
 `es_contract_command:new/6` gives each command an opaque, random 128-bit binary
 `id` at the top level. The kernel rejects commands without a valid ID.
@@ -198,8 +198,17 @@ events written directly without a command may lack this metadata key.
 
 Command `metadata` and `tags` are copied into each emitted event for every domain
 runtime. The kernel takes precedence for `metadata.command_id` and `metadata.timestamp`.
-Neither the command `id` nor the domain `sequence` deduplicates commands: dispatching
-the same command again may still emit more events.
+To retry, resubmit the original command unchanged. The kernel deduplicates by
+`{StreamId, CommandId}`, not by the domain `sequence`, and does not compare
+payloads. Once the command's events are committed, retries return `ok` without
+appending another batch. A rejection or a success without events leaves no
+record; retrying those commands evaluates them again.
+
+Each aggregate rebuilds an in-memory index of committed command IDs by scanning
+its stream on startup, including events before any snapshot. The index grows
+with the number of distinct committed IDs. Snapshots still avoid applying
+earlier events to the domain state. No event store or snapshot format changes
+are required.
 
 #### Projections
 
@@ -270,7 +279,8 @@ runner process directly.
 
 #### Snapshot Store
 
-Snapshots provide optional **performance optimization** by checkpointing aggregate state, avoiding full event replay from stream start. They remain secondary to events, which are always the source of truth.
+Snapshots checkpoint aggregate state so rehydration can skip applying older
+events. Events remain the source of truth.
 
 The bundled backends retain one snapshot per stream, replacing it when a new
 snapshot is stored.
@@ -292,7 +302,7 @@ snapshot is stored.
 **How Snapshots Work:**
 
 1. **On aggregate startup**: `load_latest/1` fetches the most recent snapshot (if available)
-2. **Replay optimization**: Only events _after_ the snapshot sequence are replayed via `fold/4`
+2. **Replay optimization**: Only events _after_ the snapshot sequence are applied to domain state; earlier events contribute their command IDs.
 3. **Automatic checkpointing**: When `snapshot_interval` is configured (e.g., `10`), snapshots save at sequence multiples (10, 20, 30...)
 
 **Configuring Snapshots:**
@@ -525,7 +535,7 @@ When no messages are received within the timeout window:
 
 #### Snapshots
 
-Snapshots provide a performance optimization for aggregate rehydration by avoiding the need to replay all events from the beginning of a stream.
+Snapshots speed up rehydration by skipping domain event application up to the snapshot sequence.
 
 **How it works:**
 
@@ -533,7 +543,7 @@ Snapshots provide a performance optimization for aggregate rehydration by avoidi
 
    - Attempts to load the latest snapshot from the event store
    - If found, initializes state from the snapshot
-   - Replays only events that occurred after the snapshot sequence
+   - Reads older events for command IDs, but only applies events after the snapshot sequence
 
 2. **During command processing**, snapshots are automatically created when:
    - A `snapshot_interval` is configured (e.g., `10`)
